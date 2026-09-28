@@ -2,12 +2,11 @@
   "name": "zacman",
   "version": "0.1.0",
   "private": true,
-  "description": "Kugelschlucker (ZACman) - ein First-Person-3D-Labyrinthspiel im Pac-Man-Stil, gebaut mit Three.js. Browser-Version unter web/, Steam-Desktop-Build unter desktop/.",
+  "description": "Kugelschlucker (ZACman) - ein First-Person-3D-Labyrinthspiel im Pac-Man-Stil. Aktive Entwicklung als Godot-4-Projekt unter godot/ (Steam-Ziel); web/ ist der urspruengliche Three.js-Browser-Prototyp.",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "start": "node -e \"require('child_process').exec(process.platform==='darwin'?'open web/index.html':process.platform==='win32'?'start web/index.html':'xdg-open web/index.html')\"",
-    "desktop": "npm --prefix desktop start",
-    "dist": "npm --prefix desktop run dist"
+    "test:godot": "godot --headless --path godot --script res://tests/test_maze.gd && godot --headless --path godot res://tests/BotTest.tscn"
   },
   "license": "UNLICENSED"
 }

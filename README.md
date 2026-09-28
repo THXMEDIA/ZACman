@@ -5,49 +5,63 @@ Labyrinth laufen, Kugeln schlucken, Power-Kugeln nutzen und leuchtenden
 Wesen ausweichen — mit eigener, prozedural erzeugter Level-Geometrie,
 eigener Optik und vollständig synthetisierten Sounds (keine Original-Assets).
 
-**Spielbar im Browser:** öffne `web/index.html` direkt, oder starte den
-Electron-Desktop-Wrapper (siehe unten). Steuerung: `WASD` laufen, Maus
-umschauen, `Esc` Pause; auf Touch-Geräten Joystick + Wischsteuerung.
+**Godot-Version** (`godot/`) ist der aktive Entwicklungs- und Steam-Zielpfad.
+**Web-Version** (`web/index.html`) ist der ursprüngliche Browser-Prototyp und
+bleibt spielbar, wird aber nicht mehr parallel weiterentwickelt.
 
 ## Projektstruktur
 
 ```
-web/               Browser-Version des Spiels (ein einziges HTML-File, Three.js via CDN)
-core/maze-core.js  Getestete Labyrinth-Generierung + BFS-Pfadsuche (Node-Modul)
-tests/             Automatisierte Tests: Labyrinth-Konnektivität + Bot-Simulation der Spiellogik
-desktop/           Electron-Wrapper für einen nativen Desktop-Build (Grundlage für Steam)
+godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
+  scripts/          Spiellogik (GDScript)
+  scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
+  tests/            Headless-Tests (Labyrinth-Konnektivität + Bot-Simulation)
+web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
+core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
+tests/             Node-Tests für die JS-Referenzimplementierung
 docs/STEAM_ROADMAP.md  Weg von hier zu einer Steam-Veröffentlichung
 ```
+
+## Godot-Version spielen / entwickeln
+
+```bash
+godot --path godot                                    # im Editor öffnen
+godot --path godot godot/scenes/Main.tscn              # direkt starten (mit Editor installiert)
+godot --headless --path godot --script res://tests/test_maze.gd   # Labyrinth-Tests
+godot --headless --path godot res://tests/BotTest.tscn             # Bot-Simulation der gesamten Spiellogik
+```
+
+Steuerung: `WASD` laufen, Maus umschauen, `Esc` Pause.
+
+Die Bot-Simulation instanziiert die echte `Main.tscn`-Szene headless, steuert
+den Spieler über den echten `Input`-Singleton und prüft Kollisionen,
+Gegner-KI-Zustände, Pickup-Logik und Level-Übergänge im laufenden Godot-
+Physik-Loop — nicht in einer Attrappe.
 
 ## Spiel-Design
 
 - **Labyrinthe**: pro Level neu generiert (randomisierter Tiefensuche-Spannbaum
   + zusätzliche Schleifen), links/rechts gespiegelt wie beim Original, mit
-  zentralem "Gegner-Haus" und einem Seitentunnel zum Durchqueren.
+  zentralem "Gegner-Haus" und einem Seitentunnel zum Durchqueren. Der Godot-
+  Generator (`godot/scripts/maze_gen.gd`) ist ein 1:1-Port der getesteten
+  JS-Logik (`core/maze-core.js`) — beide sind unabhängig voneinander auf
+  Konnektivität getestet.
 - **Gegner**: vier bis fünf leuchtende Polyeder mit BFS-Pfadsuche zum Spieler;
   im "Frightened"-Modus nach einer Power-Kugel fliehen sie und lassen sich fressen.
-  Palette an Rot/Magenta/Cyan/Bernstein/Violett angelehnt an die Farbsprache
-  des Originals, aber mit eigener Form (Ikosaeder statt Geister-Sprite).
-- **Sound**: komplett synthetisch per Web Audio (Oszillatoren + Hüllkurven) —
-  keine Samples, kein Sample-Ripping.
-
-## Entwicklung
-
-```bash
-npm test              # Labyrinth- und Spiellogik-Tests (node --test)
-npm start              # web/index.html im Standard-Browser öffnen
-npm run desktop        # Electron-Fenster starten (erst: npm --prefix desktop install)
-npm run dist            # Desktop-Build für Win/Mac/Linux erzeugen
-```
-
-Die Tests in `tests/` extrahieren das Skript direkt aus `web/index.html` und
-führen es in einer simulierten DOM-/Three.js-Umgebung mit einem Bot-Spieler
-aus — es gibt keine separat gepflegte Kopie der Spiellogik, die aus dem
-Takt geraten könnte.
+- **Sound**: komplett synthetisch (Godot: zur Ladezeit gerenderte PCM-Buffer
+  aus Oszillator + Hüllkurve; Web: Web-Audio-Oszillatoren) — keine Samples.
 
 ## Steam-Veröffentlichung
 
-Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md) für den vollständigen
-Plan: was hier im Repo schon vorbereitet ist (Electron-Wrapper, Build-Config)
-und was als nächstes bei Valve selbst erledigt werden muss (Steamworks-Konto,
-App-Gebühr, Store-Seite, Upload).
+Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md): Godot-Export-Setup,
+Steamworks-Integration über GodotSteam, ein Konzept für Koop- und
+kompetitiven Multiplayer auf Basis von Godots High-Level-Multiplayer-API,
+und die administrativen Schritte bei Valve, die nur im eigenen
+Steamworks-Konto erledigt werden können.
+
+## Web-Prototyp (Referenz)
+
+```bash
+npm test              # Labyrinth- und Spiellogik-Tests für web/index.html
+npm start              # web/index.html im Standard-Browser öffnen
+```

@@ -1,73 +1,82 @@
 # Weg zu Steam
 
-ZACman läuft heute als Browser-Spiel (`web/index.html`, Three.js). Für eine
-Steam-Veröffentlichung braucht es einen nativen Desktop-Build plus die
-Geschäfts-/Store-Seite bei Valve. Der technische Teil lässt sich hier im
-Repo vorbereiten; der administrative Teil (Konto, Gebühr, Store-Seite)
-erfordert Aktionen des Studios/der Person direkt bei Valve — das kann ich
-nicht stellvertretend erledigen.
+ZACman läuft jetzt als natives Godot-4-Projekt (`godot/`) — das ist der
+Steam-Zielpfad, nicht mehr der Electron-Wrapper aus einer früheren Version
+dieses Dokuments. `web/index.html` bleibt als browserspielbarer Prototyp
+erhalten, ist aber nicht mehr der Ausgangspunkt für den Steam-Build.
 
 ## 1. Technischer Build (im Repo vorbereitet)
 
-- `desktop/` verpackt `web/index.html` unverändert als natives
-  Electron-Fenster (`desktop/main.js`).
-- Lokal bauen:
+- `godot/` ist ein eigenständiges Godot-4.3-Projekt: `godot/project.godot`
+  öffnen (oder `godot --path godot` von der Kommandozeile).
+- Export-Ziele werden über die Godot-Editor-UI eingerichtet
+  (Project → Export…), da `export_presets.cfg` maschinenspezifische
+  Export-Templates referenziert und deshalb nicht mitversioniert ist
+  (siehe `godot/.gitignore`). Für Windows/Linux/macOS je ein Preset mit
+  den offiziellen Godot-Export-Templates (Editor → Manage Export Templates)
+  anlegen.
+- Headless-Tests laufen ohne Editor:
   ```
-  cd desktop
-  npm install
-  npm start          # Fenster zum Testen
-  npm run dist        # Zip/Installer für Win/Mac/Linux via electron-builder
+  godot --headless --path godot --script res://tests/test_maze.gd
+  godot --headless --path godot res://tests/BotTest.tscn
   ```
-- Der Output landet in `dist/` (siehe `desktop/package.json` → `build.directories.output`).
-- **Noch offen:** Icons (`build/icon.ico`, `.icns`, `.png`) und Code-Signing
-  für Windows/Mac ergänzen, sonst warnen Windows SmartScreen/Gatekeeper beim
-  ersten Start.
 
-## 2. Steamworks-Integration (Empfehlung)
+## 2. Steamworks-Integration
 
-Für ein "echtes" Steam-Gefühl (Achievements, Cloud-Saves, Overlay) bindet man
-die Steamworks-API in den Electron-Prozess ein, z. B. über
-[`steamworks.js`](https://github.com/ceifa/steamworks.js) im
-`desktop/preload.js`. Mögliche erste Achievements, passend zum bestehenden
-Scoring-Code in `web/index.html`:
+Godot hat kein eingebautes Steamworks-SDK; die verbreitete Lösung ist das
+Community-Plugin [**GodotSteam**](https://godotsteam.com/) (GDExtension,
+deckt Achievements, Cloud-Saves, Lobbies/Matchmaking und Rich Presence ab).
+Einbindung: GodotSteam-Release ins Projekt legen, `Steam.steamInit()` in
+einem Autoload beim Start aufrufen. Mögliche erste Achievements, passend
+zum bestehenden Code in `godot/scripts/main.gd`:
 
 | Achievement | Auslöser im Code |
 |---|---|
-| Erste Kugel | `state.score` wechselt von 0 auf 10 |
-| Erste Power-Kugel | `Audio_.power()` wird aufgerufen |
-| Erstes Wesen gefressen | `en.mode = 'eaten'` |
-| Level 3 erreicht | `state.levelIndex === 2` in `startLevel` |
-| Highscore geknackt | `state.score > state.highScore` in `endGame` |
+| Erste Kugel | `_check_pickups()` — erster `result.pellet == true` |
+| Erste Power-Kugel | `result.power == true` |
+| Erstes Wesen gefressen | `enemy.mode = "eaten"` in `_check_enemy_collision` |
+| Level 3 erreicht | `level_index == 2` in `start_level` |
+| Highscore geknackt | `score > high_score` in `end_game` |
 
-Ohne Steamworks-SDK läuft das Spiel trotzdem in Steam (als reine
-Electron-App mit Steam als Launcher) — die Integration ist ein Ausbau, kein
-Blocker für die erste Veröffentlichung.
+## 3. Multiplayer (Koop + Kompetitiv) — nächster großer Schritt
 
-## 3. Administrative Schritte bei Valve (nicht automatisierbar)
+Godot bringt eine High-Level-Multiplayer-API (ENet-basiert) mit, die zur
+bestehenden Architektur passt:
 
-Diese Schritte müssen im eigenen Steamworks-Konto gemacht werden:
+- `godot/scripts/maze_gen.gd` ist bereits deterministisch (fester Seed →
+  identisches Labyrinth) — der Server generiert einmal, alle Clients
+  können denselben Seed erhalten und identisch rendern, oder der Server
+  bleibt vollständig autoritativ und synchronisiert nur Spielerzustand.
+- `MultiplayerSpawner` für Spieler- und Gegner-Instanzen, `MultiplayerSynchronizer`
+  für Position/Score, RPCs (`@rpc("authority")`) für Pickup-Events (nur der
+  Server entscheidet, ob eine Kugel gegessen wurde — verhindert Cheating
+  und doppeltes Zählen bei zwei Spielern am selben Pellet).
+- **Koop**: alle Spieler teilen sich `score`/`lives`, ein gemeinsames
+  Zeitlimit oder gemeinsame Gegner-Wellen.
+- **Kompetitiv**: pro Spieler eigener `score`, gleiches Labyrinth, wer beim
+  Leeren des Labyrinths vorne liegt, gewinnt das Level — die Pickup-Logik
+  in `_check_pickups()` müsste dafür pro Spieler statt global zählen.
 
-1. **Steamworks-Partnerkonto** unter partner.steamgames.com anlegen
-   (Firma oder Einzelperson, Steuerformular, Bankverbindung).
-2. **App-ID kaufen** — 100 $ Steam-Direct-Gebühr pro Titel, wird nach
-   ca. 1.000 $ Umsatz zurückerstattet.
-3. **Store-Seite** anlegen: Kapsel-Grafiken, Screenshots/Trailer, Beschreibung,
-   Preis, Alterskennzeichnung (IARC-Fragebogen).
-4. **SteamPipe / Build-Upload**: `steamcmd` mit einem App-Build-Script
-   (`.vdf`), das auf den Ordner aus `dist/` zeigt, hochladen.
-5. **Review durch Valve** abwarten, Release-Datum setzen.
+## 4. Administrative Schritte bei Valve (nicht automatisierbar)
 
-## 4. Rechtliches: Abstand zum Original
+1. **Steamworks-Partnerkonto** unter partner.steamgames.com anlegen.
+2. **App-ID kaufen** — 100 $ Steam-Direct-Gebühr (Rückerstattung nach
+   ca. 1.000 $ Umsatz).
+3. **Store-Seite**: Kapsel-Grafiken, Screenshots/Trailer, Beschreibung,
+   Preis, IARC-Alterskennzeichnung.
+4. **SteamPipe / Build-Upload**: `steamcmd` mit App-Build-Script (`.vdf`)
+   auf den exportierten Godot-Build zeigen lassen.
+5. Review durch Valve abwarten, Release-Datum setzen.
 
-Das Spiel ist bewusst als eigenständiges Werk gehalten — eigener Name
-("Kugelschlucker" / "ZACman"), eigene, prozedural generierte Labyrinthe,
-eigene Gegner-Optik (leuchtende Polyeder statt Geister-Sprites) und
-vollständig synthetisierte Sounds statt Sample-Kopien. Das sollte vor einer
-Veröffentlichung von einer Person mit Marken-/Urheberrechtskenntnis
-gegengeprüft werden, insbesondere Name und Store-Grafiken.
+## 5. Rechtliches: Abstand zum Original
+
+Eigener Name, eigene prozedural generierte Labyrinthe, eigene Gegner-Optik
+(leuchtende Polyeder statt Geister-Sprites), vollständig synthetisierte
+Sounds statt Sample-Kopien — sollte vor Veröffentlichung trotzdem von
+jemandem mit Marken-/Urheberrechtskenntnis gegengeprüft werden.
 
 ## Nächster sinnvoller Schritt
 
-`desktop/npm install && npm start` lokal ausprobieren, dann Icons und ein
-Store-Grafik-Set anfertigen, während parallel das Steamworks-Partnerkonto
-beantragt wird (Bearbeitungszeit kann mehrere Tage betragen).
+Godot-Projekt im Editor öffnen und einmal durchspielen, dann entscheiden:
+zuerst Multiplayer (Koop/Kompetitiv) oder zuerst Steamworks-Achievements —
+beides baut auf der gleichen, jetzt getesteten Basis auf.
