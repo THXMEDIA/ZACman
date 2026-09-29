@@ -29,3 +29,20 @@ static func get_condition(id: String):
 static func display_name_for(id: String) -> String:
 	var c = get_condition(id)
 	return c.display_name if c != null else "Normal"
+
+
+## "" (no condition) plus every registered condition — the full set a
+## post-run "pick a condition" choice can offer.
+const SELECTABLE_IDS := ["", "matrix_ghost", "fear_and_loathing"]
+
+
+## A different selectable condition id than `current_id` (see
+## SELECTABLE_IDS) — always exists since there are 3 selectable values
+## total (picked at random among the other two, so "andere Kondition"
+## doesn't always offer the same alternative).
+static func other_condition_id(current_id: String) -> String:
+	var candidates := []
+	for id in SELECTABLE_IDS:
+		if id != current_id:
+			candidates.append(id)
+	return candidates[randi() % candidates.size()]

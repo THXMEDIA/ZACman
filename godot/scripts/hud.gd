@@ -7,6 +7,8 @@ signal start_pressed
 signal resume_pressed
 signal restart_pressed
 signal manhattan_pressed
+signal explorer_choice_pressed(city_id: String, condition_id: String)
+signal explorer_menu_pressed
 signal twitch_toggled(is_enabled: bool, channel: String)
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
@@ -32,6 +34,12 @@ var levelclear_panel: Control
 var levelclear_label: Label
 var levelclear_sub: Label
 
+var explorer_next_panel: PanelContainer
+var explorer_title_label: Label
+var explorer_subtitle_label: Label
+var explorer_board_box: VBoxContainer
+var explorer_choices_box: VBoxContainer
+
 var final_score_label: Label
 var final_level_label: Label
 var final_hs_label: Label
@@ -55,6 +63,7 @@ func _ready() -> void:
 	_build_pause_panel()
 	_build_gameover_panel()
 	_build_levelclear_label()
+	_build_explorer_next_panel()
 
 
 func _panel_style() -> StyleBoxFlat:
@@ -300,6 +309,82 @@ func _stat_block(parent: Control, tag_text: String) -> Label:
 	return val
 
 
+## The post-Explorer-run panel: a small leaderboard for the (city,
+## condition) board just played, plus the 4 next-run choices (same/other
+## city × same/other condition — see Main._explorer_next_choices) so
+## finishing an Explorer level naturally invites another, differently-
+## flavored one instead of dropping straight back to the main menu.
+func _build_explorer_next_panel() -> void:
+	explorer_next_panel = _overlay_panel()
+	explorer_next_panel.visible = false
+	explorer_next_panel.custom_minimum_size = Vector2(460, 0)
+	var box := explorer_next_panel.get_child(0)
+
+	explorer_title_label = _title_label("EXPLORER GESCHAFFT!")
+	box.add_child(explorer_title_label)
+	explorer_subtitle_label = _subtitle_label("")
+	explorer_subtitle_label.add_theme_color_override("font_color", PELLET_COLOR)
+	box.add_child(explorer_subtitle_label)
+
+	var board_tag := _subtitle_label("BESTENLISTE")
+	board_tag.add_theme_font_size_override("font_size", 11)
+	box.add_child(board_tag)
+	explorer_board_box = VBoxContainer.new()
+	explorer_board_box.add_theme_constant_override("separation", 2)
+	box.add_child(explorer_board_box)
+
+	explorer_choices_box = VBoxContainer.new()
+	explorer_choices_box.add_theme_constant_override("separation", 6)
+	box.add_child(explorer_choices_box)
+
+	var menu_btn := _make_button("ZURÜCK ZUM MENÜ")
+	menu_btn.pressed.connect(func(): explorer_menu_pressed.emit())
+	box.add_child(menu_btn)
+
+
+## `choices` is an Array of {city_id, condition_id, label, sub} (see
+## Main._explorer_next_choices). `top_entries` is Leaderboard.get_top()'s
+## result for the board just played; `submit_result` is what
+## Leaderboard.submit_time() returned for this run.
+func show_explorer_next(choices: Array, top_entries: Array, submit_result: Dictionary, elapsed: float, title: String = "EXPLORER GESCHAFFT!") -> void:
+	hide_all_panels()
+	explorer_next_panel.visible = true
+	explorer_title_label.text = title
+
+	var rank: int = submit_result.get("rank", -1)
+	var rank_text := "Platz %d" % rank if rank > 0 else "außerhalb der Top-Liste"
+	var best_text := "  ·  neue Bestzeit!" if submit_result.get("is_new_best", false) else ""
+	explorer_subtitle_label.text = "Zeit %s  ·  %s%s" % [Speedrun.format_time(elapsed), rank_text, best_text]
+
+	for child in explorer_board_box.get_children():
+		child.queue_free()
+	if top_entries.is_empty():
+		var empty_l := _subtitle_label("Noch keine Einträge.")
+		empty_l.add_theme_font_size_override("font_size", 12)
+		explorer_board_box.add_child(empty_l)
+	else:
+		for i in top_entries.size():
+			var entry = top_entries[i]
+			var row := Label.new()
+			row.text = "%d. %s — %s" % [i + 1, entry.name, Speedrun.format_time(entry.time)]
+			row.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			row.add_theme_font_size_override("font_size", 13)
+			row.add_theme_color_override("font_color", ACCENT if i == 0 else Color(0.78, 0.85, 0.95))
+			explorer_board_box.add_child(row)
+
+	for child in explorer_choices_box.get_children():
+		child.queue_free()
+	for choice in choices:
+		var btn := _make_button(choice.label)
+		var city_id: String = choice.city_id
+		var cond_id: String = choice.condition_id
+		btn.pressed.connect(func(): explorer_choice_pressed.emit(city_id, cond_id))
+		explorer_choices_box.add_child(btn)
+		var sub_l := _subtitle_label(choice.get("sub", ""))
+		sub_l.add_theme_font_size_override("font_size", 11)
+		explorer_choices_box.add_child(sub_l)
+
+
 func _build_levelclear_label() -> void:
 	levelclear_panel = VBoxContainer.new()
 	levelclear_panel.add_theme_constant_override("separation", 6)
@@ -331,7 +416,7 @@ func _overlay_panel() -> PanelContainer:
 
 
 func show_only(panel: Control) -> void:
-	for p in [start_panel, pause_panel, gameover_panel]:
+	for p in [start_panel, pause_panel, gameover_panel, explorer_next_panel]:
 		p.visible = p == panel
 
 
@@ -339,6 +424,7 @@ func hide_all_panels() -> void:
 	start_panel.visible = false
 	pause_panel.visible = false
 	gameover_panel.visible = false
+	explorer_next_panel.visible = false
 
 
 func set_score(v: int) -> void:

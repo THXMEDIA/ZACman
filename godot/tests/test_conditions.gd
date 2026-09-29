@@ -129,6 +129,22 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL condition_base's default modify_input should pass input through unchanged")
 
+	# --- other_condition_id: always picks a different selectable id, and
+	# "no condition" ("") is itself a selectable option ---
+	checks += 1
+	if not ("" in Conditions.SELECTABLE_IDS):
+		failures += 1
+		print("FAIL SELECTABLE_IDS should include '' (no condition) as an option")
+	checks += 1
+	var saw_wrong_repeat := false
+	for i in 30: # run several times since the pick is randomized
+		for current_id in Conditions.SELECTABLE_IDS:
+			if Conditions.other_condition_id(current_id) == current_id:
+				saw_wrong_repeat = true
+	if saw_wrong_repeat:
+		failures += 1
+		print("FAIL other_condition_id should never return the same id it was given")
+
 	print("")
 	if failures == 0:
 		print("ALL %d CONDITIONS CHECKS PASSED" % checks)

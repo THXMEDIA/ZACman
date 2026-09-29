@@ -119,9 +119,28 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Drogenrausch-Level). `Main.set_condition(id)` wählt/wechselt/entfernt eine
   Kondition (`""` = keine); jede neue Kondition ist ein neues Skript unter
   `scripts/conditions/` mit einem Registry-Eintrag — der Rest des Spiels
-  muss dafür nicht geändert werden. Eine Auswahl-UI und ein pro-Kondition
-  gesplittetes Leaderboard sind als nächste Ausbaustufen im Projekt-Dokument
-  festgehalten, noch nicht implementiert.
+  muss dafür nicht geändert werden.
+- **Leaderboard** (`godot/scripts/leaderboard.gd`, Autoload `Leaderboard`):
+  lokale Bestenlisten, ein Board pro Kombination aus (Stadt/Level) ×
+  Kondition (`Leaderboard.board_key("manhattan", "matrix_ghost")` z. B.) —
+  eine Matrix-Ghost-Zeit ohne Wandkollision ist nicht mit einer normalen
+  Zeit vergleichbar, deshalb landen sie nie auf demselben Board. Persistiert
+  lokal als JSON (`user://kugelschlucker_leaderboards.json`), hinter einer
+  kleinen Schnittstelle (`submit_time`/`get_top`) gekapselt, damit ein
+  späteres Steamworks-Backend (GodotSteam Leaderboards, sobald das Projekt
+  eine Steamworks-App-ID hat — siehe `docs/STEAM_ROADMAP.md`) die
+  Persistenz ersetzen kann, ohne Main/HUD anzufassen. Sowohl normale Level
+  (`"normal-<level_index>"`) als auch das Manhattan-Bonuslevel tragen ihre
+  Laufzeit ein.
+- **Explorer-Abschluss-Auswahl**: Wird das Manhattan-Bonuslevel komplett
+  durchgespielt, zeigt das HUD statt direkt zurück zum Hauptmenü ein Panel
+  mit der Bestenliste des gerade gespielten Boards und vier Vorschlägen für
+  den nächsten Lauf — gleiche Stadt/andere Kondition, andere Stadt/gleiche
+  Kondition ("umgekehrt"), beides gleich (Wiederholung) und beides anders.
+  "Andere Stadt" fällt aktuell auf dieselbe Stadt zurück, solange nur
+  Manhattan als Explorer-Level existiert (siehe CityTheme-System oben) —
+  sobald eine zweite Stadt registriert ist, werden alle vier Kombinationen
+  automatisch unterschiedlich, ohne Code-Änderung an diesem Panel.
 - **Verkehrs- und Fußgänger-Vielfalt in Manhattan** (`taxi.gd`,
   `man_walking_dog.gd`, `kid_group.gd`): neben normalen `TAXI`-Fahrzeugen
   fährt gelegentlich eine `VERYLONGLIMOUSINE` in Chrom-Silber vorbei — das

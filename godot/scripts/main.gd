@@ -61,6 +61,13 @@ var level_start_time := 0.0
 var playing_manhattan := false
 var word_mode_until := 0.0
 
+## Which registered CityTheme (see city_themes.gd's EXPLORER_IDS) the
+## current/last Explorer run was played on. Only "manhattan" resolves to
+## real content today (see start_explorer_level) — this exists so the
+## leaderboard board key and the post-run "next choice" panel are already
+## written generically for when a second Explorer city exists.
+var explorer_city_id := "manhattan"
+
 ## The selected "Kondition" for the current run (see scripts/conditions.gd's
 ## registry) — a whole-run modifier like Matrix Ghost (no wall collision) or
 ## Fear & Loathing (noisy/inverted controls), independent of and additional
@@ -148,6 +155,8 @@ func _build_hud() -> void:
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
 	hud.manhattan_pressed.connect(_on_manhattan_pressed)
+	hud.explorer_choice_pressed.connect(_on_explorer_choice_pressed)
+	hud.explorer_menu_pressed.connect(_on_explorer_menu_pressed)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
 	Twitch.chat_command.connect(_on_twitch_command)
 	Twitch.connection_state_changed.connect(_on_twitch_connection_changed)
@@ -214,6 +223,7 @@ func begin_game() -> void:
 	score = 0
 	lives = 3
 	playing_manhattan = false
+	set_condition("") # a fresh normal run never carries over a leftover Explorer-run condition
 	hud.hide_all_panels()
 	start_level(0)
 	running = true
@@ -436,19 +446,40 @@ func _push_player_away_from(obstacle_pos: Vector3) -> void:
 		player.global_position.z += push.y
 
 
+## Always a fresh, unmodified Explorer run — the start-screen button. Runs
+## started from the post-run "next choice" panel go through
+## _start_explorer_run directly so they can carry a chosen condition.
 func begin_manhattan_game() -> void:
+	_start_explorer_run("manhattan", "")
+
+
+## Starts (or restarts) an Explorer-level run with the given city and
+## condition. Shared by begin_manhattan_game (always city="manhattan",
+## condition="") and _on_explorer_choice_pressed (the post-run panel, which
+## can carry a condition over or switch it — see _explorer_next_choices).
+func _start_explorer_run(city_id: String, cond_id: String) -> void:
 	Sfx.stop_all()
 	score = 0
 	lives = 3
 	playing_manhattan = true
+	set_condition(cond_id)
 	hud.hide_all_panels()
-	start_manhattan_level()
+	start_explorer_level(city_id)
 	running = true
 	paused = false
 	player.input_enabled = true
 	Sfx.set_siren(true, false)
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+## Dispatches to the right Explorer-level builder for `city_id`. Only
+## Manhattan exists today (see city_themes.gd's EXPLORER_IDS) — a future
+## city gets its own maze/obstacle builder and a real branch here, the same
+## way start_manhattan_level() itself works.
+func start_explorer_level(city_id: String) -> void:
+	explorer_city_id = city_id
+	start_manhattan_level()
 
 
 func manhattan_complete_sequence() -> void:
@@ -458,6 +489,7 @@ func manhattan_complete_sequence() -> void:
 	if score > high_score:
 		high_score = score
 		_save_highscore(high_score)
+	var elapsed := now - level_start_time
 	hud.show_levelclear(true, "Manhattan bezwungen! Punkte " + str(score))
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	await get_tree().create_timer(2.2).timeout
@@ -467,13 +499,57 @@ func manhattan_complete_sequence() -> void:
 	Sfx.stop_all()
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
-	hud.show_only(hud.start_panel)
+
+	# Leaderboard is scoped to (city, condition) — a Matrix-Ghost run isn't
+	# comparable to an unmodified one — and the post-run panel offers the
+	# 4 next-run combinations (same/other city × same/other condition) so
+	# every completed Explorer run naturally invites another, differently-
+	# flavored one instead of dropping straight back to the main menu.
+	var submit_result := Leaderboard.submit_time(explorer_city_id, condition_id, elapsed)
+	var top_entries := Leaderboard.get_top(explorer_city_id, condition_id, 5)
+	var city_name: String = CityThemesScript.get_theme(explorer_city_id).display_name
+	hud.show_explorer_next(_explorer_next_choices(), top_entries, submit_result, elapsed, "%s GESCHAFFT!" % city_name.to_upper())
+
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	player.input_enabled = false
 
 
+## The 4 post-run choices: same/other city crossed with same/other
+## condition. "Other city" currently falls back to the same city (only
+## Manhattan is registered — see city_themes.gd's EXPLORER_IDS), so two of
+## these can be identical until a second Explorer city exists; that's
+## expected, not a bug (see this project's Explorer-Level-Erweiterung doc).
+func _explorer_next_choices() -> Array:
+	var same_city := explorer_city_id
+	var other_city: String = CityThemesScript.other_explorer_id(explorer_city_id)
+	var same_cond := condition_id
+	var other_cond: String = ConditionsScript.other_condition_id(condition_id)
+
+	var combos := [
+		{"city_id": same_city, "condition_id": other_cond, "label": "GLEICHE STADT · ANDERE KONDITION"},
+		{"city_id": other_city, "condition_id": same_cond, "label": "ANDERE STADT · GLEICHE KONDITION"},
+		{"city_id": same_city, "condition_id": same_cond, "label": "NOCHMAL · BEIDES GLEICH"},
+		{"city_id": other_city, "condition_id": other_cond, "label": "BEIDES ANDERS"},
+	]
+	for c in combos:
+		var city_display: String = CityThemesScript.get_theme(c.city_id).display_name
+		var cond_display: String = ConditionsScript.display_name_for(c.condition_id)
+		c["sub"] = "%s · %s" % [city_display, cond_display]
+	return combos
+
+
 func _on_manhattan_pressed() -> void:
 	begin_manhattan_game()
+
+
+func _on_explorer_choice_pressed(city_id: String, cond_id: String) -> void:
+	_start_explorer_run(city_id, cond_id)
+
+
+func _on_explorer_menu_pressed() -> void:
+	hud.show_only(hud.start_panel)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	player.input_enabled = false
 
 
 ## ---------------- Twitch chat (optional, opt-in) ----------------
@@ -565,6 +641,7 @@ func level_complete_sequence() -> void:
 
 	var elapsed := now - level_start_time
 	var result := Speedrun.record_level_time(level_index, elapsed)
+	Leaderboard.submit_time("normal-%d" % level_index, condition_id, elapsed)
 	var subtitle := "Zeit " + Speedrun.format_time(elapsed)
 	if result.newly_unlocked_bonus:
 		subtitle += "  ·  BONUSLEVEL FREIGESCHALTET!"

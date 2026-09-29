@@ -79,6 +79,17 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal and manhattan themes should have different background colors")
 
+	# --- other_explorer_id: falls back to the same id when it's the only
+	# registered explorer city (today: just Manhattan) ---
+	checks += 1
+	if CityThemes.EXPLORER_IDS.find("manhattan") < 0:
+		failures += 1
+		print("FAIL EXPLORER_IDS should list 'manhattan'")
+	checks += 1
+	if CityThemes.other_explorer_id("manhattan") != "manhattan":
+		failures += 1
+		print("FAIL other_explorer_id should fall back to the same id with only 1 explorer city registered, got '%s'" % CityThemes.other_explorer_id("manhattan"))
+
 	print("")
 	if failures == 0:
 		print("ALL %d CITY THEME CHECKS PASSED" % checks)

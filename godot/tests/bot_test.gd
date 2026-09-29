@@ -55,6 +55,8 @@ func _pin_enemy_at(enemy, cell: Vector2i) -> void:
 
 
 func _run_checks() -> void:
+	Leaderboard.reset_all()
+
 	# ---- begin_game starts cleanly ----
 	main.begin_game()
 	await get_tree().process_frame
@@ -218,7 +220,21 @@ func _run_checks() -> void:
 	_check("manhattan: clearing it returns to the start screen (not next_level)", main.running == false)
 	await get_tree().create_timer(2.4).timeout
 	_check("manhattan: playing_manhattan flag cleared after completion", main.playing_manhattan == false)
-	_check("manhattan: start panel shown again", main.hud.start_panel.visible == true)
+	_check("manhattan: explorer next-run panel shown after completion", main.hud.explorer_next_panel.visible == true)
+	_check("manhattan: leaderboard recorded this run", Leaderboard.get_top("manhattan", "", 1).size() == 1)
+
+	# "ZURÜCK ZUM MENÜ" on the next-run panel returns to the start screen.
+	main.hud.explorer_menu_pressed.emit()
+	await get_tree().process_frame
+	_check("manhattan: back-to-menu returns to the start panel", main.hud.start_panel.visible == true)
+
+	# Picking one of the 4 next-run choices (same/other city × same/other
+	# condition — see Main._explorer_next_choices) starts a fresh Explorer
+	# run with that combination's condition wired onto the player.
+	main.hud.explorer_choice_pressed.emit("manhattan", "fear_and_loathing")
+	await get_tree().process_frame
+	_check("manhattan: choosing a next-run combo starts a new Explorer run", main.running == true and main.playing_manhattan == true)
+	_check("manhattan: choosing a next-run combo applies its condition", main.condition_id == "fear_and_loathing" and main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
 
 	# ---- Twitch chat commands (opt-in gameplay effects), driven end-to-end
 	# through the real chat_command signal rather than calling Main's

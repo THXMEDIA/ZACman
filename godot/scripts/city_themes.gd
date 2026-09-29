@@ -95,3 +95,22 @@ static func get_theme(id: String) -> Resource:
 			return manhattan()
 		_:
 			return normal()
+
+
+## The "calm explorer" city themes selectable from the post-run "pick a
+## city" choice (see main.gd's _explorer_next_choices) — not the Matrix
+## speedrun levels, which aren't part of that rotation. Add a new city's id
+## here once it has its own static func above.
+const EXPLORER_IDS := ["manhattan"]
+
+
+## A different registered explorer city id than `current_id`, for the
+## post-run "andere Stadt" choice — falls back to `current_id` itself when
+## it's the only explorer city registered yet (today: just Manhattan). See
+## this project's "Explorer-Level-Erweiterung, Leaderboard & Konditionen"
+## doc — more cities are the next content step, not an architecture change.
+static func other_explorer_id(current_id: String) -> String:
+	for id in EXPLORER_IDS:
+		if id != current_id:
+			return id
+	return current_id

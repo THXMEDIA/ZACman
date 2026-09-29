@@ -17,6 +17,7 @@ MazeGen="*res://scripts/maze_gen.gd"
 Sfx="*res://scripts/audio_synth.gd"
 Speedrun="*res://scripts/speedrun.gd"
 Twitch="*res://scripts/twitch_chat.gd"
+Leaderboard="*res://scripts/leaderboard.gd"
 
 [display]
 
