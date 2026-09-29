@@ -6,6 +6,8 @@ extends CanvasLayer
 signal start_pressed
 signal resume_pressed
 signal restart_pressed
+signal manhattan_pressed
+signal twitch_toggled(is_enabled: bool, channel: String)
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
 const BORDER := Color(0.31, 0.66, 1.0, 0.35)
@@ -17,6 +19,8 @@ const DANGER := Color(1.0, 0.231, 0.365)
 var score_label: Label
 var level_label: Label
 var lives_box: HBoxContainer
+var timer_label: Label
+var best_label: Label
 var power_bar: ProgressBar
 var power_wrap: Control
 var minimap: Control
@@ -24,12 +28,18 @@ var minimap: Control
 var start_panel: PanelContainer
 var pause_panel: PanelContainer
 var gameover_panel: PanelContainer
+var levelclear_panel: Control
 var levelclear_label: Label
+var levelclear_sub: Label
 
 var final_score_label: Label
 var final_level_label: Label
 var final_hs_label: Label
 var start_hs_label: Label
+var manhattan_btn: Button
+var twitch_toggle: CheckBox
+var twitch_channel_edit: LineEdit
+var twitch_status_label: Label
 
 var minimap_maze = null
 var minimap_view = null
@@ -72,6 +82,8 @@ func _build_hud_bar() -> void:
 
 	score_label = _make_chip(left, "PUNKTE", "0")
 	level_label = _make_chip(left, "LEVEL", "1")
+	timer_label = _make_chip(left, "ZEIT", "0:00.00")
+	best_label = _make_chip(left, "BESTZEIT", "--:--")
 
 	var lives_chip := PanelContainer.new()
 	lives_chip.add_theme_stylebox_override("panel", _panel_style())
@@ -209,9 +221,31 @@ func _build_start_panel() -> void:
 	var controls := _subtitle_label("WASD laufen   ·   Maus umschauen   ·   Esc Pause")
 	box.add_child(controls)
 
+	var twitch_row := HBoxContainer.new()
+	twitch_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	twitch_row.add_theme_constant_override("separation", 8)
+	box.add_child(twitch_row)
+	twitch_toggle = CheckBox.new()
+	twitch_toggle.text = "Twitch-Chat-Effekte (!power, !fruit)"
+	twitch_row.add_child(twitch_toggle)
+	twitch_channel_edit = LineEdit.new()
+	twitch_channel_edit.placeholder_text = "twitch-kanal"
+	twitch_channel_edit.custom_minimum_size = Vector2(130, 0)
+	twitch_row.add_child(twitch_channel_edit)
+	twitch_toggle.toggled.connect(func(pressed: bool): twitch_toggled.emit(pressed, twitch_channel_edit.text))
+
+	twitch_status_label = _subtitle_label("Aus — fuer ernsthafte Speedruns ausgeschaltet lassen.")
+	twitch_status_label.add_theme_font_size_override("font_size", 11)
+	box.add_child(twitch_status_label)
+
 	var btn := _make_button("SPIEL STARTEN")
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
+
+	manhattan_btn = _make_button("MANHATTAN-BONUSLEVEL")
+	manhattan_btn.pressed.connect(func(): manhattan_pressed.emit())
+	manhattan_btn.visible = false
+	box.add_child(manhattan_btn)
 
 
 func _build_pause_panel() -> void:
@@ -267,10 +301,17 @@ func _stat_block(parent: Control, tag_text: String) -> Label:
 
 
 func _build_levelclear_label() -> void:
+	levelclear_panel = VBoxContainer.new()
+	levelclear_panel.add_theme_constant_override("separation", 6)
+	levelclear_panel.set_anchors_preset(Control.PRESET_CENTER)
+	levelclear_panel.alignment = BoxContainer.ALIGNMENT_CENTER
+	levelclear_panel.visible = false
+	add_child(levelclear_panel)
 	levelclear_label = _title_label("LEVEL GESCHAFFT!", 20)
-	levelclear_label.set_anchors_preset(Control.PRESET_CENTER)
-	levelclear_label.visible = false
-	add_child(levelclear_label)
+	levelclear_panel.add_child(levelclear_label)
+	levelclear_sub = _subtitle_label("")
+	levelclear_sub.add_theme_color_override("font_color", PELLET_COLOR)
+	levelclear_panel.add_child(levelclear_sub)
 
 
 func _overlay_panel() -> PanelContainer:
@@ -304,8 +345,16 @@ func set_score(v: int) -> void:
 	score_label.text = str(v)
 
 
-func set_level(v: int) -> void:
+func set_level(v) -> void:
 	level_label.text = str(v)
+
+
+func set_bonus_unlocked(v: bool) -> void:
+	manhattan_btn.visible = v
+
+
+func set_twitch_status(text: String) -> void:
+	twitch_status_label.text = text
 
 
 func set_lives(v: int) -> void:
@@ -323,7 +372,7 @@ func set_start_highscore(v: int) -> void:
 	start_hs_label.text = str(v)
 
 
-func show_gameover(score: int, level: int, highscore: int) -> void:
+func show_gameover(score: int, level, highscore: int) -> void:
 	final_score_label.text = str(score)
 	final_level_label.text = str(level)
 	final_hs_label.text = str(highscore)
@@ -331,8 +380,19 @@ func show_gameover(score: int, level: int, highscore: int) -> void:
 	gameover_panel.visible = true
 
 
-func show_levelclear(visible_flag: bool) -> void:
-	levelclear_label.visible = visible_flag
+func show_levelclear(visible_flag: bool, subtitle: String = "") -> void:
+	levelclear_panel.visible = visible_flag
+	if visible_flag:
+		levelclear_sub.text = subtitle
+		levelclear_sub.visible = subtitle != ""
+
+
+func set_timer(seconds: float) -> void:
+	timer_label.text = Speedrun.format_time(seconds)
+
+
+func set_best_time(seconds: float) -> void:
+	best_label.text = Speedrun.format_time(seconds)
 
 
 ## Minimap: fed a maze + player + enemies each frame by Main, drawn via _draw().

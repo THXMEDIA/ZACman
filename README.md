@@ -14,8 +14,9 @@ bleibt spielbar, wird aber nicht mehr parallel weiterentwickelt.
 ```
 godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
+  shaders/          ascii_post.gdshader — Matrix-ASCII-Bildschirmeffekt
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth-Konnektivität + Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Manhattan, Twitch, Bot-Simulation)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
 tests/             Node-Tests für die JS-Referenzimplementierung
@@ -27,16 +28,16 @@ docs/STEAM_ROADMAP.md  Weg von hier zu einer Steam-Veröffentlichung
 ```bash
 godot --path godot                                    # im Editor öffnen
 godot --path godot godot/scenes/Main.tscn              # direkt starten (mit Editor installiert)
-godot --headless --path godot --script res://tests/test_maze.gd   # Labyrinth-Tests
-godot --headless --path godot res://tests/BotTest.tscn             # Bot-Simulation der gesamten Spiellogik
+npm run test:godot                                     # alle Headless-Tests in Reihenfolge
 ```
 
 Steuerung: `WASD` laufen, Maus umschauen, `Esc` Pause.
 
-Die Bot-Simulation instanziiert die echte `Main.tscn`-Szene headless, steuert
-den Spieler über den echten `Input`-Singleton und prüft Kollisionen,
-Gegner-KI-Zustände, Pickup-Logik und Level-Übergänge im laufenden Godot-
-Physik-Loop — nicht in einer Attrappe.
+Die Bot-Simulation (`godot/tests/BotTest.tscn`) instanziiert die echte
+`Main.tscn`-Szene headless, steuert den Spieler über den echten
+`Input`-Singleton und prüft Kollisionen, Gegner-KI-Zustände, Pickup-Logik,
+Level-Übergänge, den Speedrun-/Bonuslevel-Unlock und die Twitch-Chat-Befehle
+im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 
 ## Spiel-Design
 
@@ -50,6 +51,27 @@ Physik-Loop — nicht in einer Attrappe.
   im "Frightened"-Modus nach einer Power-Kugel fliehen sie und lassen sich fressen.
 - **Sound**: komplett synthetisch (Godot: zur Ladezeit gerenderte PCM-Buffer
   aus Oszillator + Hüllkurve; Web: Web-Audio-Oszillatoren) — keine Samples.
+- **Matrix-ASCII-Look**: ein Screen-Space-Post-Effekt (`godot/shaders/ascii_post.gdshader`,
+  angelehnt an das ReclaimTheStreets-Projekt) wandelt das Bild ab einer
+  gewissen Entfernung in grüne ASCII-Zeichen um — Pellets/Gegner in
+  Spielernähe bleiben scharf, die Labyrinthwände sind fast immer im
+  ASCII-Bereich.
+- **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
+  Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten,
+  schaltet sich das **Manhattan-Bonuslevel** dauerhaft frei — ein von Hand
+  nach dem echten Midtown-Straßenraster gebautes Level (`godot/scripts/
+  manhattan_maze.gd`; echte Avenue-/Street-Namen, Startpunkt Penn Station,
+  Geisterhaus bei Grand Central), spielbar über den Button auf dem
+  Startbildschirm sobald freigeschaltet. Live-OSM/Overpass-Daten sind aus
+  dieser Sandbox nicht erreichbar — für eine datengetriebene Variante siehe
+  `tools/osm_to_chunks.py` im ReclaimTheStreets-Projekt, lokal ausführbar.
+- **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
+  (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
+  Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte
+  Speedruns nicht beeinflusst werden). Zuschauer können mit `!power`
+  (Frightened-Modus auslösen) und `!fruit` (Bonusfrucht spawnen) helfen —
+  beide Effekte können den Spieler nur unterstützen, nie das Spiel beenden
+  oder die Eingabe blockieren.
 
 ## Steam-Veröffentlichung
 

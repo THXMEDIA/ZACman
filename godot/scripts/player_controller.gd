@@ -44,6 +44,27 @@ func _ready() -> void:
 	camera.add_child(light)
 	light.position = Vector3(0, 0, 0)
 
+	_setup_ascii_quad(camera)
+
+
+## Matrix-ASCII post effect: a QuadMesh glued to the camera, shaded with
+## ascii_post.gdshader (screen-space, no external font/assets — see that
+## file for how the glyphs are encoded). Ported from the ReclaimTheStreets
+## project's identical technique.
+func _setup_ascii_quad(cam: Camera3D) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.2, 1.4)
+	var mi := MeshInstance3D.new()
+	mi.mesh = quad
+	mi.position = Vector3(0, 0, -0.05)
+	mi.extra_cull_margin = 16384.0
+	var shader := load("res://shaders/ascii_post.gdshader")
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cam.add_child(mi)
+
 
 func warp_to(cell: Vector2i, facing_yaw: float) -> void:
 	global_position = Vector3(cell.y * CELL, EYE_H, cell.x * CELL)

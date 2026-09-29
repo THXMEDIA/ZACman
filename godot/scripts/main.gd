@@ -15,6 +15,9 @@ const LEVELS := [
 	{"rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed_base": 40000},
 ]
 
+const MANHATTAN_GHOST_SPEED := 3.0
+const MANHATTAN_GHOST_COUNT := 6
+
 const ENEMY_PALETTE := [
 	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
 	{"color": Color(1.0, 0.365, 0.635), "glow": Color(1.0, 0.62, 0.788)},
@@ -41,6 +44,8 @@ var invuln_until := 0.0
 var start_cell := Vector2i(1, 1)
 var fruit_spawned := false
 var now := 0.0
+var level_start_time := 0.0
+var playing_manhattan := false
 
 var enemies: Array = [] # Array[Enemy]
 
@@ -57,6 +62,7 @@ func _ready() -> void:
 	add_child(enemy_root)
 
 	hud.set_start_highscore(high_score)
+	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.show_only(hud.start_panel)
 
 
@@ -89,6 +95,10 @@ func _build_hud() -> void:
 	hud.start_pressed.connect(_on_start_pressed)
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
+	hud.manhattan_pressed.connect(_on_manhattan_pressed)
+	hud.twitch_toggled.connect(_on_twitch_toggled)
+	Twitch.chat_command.connect(_on_twitch_command)
+	Twitch.connection_state_changed.connect(_on_twitch_connection_changed)
 
 
 ## ---------------- level lifecycle ----------------
@@ -139,12 +149,15 @@ func start_level(index: int) -> void:
 	hud.set_level(level_index + 1)
 	hud.set_score(score)
 	hud.set_lives(lives)
+	hud.set_best_time(Speedrun.best_for(level_index))
+	level_start_time = now
 
 
 func begin_game() -> void:
 	Sfx.stop_all()
 	score = 0
 	lives = 3
+	playing_manhattan = false
 	hud.hide_all_panels()
 	start_level(0)
 	running = true
@@ -153,6 +166,134 @@ func begin_game() -> void:
 	Sfx.set_siren(true, false)
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+## ---------------- Manhattan bonus level ----------------
+## Unlocked by Speedrun.is_bonus_unlocked() (beating a level's speedrun
+## target — see Speedrun.record_level_time). Reuses every normal-level
+## system (MazeView, Enemy, pickups, scoring, pause) against a hand-built
+## real-Midtown-grid Maze instead of a MazeGen.generate_maze() result.
+func start_manhattan_level() -> void:
+	var mm = load("res://scripts/manhattan_maze.gd").new()
+	maze = mm.generate()
+	mm.free()
+
+	start_cell = maze.start_cell
+	level_index = -1
+	maze_view.build(maze, start_cell)
+	fruit_spawned = false
+
+	player.warp_to(start_cell, PI)
+	invuln_until = now + 1.2
+
+	for e in enemies:
+		e.queue_free()
+	enemies.clear()
+	var house_cells := []
+	for r in range(maze.house.r0 + 1, maze.house.r1):
+		for c in range(maze.house.c0 + 1, maze.house.c1):
+			house_cells.append(Vector2i(r, c))
+
+	for i in MANHATTAN_GHOST_COUNT:
+		var enemy := Node3D.new()
+		enemy.set_script(load("res://scripts/enemy.gd"))
+		enemy_root.add_child(enemy)
+		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
+		enemy.setup(pal.color, pal.glow, MANHATTAN_GHOST_SPEED + i * 0.05)
+		var cell: Vector2i = house_cells[i % house_cells.size()]
+		enemy.place_in_house(cell)
+		enemy.release_at = now + 1.5 + i * 1.4
+		enemies.append(enemy)
+
+	hud.set_level("MANHATTAN")
+	hud.set_score(score)
+	hud.set_lives(lives)
+	hud.set_best_time(-1.0)
+	level_start_time = now
+
+
+func begin_manhattan_game() -> void:
+	Sfx.stop_all()
+	score = 0
+	lives = 3
+	playing_manhattan = true
+	hud.hide_all_panels()
+	start_manhattan_level()
+	running = true
+	paused = false
+	player.input_enabled = true
+	Sfx.set_siren(true, false)
+	if not OS.has_feature("web"):
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+
+func manhattan_complete_sequence() -> void:
+	running = false
+	Sfx.set_siren(false, false)
+	Sfx.level_clear()
+	if score > high_score:
+		high_score = score
+		_save_highscore(high_score)
+	hud.show_levelclear(true, "Manhattan bezwungen! Punkte " + str(score))
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	await get_tree().create_timer(2.2).timeout
+	hud.show_levelclear(false)
+	playing_manhattan = false
+	Sfx.stop_all()
+	hud.set_start_highscore(high_score)
+	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
+	hud.show_only(hud.start_panel)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	player.input_enabled = false
+
+
+func _on_manhattan_pressed() -> void:
+	begin_manhattan_game()
+
+
+## ---------------- Twitch chat (optional, opt-in) ----------------
+
+func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
+	Twitch.enabled = is_enabled
+	if is_enabled:
+		if channel.strip_edges() == "":
+			hud.set_twitch_status("Bitte einen Twitch-Kanalnamen eingeben.")
+			Twitch.enabled = false
+			return
+		hud.set_twitch_status("Verbinde mit #%s ..." % channel.strip_edges().to_lower())
+		Twitch.connect_to_channel(channel)
+	else:
+		Twitch.disconnect_chat()
+		hud.set_twitch_status("Aus — fuer ernsthafte Speedruns ausgeschaltet lassen.")
+
+
+func _on_twitch_connection_changed(is_connected: bool) -> void:
+	if is_connected:
+		hud.set_twitch_status("Verbunden mit #%s — !power und !fruit sind aktiv." % Twitch.channel)
+	elif Twitch.enabled:
+		hud.set_twitch_status("Verbindung getrennt.")
+
+
+## Viewer chat commands, opt-in only (see Twitch.enabled / the start-screen
+## toggle). Deliberately small and harmless: they can only help the player
+## (early power pellet, early fruit), never take away input or end the run,
+## so turning this on can't be used to grief a streamer's run.
+func _on_twitch_command(_user: String, command: String, _args: String) -> void:
+	if not (running and not paused):
+		return
+	match command:
+		"power":
+			frightened_until = now + FRIGHTENED_DURATION
+			combo_count = 0
+			Sfx.power()
+			Sfx.set_siren(true, true)
+			for enemy in enemies:
+				if enemy.mode == "chase":
+					enemy.mode = "frightened"
+		"fruit":
+			if not fruit_spawned:
+				fruit_spawned = true
+				maze_view.spawn_fruit(now)
 
 
 func next_level() -> void:
@@ -184,7 +325,10 @@ func end_game() -> void:
 	if score > high_score:
 		high_score = score
 		_save_highscore(high_score)
-	hud.show_gameover(score, level_index + 1, high_score)
+	var level_display = "MANHATTAN" if playing_manhattan else level_index + 1
+	hud.show_gameover(score, level_display, high_score)
+	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
+	playing_manhattan = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 
@@ -192,7 +336,21 @@ func level_complete_sequence() -> void:
 	running = false
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
-	hud.show_levelclear(true)
+
+	var elapsed := now - level_start_time
+	var result := Speedrun.record_level_time(level_index, elapsed)
+	var subtitle := "Zeit " + Speedrun.format_time(elapsed)
+	if result.newly_unlocked_bonus:
+		subtitle += "  ·  BONUSLEVEL FREIGESCHALTET!"
+		Sfx.eat_enemy()
+		hud.set_bonus_unlocked(true)
+	elif result.is_new_best:
+		subtitle += "  ·  neue Bestzeit!"
+	elif result.beat_target:
+		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
+	hud.set_best_time(Speedrun.best_for(level_index))
+
+	hud.show_levelclear(true, subtitle)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	await get_tree().create_timer(1.7).timeout
 	hud.show_levelclear(false)
@@ -260,6 +418,7 @@ func _process(delta: float) -> void:
 
 	_check_pickups()
 
+	hud.set_timer(now - level_start_time)
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
 	if now >= frightened_until and Sfx.siren_state() == "frightened":
 		Sfx.set_siren(true, false)
@@ -321,7 +480,10 @@ func _check_pickups() -> void:
 		maze_view.spawn_fruit(now)
 
 	if maze_view.remaining_pickups() <= 0 and running:
-		level_complete_sequence()
+		if playing_manhattan:
+			manhattan_complete_sequence()
+		else:
+			level_complete_sequence()
 
 
 ## ---------------- high score persistence ----------------

@@ -178,3 +178,67 @@ func _run_checks() -> void:
 	await get_tree().create_timer(2.0).timeout
 	_check("level advances after the clear banner", main.level_index == level_before + 1, "before=%d after=%d" % [level_before, main.level_index])
 	_check("next level has fresh pellets", main.maze_view.remaining_pickups() > 0)
+
+	# ---- speedrun: a fast clear beats the level-0 target and unlocks the bonus ----
+	Speedrun.reset_all()
+	main.begin_game()
+	await get_tree().process_frame
+	main.level_start_time = main.now - 5.0 # pretend 5s elapsed, well under the level-0 target
+	var pellet_cells2: Array = main.maze_view.pellet_cells
+	for cell in pellet_cells2:
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+	for i in main.maze_view.power_cells.size():
+		var node2 = main.maze_view.power_nodes[i]
+		main.player.global_position = Vector3(node2.position.x, main.player.global_position.y, node2.position.z)
+		await get_tree().process_frame
+	_check("fast clear unlocks the Manhattan bonus", Speedrun.is_bonus_unlocked())
+	_check("fast clear records a level-0 best time", Speedrun.best_for(0) >= 0.0 and Speedrun.best_for(0) < 10.0, "best=%s" % Speedrun.best_for(0))
+	await get_tree().create_timer(2.0).timeout # let the level-clear banner finish so begin_game() below isn't fighting an in-flight await
+
+	# ---- Manhattan bonus level: reuses the normal systems against the real-Midtown grid ----
+	main.begin_manhattan_game()
+	await get_tree().process_frame
+	_check("manhattan: running", main.running == true)
+	_check("manhattan: playing_manhattan flag set", main.playing_manhattan == true)
+	_check("manhattan: maze built", main.maze != null and main.maze.rows > 0)
+	_check("manhattan: enemies spawned", main.enemies.size() == main.MANHATTAN_GHOST_COUNT, "got %d" % main.enemies.size())
+	_check("manhattan: player warped to start_cell", main.player.cell() == main.start_cell, "got %s want %s" % [main.player.cell(), main.start_cell])
+
+	var manhattan_pellets: Array = main.maze_view.pellet_cells
+	for cell in manhattan_pellets:
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+	for i in main.maze_view.power_cells.size():
+		var node3 = main.maze_view.power_nodes[i]
+		main.player.global_position = Vector3(node3.position.x, main.player.global_position.y, node3.position.z)
+		await get_tree().process_frame
+	_check("manhattan: all pickups consumed", main.maze_view.remaining_pickups() <= 0, "remaining=%d" % main.maze_view.remaining_pickups())
+	_check("manhattan: clearing it returns to the start screen (not next_level)", main.running == false)
+	await get_tree().create_timer(2.4).timeout
+	_check("manhattan: playing_manhattan flag cleared after completion", main.playing_manhattan == false)
+	_check("manhattan: start panel shown again", main.hud.start_panel.visible == true)
+
+	# ---- Twitch chat commands (opt-in gameplay effects), driven end-to-end
+	# through the real chat_command signal rather than calling Main's
+	# handler directly, so this also proves the signal wiring itself ----
+	main.begin_game()
+	await get_tree().process_frame
+	main.frightened_until = 0.0
+	Twitch.chat_command.emit("someviewer", "power", "")
+	await get_tree().process_frame
+	_check("twitch !power grants frightened mode", main.frightened_until > main.now)
+
+	main.fruit_spawned = false
+	Twitch.chat_command.emit("someviewer", "fruit", "")
+	await get_tree().process_frame
+	_check("twitch !fruit spawns the bonus fruit", main.fruit_spawned == true)
+
+	main.paused = true
+	var frightened_before_pause: float = main.frightened_until
+	Twitch.chat_command.emit("someviewer", "power", "")
+	await get_tree().process_frame
+	_check("twitch commands are ignored while paused", main.frightened_until == frightened_before_pause)
+	main.paused = false
+
+	Speedrun.reset_all()
