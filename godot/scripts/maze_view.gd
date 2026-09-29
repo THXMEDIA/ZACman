@@ -5,8 +5,10 @@ extends Node3D
 
 const CELL := 2.0
 const WALL_H := 1.9
+const WordMeshScript := preload("res://scripts/word_mesh.gd")
 
 var maze # MazeGen.Maze
+var theme := "normal" # "normal" | "manhattan"
 var pellet_cells: Array = [] # Array[Vector2i]
 var pellet_alive: Array = [] # Array[bool], parallel to pellet_cells
 var pellet_meshes: Array = [] # Array[MeshInstance3D], parallel to pellet_cells
@@ -18,7 +20,17 @@ var fruit_node: MeshInstance3D = null
 var fruit_alive := false
 var fruit_expire_at := 0.0
 
+## The "Word Mode" power-up (normal levels only — see spawn_word_powerup
+## note in _build_pellets). Manhattan never has one: it's set permanently
+## into word-mode instead, and has no power-ups at all.
+var word_powerup_cell := Vector2i(-1, -1)
+var word_powerup_node: MeshInstance3D = null
+var word_powerup_alive := false
+
 var walls_body: StaticBody3D
+var normal_wall_mmi: MultiMeshInstance3D
+var word_wall_root: Node3D
+var word_mode_active := false
 var _t := 0.0
 
 var wall_material: StandardMaterial3D
@@ -27,7 +39,12 @@ var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
 
 
-func build(new_maze, start_cell: Vector2i) -> void:
+## `reserved_cells` (Manhattan only) are cells a stationary obstacle
+## (Pedestrian) will occupy — excluded from pellet placement up front so a
+## pedestrian standing on a pellet can never permanently block it (taxis
+## are moving obstacles and don't need this: they pass through, they don't
+## park on a pellet forever).
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = []) -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -38,12 +55,20 @@ func build(new_maze, start_cell: Vector2i) -> void:
 	power_alive.clear()
 	fruit_node = null
 	fruit_alive = false
+	word_powerup_cell = Vector2i(-1, -1)
+	word_powerup_node = null
+	word_powerup_alive = false
 
 	maze = new_maze
+	theme = maze_theme
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
-	_build_pellets(start_cell)
+	_build_pellets(start_cell, reserved_cells)
+	# Manhattan is permanently in the word-built-world look; the normal
+	# levels start out looking normal and only switch when the Word Mode
+	# power-up is eaten (see Main._on_word_powerup / set_word_mode).
+	set_word_mode(theme == "manhattan")
 
 
 func _make_materials() -> void:
@@ -94,9 +119,30 @@ func _build_walls() -> void:
 		var xf := Transform3D(Basis(), Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL))
 		mm.set_instance_transform(i, xf)
 
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	add_child(mmi)
+	normal_wall_mmi = MultiMeshInstance3D.new()
+	normal_wall_mmi.multimesh = mm
+	add_child(normal_wall_mmi)
+
+	# The word-built-world skin: every wall cell doubles as a "WALL" 3D
+	# letterform. Built alongside the normal boxy walls (not on demand) so
+	# toggling Word Mode mid-level is instant; hidden until set_word_mode()
+	# turns it on. Manhattan uses a warm "building facade" tint, the normal
+	# levels a Matrix green to match the ASCII look they're switching out of.
+	word_wall_root = Node3D.new()
+	add_child(word_wall_root)
+	var word_color := Color(0.25, 1.0, 0.35)
+	var word_emission := 1.1
+	if theme == "manhattan":
+		word_color = Color(0.85, 0.68, 0.34)
+		word_emission = 0.35
+	for cell in wall_cells:
+		var wm := WordMeshScript.build("WALL", word_color, {"font_size": 30, "depth": WALL_H * 0.6, "emission_energy": word_emission})
+		wm.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
+		# Alternate facing so corridors running either axis catch a readable
+		# face at least some of the time — the reference look is scattered
+		# lettering, not perfectly UV-mapped signage.
+		wm.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
+		word_wall_root.add_child(wm)
 
 	walls_body = StaticBody3D.new()
 	walls_body.collision_layer = 2
@@ -137,6 +183,40 @@ func _build_floor_ceiling() -> void:
 	add_child(ceil_mesh)
 
 
+## Swaps the visible wall skin: word-built ("WALL" letterforms) vs the
+## normal boxy walls. Collision (walls_body) is untouched either way — this
+## is purely cosmetic; Main separately toggles the player's noclip.
+func set_word_mode(active: bool) -> void:
+	word_mode_active = active
+	word_wall_root.visible = active
+	normal_wall_mmi.visible = not active
+
+
+func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
+	var best: Vector2i = cells[0]
+	var best_d := -1.0
+	for cell in cells:
+		var d: float = (cell.x - from.x) * (cell.x - from.x) + (cell.y - from.y) * (cell.y - from.y)
+		if d > best_d:
+			best_d = d
+			best = cell
+	return best
+
+
+func _build_word_powerup_mesh() -> void:
+	var mesh := WordMeshScript.build("WORD", Color(0.25, 1.0, 0.35), {"font_size": 26, "depth": 0.16, "emission_energy": 1.7})
+	mesh.scale = Vector3.ONE * 0.5
+	mesh.position = Vector3(word_powerup_cell.y * CELL, 0.55, word_powerup_cell.x * CELL)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.25, 1.0, 0.35)
+	light.omni_range = 2.6
+	light.light_energy = 0.85
+	mesh.add_child(light)
+	add_child(mesh)
+	word_powerup_node = mesh
+	word_powerup_alive = true
+
+
 func _pick_power_cells(candidates: Array) -> Array:
 	var corners := [Vector2i(0, 0), Vector2i(0, maze.cols - 1), Vector2i(maze.rows - 1, 0), Vector2i(maze.rows - 1, maze.cols - 1)]
 	var picked := []
@@ -153,14 +233,21 @@ func _pick_power_cells(candidates: Array) -> Array:
 	return picked
 
 
-func _build_pellets(start_cell: Vector2i) -> void:
+func _build_pellets(start_cell: Vector2i, reserved_cells: Array = []) -> void:
 	var all_cells: Array = MazeGen.cells_in_room(maze, false)
+	var reserved_set := {}
+	for cell in reserved_cells:
+		reserved_set[cell] = true
 	var candidates := []
 	for cell in all_cells:
-		if cell != start_cell:
+		if cell != start_cell and not reserved_set.has(cell):
 			candidates.append(cell)
 
-	power_cells = _pick_power_cells(candidates)
+	# Manhattan has no power-ups at all (no power pellets, no Word Mode
+	# pickup below) — it has no ghosts to use them against and is meant to
+	# be a calm explore, not a chase level. Every open cell there is just a
+	# plain collectible pellet.
+	power_cells = [] if theme == "manhattan" else _pick_power_cells(candidates)
 	var power_set := {}
 	for cell in power_cells:
 		power_set[cell] = true
@@ -168,6 +255,13 @@ func _build_pellets(start_cell: Vector2i) -> void:
 	for cell in candidates:
 		if not power_set.has(cell):
 			pellet_cells.append(cell)
+
+	# Word Mode power-up: one per normal level, taken out of the regular
+	# pellet grid (not an extra pellet on top of it) so there's exactly one
+	# clearly-special pickup to find. Manhattan has none (see build()).
+	if theme != "manhattan" and pellet_cells.size() > 0:
+		word_powerup_cell = _pick_farthest_cell(pellet_cells, start_cell)
+		pellet_cells.erase(word_powerup_cell)
 
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.11
@@ -197,6 +291,9 @@ func _build_pellets(start_cell: Vector2i) -> void:
 		add_child(mesh)
 		power_nodes.append(mesh)
 		power_alive.append(true)
+
+	if word_powerup_cell.x >= 0:
+		_build_word_powerup_mesh()
 
 
 func total_pickups() -> int:
@@ -232,9 +329,9 @@ func spawn_fruit(now: float) -> void:
 
 
 ## Consumes any pickup within `radius` of `pos`. Returns a Dictionary describing
-## what was eaten this call: {pellet: bool, power: bool, fruit: bool}.
+## what was eaten this call: {pellet, power, fruit, word_powerup: bool}.
 func consume_at(pos: Vector3, now: float) -> Dictionary:
-	var result := {"pellet": false, "power": false, "fruit": false}
+	var result := {"pellet": false, "power": false, "fruit": false, "word_powerup": false}
 	for i in pellet_cells.size():
 		if not pellet_alive[i]:
 			continue
@@ -254,6 +351,13 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			power_alive[i] = false
 			node.visible = false
 			result.power = true
+
+	if word_powerup_alive and word_powerup_node != null:
+		var d := Vector2(word_powerup_node.position.x - pos.x, word_powerup_node.position.z - pos.z).length()
+		if d < 0.5:
+			word_powerup_alive = false
+			word_powerup_node.visible = false
+			result.word_powerup = true
 
 	if fruit_alive and fruit_node != null:
 		var d := Vector2(fruit_node.position.x - pos.x, fruit_node.position.z - pos.z).length()
@@ -276,3 +380,7 @@ func _process(delta: float) -> void:
 			power_nodes[i].scale = Vector3.ONE * s
 	if fruit_alive and fruit_node != null:
 		fruit_node.rotate_y(delta * 1.4)
+	if word_powerup_alive and word_powerup_node != null:
+		word_powerup_node.rotate_y(delta * 2.0)
+		var ws := 0.5 + sin(_t * 5.0) * 0.06
+		word_powerup_node.scale = Vector3.ONE * ws

@@ -202,7 +202,8 @@ func _run_checks() -> void:
 	_check("manhattan: running", main.running == true)
 	_check("manhattan: playing_manhattan flag set", main.playing_manhattan == true)
 	_check("manhattan: maze built", main.maze != null and main.maze.rows > 0)
-	_check("manhattan: enemies spawned", main.enemies.size() == main.MANHATTAN_GHOST_COUNT, "got %d" % main.enemies.size())
+	_check("manhattan: no ghosts (calm explore level)", main.enemies.size() == 0, "got %d" % main.enemies.size())
+	_check("manhattan: no power pellets either", main.maze_view.power_cells.size() == 0, "got %d" % main.maze_view.power_cells.size())
 	_check("manhattan: player warped to start_cell", main.player.cell() == main.start_cell, "got %s want %s" % [main.player.cell(), main.start_cell])
 
 	var manhattan_pellets: Array = main.maze_view.pellet_cells
@@ -240,5 +241,49 @@ func _run_checks() -> void:
 	await get_tree().process_frame
 	_check("twitch commands are ignored while paused", main.frightened_until == frightened_before_pause)
 	main.paused = false
+
+	# ---- Word Mode power-up: reskins walls/ghosts as letterforms and lets
+	# the player walk through walls for its duration, then reverts ----
+	main.begin_game()
+	await get_tree().process_frame
+	_check("word mode: off at level start", main.maze_view.word_mode_active == false)
+	_check("word mode: player has normal wall collision at level start", main.player.collision_mask == 2)
+	main.player.global_position = Vector3(main.maze_view.word_powerup_node.position.x, main.player.global_position.y, main.maze_view.word_powerup_node.position.z)
+	await get_tree().process_frame
+	_check("word mode: picking up WORD activates it", main.word_mode_until > main.now)
+	_check("word mode: maze_view switches to word-built walls", main.maze_view.word_mode_active == true)
+	_check("word mode: player noclips through walls", main.player.collision_mask == 0)
+	var any_ghost_skinned := false
+	for e in main.enemies:
+		if e.word_skin_active:
+			any_ghost_skinned = true
+	_check("word mode: enemies reskin to GHOST letterforms", any_ghost_skinned)
+
+	main.word_mode_until = main.now - 0.01 # force expiry without waiting out the real duration
+	await get_tree().process_frame
+	_check("word mode: reverts after expiry (maze_view)", main.maze_view.word_mode_active == false)
+	_check("word mode: reverts after expiry (player collision restored)", main.player.collision_mask == 2)
+	var any_still_skinned := false
+	for e in main.enemies:
+		if e.word_skin_active:
+			any_still_skinned = true
+	_check("word mode: reverts after expiry (enemies)", not any_still_skinned)
+
+	# ---- Manhattan is permanently word-built, has no Word Mode power-up,
+	# and its taxis/pedestrians block the player without costing a life ----
+	main.begin_manhattan_game()
+	await get_tree().process_frame
+	_check("manhattan: permanently word-built (no power-up needed)", main.maze_view.word_mode_active == true)
+	_check("manhattan: no word power-up node exists", main.maze_view.word_powerup_node == null)
+	_check("manhattan: taxis spawned", main.taxis.size() > 0, "got %d" % main.taxis.size())
+	_check("manhattan: pedestrians spawned", main.pedestrians.size() > 0, "got %d" % main.pedestrians.size())
+	var lives_before_obstacle: int = main.lives
+	var ped = main.pedestrians[0]
+	main.player.global_position = Vector3(ped.position.x + 0.05, main.player.global_position.y, ped.position.z)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var d_to_ped := Vector2(main.player.global_position.x - ped.position.x, main.player.global_position.z - ped.position.z).length()
+	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
+	_check("manhattan: obstacles cost no life", main.lives == lives_before_obstacle)
 
 	Speedrun.reset_all()

@@ -4,6 +4,7 @@ extends Node3D
 ## frightened -> eaten -> house.
 
 const CELL := 2.0
+const WordMeshScript := preload("res://scripts/word_mesh.gd")
 
 var palette_color := Color(1, 0.23, 0.36)
 var palette_glow := Color(1, 0.42, 0.51)
@@ -22,7 +23,9 @@ var eaten_until := 0.0
 
 var body_mesh: MeshInstance3D
 var body_material: StandardMaterial3D
+var word_mesh: MeshInstance3D
 var light: OmniLight3D
+var word_skin_active := false
 
 var _bob_seed := 0.0
 
@@ -52,11 +55,24 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	body_mesh.material_override = body_material
 	add_child(body_mesh)
 
+	# Word Mode reskin: the same enemy, drawn as the word GHOST instead of
+	# a polyhedron, while Main's word-mode power-up is active. Built once
+	# up front (hidden) so toggling it is instant.
+	word_mesh = WordMeshScript.build("GHOST", color, {"font_size": 26, "depth": 0.18, "emission_energy": 1.2})
+	word_mesh.visible = false
+	add_child(word_mesh)
+
 	light = OmniLight3D.new()
 	light.light_color = glow
 	light.omni_range = 3.2
 	light.light_energy = 0.8
 	add_child(light)
+
+
+func set_word_skin(active: bool) -> void:
+	word_skin_active = active
+	body_mesh.visible = not active
+	word_mesh.visible = active
 
 
 func place_in_house(cell: Vector2i) -> void:

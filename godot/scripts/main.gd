@@ -6,6 +6,7 @@ extends Node3D
 
 const CELL := 2.0
 const FRIGHTENED_DURATION := 7.0
+const WORD_MODE_DURATION := 12.0
 const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
 
 const LEVELS := [
@@ -15,8 +16,13 @@ const LEVELS := [
 	{"rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed_base": 40000},
 ]
 
-const MANHATTAN_GHOST_SPEED := 3.0
-const MANHATTAN_GHOST_COUNT := 6
+## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
+## explore level. Taxis and pedestrians are its only obstacles: harmless,
+## just something to walk around (Main._check_manhattan_obstacles).
+const MANHATTAN_TAXI_ROW_COUNT := 3
+const MANHATTAN_TAXI_COL_COUNT := 2
+const MANHATTAN_PEDESTRIAN_COUNT := 10
+const MANHATTAN_OBSTACLE_RADIUS := 0.55
 
 const ENEMY_PALETTE := [
 	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
@@ -46,8 +52,12 @@ var fruit_spawned := false
 var now := 0.0
 var level_start_time := 0.0
 var playing_manhattan := false
+var word_mode_until := 0.0
 
 var enemies: Array = [] # Array[Enemy]
+var taxis: Array = [] # Array[Taxi] — Manhattan only
+var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only
+var obstacle_root: Node3D
 
 
 func _ready() -> void:
@@ -60,6 +70,8 @@ func _ready() -> void:
 	add_child(maze_view)
 	enemy_root = Node3D.new()
 	add_child(enemy_root)
+	obstacle_root = Node3D.new()
+	add_child(obstacle_root)
 
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
@@ -120,8 +132,10 @@ func start_level(index: int) -> void:
 	start_cell = best
 
 	level_index = index
-	maze_view.build(maze, start_cell)
+	maze_view.build(maze, start_cell, "normal")
 	fruit_spawned = false
+	word_mode_until = 0.0
+	player.set_noclip(false)
 
 	player.warp_to(start_cell, PI)
 	invuln_until = now + 1.2
@@ -129,6 +143,7 @@ func start_level(index: int) -> void:
 	for e in enemies:
 		e.queue_free()
 	enemies.clear()
+	_clear_manhattan_obstacles() # normal levels never have any; defensive
 	var house_cells := []
 	for r in range(maze.house.r0 + 1, maze.house.r1):
 		for c in range(maze.house.c0 + 1, maze.house.c1):
@@ -180,36 +195,125 @@ func start_manhattan_level() -> void:
 
 	start_cell = maze.start_cell
 	level_index = -1
-	maze_view.build(maze, start_cell)
+
+	# Pedestrian cells are picked before the maze view builds its pellets,
+	# and handed in as reserved cells, so a stationary pedestrian can never
+	# end up parked on top of a pellet the player could never then reach.
+	var pedestrian_cells := _pick_manhattan_pedestrian_cells()
+	maze_view.build(maze, start_cell, "manhattan", pedestrian_cells)
 	fruit_spawned = false
+	word_mode_until = 0.0
+	player.set_noclip(false)
 
 	player.warp_to(start_cell, PI)
 	invuln_until = now + 1.2
 
 	for e in enemies:
 		e.queue_free()
-	enemies.clear()
-	var house_cells := []
-	for r in range(maze.house.r0 + 1, maze.house.r1):
-		for c in range(maze.house.c0 + 1, maze.house.c1):
-			house_cells.append(Vector2i(r, c))
+	enemies.clear() # Manhattan has no ghosts — see this function's header comment
 
-	for i in MANHATTAN_GHOST_COUNT:
-		var enemy := Node3D.new()
-		enemy.set_script(load("res://scripts/enemy.gd"))
-		enemy_root.add_child(enemy)
-		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
-		enemy.setup(pal.color, pal.glow, MANHATTAN_GHOST_SPEED + i * 0.05)
-		var cell: Vector2i = house_cells[i % house_cells.size()]
-		enemy.place_in_house(cell)
-		enemy.release_at = now + 1.5 + i * 1.4
-		enemies.append(enemy)
+	_spawn_manhattan_obstacles(pedestrian_cells)
 
 	hud.set_level("MANHATTAN")
 	hud.set_score(score)
 	hud.set_lives(lives)
 	hud.set_best_time(-1.0)
 	level_start_time = now
+
+
+func _clear_manhattan_obstacles() -> void:
+	for t in taxis:
+		t.queue_free()
+	taxis.clear()
+	for p in pedestrians:
+		p.queue_free()
+	pedestrians.clear()
+
+
+## Picks stationary pedestrian cells ahead of pellet placement (see
+## maze_view.gd's `build`/`_build_pellets` reserved_cells parameter) so a
+## pedestrian can never end up parked on a pellet the player could never
+## reach. Pure cell selection, no node spawning — spawning happens in
+## _spawn_manhattan_obstacles once maze_view has already excluded these.
+func _pick_manhattan_pedestrian_cells() -> Array:
+	var open_cells: Array = MazeGen.cells_in_room(maze, false)
+	open_cells.shuffle()
+	var picked := []
+	for cell in open_cells:
+		if picked.size() >= MANHATTAN_PEDESTRIAN_COUNT:
+			break
+		if cell == start_cell:
+			continue
+		picked.append(cell)
+	return picked
+
+
+## Taxis run the full length of a handful of streets/avenues; pedestrians
+## stand at the cells `_pick_manhattan_pedestrian_cells` already reserved
+## for them. Both are built fresh per Manhattan run, same as enemies are
+## per level.
+func _spawn_manhattan_obstacles(pedestrian_cells: Array) -> void:
+	_clear_manhattan_obstacles()
+
+	var row_choices := []
+	var r := 1
+	while r < maze.rows - 1:
+		row_choices.append(r)
+		r += 2
+	var col_choices := []
+	var c := 1
+	while c < maze.cols - 1:
+		col_choices.append(c)
+		c += 2
+	row_choices.shuffle()
+	col_choices.shuffle()
+
+	var min_x: float = 1 * CELL
+	var max_x: float = (maze.cols - 2) * CELL
+	var min_z: float = 1 * CELL
+	var max_z: float = (maze.rows - 2) * CELL
+
+	for i in mini(MANHATTAN_TAXI_ROW_COUNT, row_choices.size()):
+		var taxi := Node3D.new()
+		taxi.set_script(load("res://scripts/taxi.gd"))
+		obstacle_root.add_child(taxi)
+		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 2.6 + randf() * 1.0)
+		taxis.append(taxi)
+	for i in mini(MANHATTAN_TAXI_COL_COUNT, col_choices.size()):
+		var taxi2 := Node3D.new()
+		taxi2.set_script(load("res://scripts/taxi.gd"))
+		obstacle_root.add_child(taxi2)
+		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 2.6 + randf() * 1.0)
+		taxis.append(taxi2)
+
+	for cell in pedestrian_cells:
+		var ped := Node3D.new()
+		ped.set_script(load("res://scripts/pedestrian.gd"))
+		obstacle_root.add_child(ped)
+		ped.setup(Vector3(cell.y * CELL, 0.4, cell.x * CELL))
+		pedestrians.append(ped)
+
+
+func _check_manhattan_obstacles() -> void:
+	for t in taxis:
+		_push_player_away_from(t.position)
+	for p in pedestrians:
+		_push_player_away_from(p.position)
+
+
+## Soft-blocks the player out to MANHATTAN_OBSTACLE_RADIUS from an obstacle
+## — an "obstacle you can't walk through" without needing a real physics
+## body on a continuously-moving node. Never touches lives/score: Manhattan
+## obstacles are harmless by design (see this file's Manhattan header).
+func _push_player_away_from(obstacle_pos: Vector3) -> void:
+	var away := Vector2(player.global_position.x - obstacle_pos.x, player.global_position.z - obstacle_pos.z)
+	var d := away.length()
+	if d <= 0.0001:
+		player.global_position.x += MANHATTAN_OBSTACLE_RADIUS
+	elif d < MANHATTAN_OBSTACLE_RADIUS:
+		var push := away.normalized() * (MANHATTAN_OBSTACLE_RADIUS - d)
+		player.global_position.x += push.x
+		player.global_position.z += push.y
 
 
 func begin_manhattan_game() -> void:
@@ -416,7 +520,17 @@ func _process(delta: float) -> void:
 		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
 		_check_enemy_collision(enemy, frightened_active)
 
+	if playing_manhattan:
+		for t in taxis:
+			t.update(delta)
+		for p in pedestrians:
+			p.update(delta, now)
+		_check_manhattan_obstacles()
+
 	_check_pickups()
+
+	if word_mode_until > 0.0 and now >= word_mode_until:
+		_deactivate_word_mode()
 
 	hud.set_timer(now - level_start_time)
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
@@ -468,9 +582,12 @@ func _check_pickups() -> void:
 	if result.fruit:
 		score += 150 + level_index * 50
 		Sfx.fruit()
+	if result.word_powerup:
+		score += 75
+		_activate_word_mode()
 	if result.pellet or result.power:
 		Sfx.munch()
-	if result.pellet or result.power or result.fruit:
+	if result.pellet or result.power or result.fruit or result.word_powerup:
 		hud.set_score(score)
 
 	var total: int = maze_view.total_pickups()
@@ -484,6 +601,29 @@ func _check_pickups() -> void:
 			manhattan_complete_sequence()
 		else:
 			level_complete_sequence()
+
+
+## ---------------- Word Mode power-up (normal levels only) ----------------
+## Reskins the level into the word-built-world look (walls become "WALL"
+## letterforms, ghosts become "GHOST" letterforms — same as Manhattan's
+## permanent look) and drops player-wall collision for WORD_MODE_DURATION
+## seconds. Manhattan never spawns this pickup (see maze_view.gd), so this
+## only ever fires during a normal level.
+func _activate_word_mode() -> void:
+	word_mode_until = now + WORD_MODE_DURATION
+	maze_view.set_word_mode(true)
+	player.set_noclip(true)
+	for enemy in enemies:
+		enemy.set_word_skin(true)
+	Sfx.power()
+
+
+func _deactivate_word_mode() -> void:
+	word_mode_until = 0.0
+	maze_view.set_word_mode(false)
+	player.set_noclip(false)
+	for enemy in enemies:
+		enemy.set_word_skin(false)
 
 
 ## ---------------- high score persistence ----------------

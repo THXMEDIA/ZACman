@@ -72,6 +72,20 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   (Frightened-Modus auslösen) und `!fruit` (Bonusfrucht spawnen) helfen —
   beide Effekte können den Spieler nur unterstützen, nie das Spiel beenden
   oder die Eingabe blockieren.
+- **Word-Mode / das "Wort-Welt"-Aussehen** (`godot/scripts/word_mesh.gd`):
+  jedes Objekt besteht aus seinem eigenen englischen Namen als echtes
+  extrudiertes 3D-Buchstabenmodell (Godots `TextMesh`) — eine Wand ist das
+  Wort `WALL`, ein Geist das Wort `GHOST`, ein Taxi das Wort `TAXI`, ein
+  Fußgänger das Wort `PERSON`. In den normalen Matrix-Leveln ist das ein
+  zeitlich begrenzter Power-up-Effekt: einmal pro Level liegt ein
+  pulsierendes `WORD`-Icon versteckt; wer es einsammelt, bekommt für
+  12 Sekunden den Wort-Welt-Look *und* geht kollisionsfrei durch Wände
+  (`player_controller.gd::set_noclip`). Im **Manhattan-Bonuslevel** ist der
+  Wort-Welt-Look dauerhaft aktiv statt eines Power-ups — dort gibt es weder
+  Power-ups noch Geister (ein ruhiger Explorer), dafür fahren `TAXI`-Objekte
+  auf festen Straßen/Avenues hin und her und `PERSON`-Fußgänger stehen an
+  zufälligen Kreuzungen; beide sind reine Hindernisse (schieben den Spieler
+  weg), verursachen aber nie Schaden.
 
 ## Steam-Veröffentlichung
 

@@ -66,6 +66,13 @@ func _setup_ascii_quad(cam: Camera3D) -> void:
 	cam.add_child(mi)
 
 
+## Word Mode power-up: while active the player passes straight through
+## walls (collision_mask 0 = collide with nothing). Restored to the normal
+## walls layer (2) when it ends.
+func set_noclip(active: bool) -> void:
+	collision_mask = 0 if active else 2
+
+
 func warp_to(cell: Vector2i, facing_yaw: float) -> void:
 	global_position = Vector3(cell.y * CELL, EYE_H, cell.x * CELL)
 	yaw = facing_yaw
