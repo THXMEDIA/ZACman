@@ -95,8 +95,33 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Wort `BUILDING` in einer von fünf zyklisch vergebenen Neonfarben. Boden,
   Decke und die Umgebungsbeleuchtung sind für Manhattan auf ein
   magenta-violettes Neo-Noir-Cyberpunk-Schema umgestellt
-  (`main.gd::_apply_manhattan_environment`) und kehren beim Verlassen zur
+  (`main.gd::_apply_theme_environment`) und kehren beim Verlassen zur
   normalen kühlen Blau-Palette zurück.
+- **CityTheme-System für zukünftige Explorer-Level** (`godot/scripts/
+  city_theme.gd`, `city_themes.gd`): Manhattan und die normalen Matrix-Level
+  sind keine hartkodierten `if/else`-Zweige mehr in `maze_view.gd`, sondern
+  zwei Instanzen einer `CityTheme`-Resource (Wand-Wort & -Palette, optionaler
+  Wahrzeichen-Provider wie `manhattan_maze.gd`, Boden-/Decken-Material,
+  Umgebungsfarben/-Fog, Power-up-An/Aus). Eine neue, stilistisch komplett
+  andere Stadt (Paris im Aquarell-Look, Tokio/Shibuya als Neonröhren-
+  Cyberpunk-Regenszene, Rio im Pop-Art-Stil, ...) wird dadurch reiner Content:
+  eine neue `CityTheme` in `city_themes.gd` registrieren, `maze_view.gd`/
+  `main.gd` müssen dafür nicht angefasst werden. Architektur-Hintergrund und
+  Prioritäten dazu stehen im Claude-Projekt-Dokument "Explorer-Level-
+  Erweiterung, Leaderboard & Konditionen".
+- **Konditionen-System** (`godot/scripts/conditions.gd`,
+  `scripts/conditions/`): auswählbare, laufweite Run-Modifikatoren im Sinne
+  eines Balatro-artigen "jeder Run ist anders" — unabhängig vom
+  levelinternen Word-Mode-Pickup. Aktuell registriert: **Matrix Ghost**
+  (dauerhaft kollisionsfreie, wort-gebaute Welt für den ganzen Run) und
+  **Fear & Loathing** (Steuerung wird laufend verrauscht und kippt in
+  unregelmäßigen Abständen komplett in die Umkehrung, ähnlich einem
+  Drogenrausch-Level). `Main.set_condition(id)` wählt/wechselt/entfernt eine
+  Kondition (`""` = keine); jede neue Kondition ist ein neues Skript unter
+  `scripts/conditions/` mit einem Registry-Eintrag — der Rest des Spiels
+  muss dafür nicht geändert werden. Eine Auswahl-UI und ein pro-Kondition
+  gesplittetes Leaderboard sind als nächste Ausbaustufen im Projekt-Dokument
+  festgehalten, noch nicht implementiert.
 - **Verkehrs- und Fußgänger-Vielfalt in Manhattan** (`taxi.gd`,
   `man_walking_dog.gd`, `kid_group.gd`): neben normalen `TAXI`-Fahrzeugen
   fährt gelegentlich eine `VERYLONGLIMOUSINE` in Chrom-Silber vorbei — das

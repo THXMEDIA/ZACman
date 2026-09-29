@@ -14,6 +14,7 @@ var yaw := 0.0
 var pitch := 0.0
 var input_enabled := true
 var move_input := Vector2.ZERO # x = strafe, y = forward, set externally by touch/AI bots
+var active_condition = null # a Kondition (see scripts/conditions/condition_base.gd) or null; set by Main.set_condition
 
 
 func _ready() -> void:
@@ -95,7 +96,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera.rotation.x = pitch
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if not input_enabled:
 		velocity = Vector3.ZERO
 		return
@@ -113,6 +114,8 @@ func _physics_process(_delta: float) -> void:
 	fwd += move_input.y
 	strafe += move_input.x
 	var v := Vector2(strafe, fwd)
+	if active_condition != null:
+		v = active_condition.modify_input(v, delta)
 	if v.length() > 1.0:
 		v = v.normalized()
 

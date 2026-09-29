@@ -6,27 +6,11 @@ extends Node3D
 const CELL := 2.0
 const WALL_H := 1.9
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
-const ManhattanMazeScript := preload("res://scripts/manhattan_maze.gd")
-
-## Neo-Noir cyberpunk palette for Manhattan's ordinary "BUILDING" blocks —
-## cycled per-cell so the skyline reads as varied neon rather than one flat
-## tint. Named landmarks (see manhattan_maze.gd's LANDMARKS) get their own,
-## brighter accent colors instead, cycled from MANHATTAN_LANDMARK_ACCENTS.
-const MANHATTAN_NEON_PALETTE := [
-	Color(1.0, 0.05, 0.75), # magenta
-	Color(0.0, 0.95, 1.0), # cyan
-	Color(0.6, 0.05, 1.0), # violet
-	Color(1.0, 0.8, 0.0), # neon amber
-	Color(0.05, 1.0, 0.45), # neon green
-]
-const MANHATTAN_LANDMARK_ACCENTS := [
-	Color(1.0, 0.85, 0.25), # neon gold
-	Color(1.0, 0.05, 0.55), # hot pink
-	Color(0.15, 0.85, 1.0), # electric blue
-]
+const CityThemesScript := preload("res://scripts/city_themes.gd")
 
 var maze # MazeGen.Maze
-var theme := "normal" # "normal" | "manhattan"
+var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "manhattan" | ...)
+var city_theme # CityTheme — the resolved visual/gameplay bundle for `theme` (see city_theme.gd)
 var pellet_cells: Array = [] # Array[Vector2i]
 var pellet_alive: Array = [] # Array[bool], parallel to pellet_cells
 var pellet_meshes: Array = [] # Array[MeshInstance3D], parallel to pellet_cells
@@ -80,14 +64,15 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 
 	maze = new_maze
 	theme = maze_theme
+	city_theme = CityThemesScript.get_theme(theme)
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
 	_build_pellets(start_cell, reserved_cells)
-	# Manhattan is permanently in the word-built-world look; the normal
-	# levels start out looking normal and only switch when the Word Mode
-	# power-up is eaten (see Main._on_word_powerup / set_word_mode).
-	set_word_mode(theme == "manhattan")
+	# A permanently-word-built theme (Manhattan) starts in the word-built-
+	# world look; other themes start out looking normal and only switch when
+	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
+	set_word_mode(city_theme.permanently_word_built)
 
 
 func _make_materials() -> void:
@@ -145,45 +130,40 @@ func _build_walls() -> void:
 	# The word-built-world skin: every wall cell doubles as a 3D letterform.
 	# Built alongside the normal boxy walls (not on demand) so toggling Word
 	# Mode mid-level is instant; hidden until set_word_mode() turns it on.
-	# The normal levels use a flat Matrix green ("WALL", matching the ASCII
-	# look they're switching out of); Manhattan is a Neo-Noir cyberpunk
-	# skyline — every ordinary block cycles through a neon palette as
-	# "BUILDING", and any block ManhattanMazeScript.LANDMARKS actually names
-	# (see manhattan_maze.gd) gets that real name, a brighter accent color,
-	# and its own pulsing light (animated in _process, see landmark_lights).
+	# Entirely data-driven off city_theme (see city_theme.gd/city_themes.gd):
+	# an ordinary block cycles through city_theme.wall_palette as
+	# city_theme.wall_word, and any block city_theme.landmark_provider_script
+	# actually names (e.g. manhattan_maze.gd's real Midtown buildings) gets
+	# that name, a brighter accent color, and its own pulsing light (animated
+	# in _process, see landmark_lights) instead.
 	word_wall_root = Node3D.new()
 	add_child(word_wall_root)
 	landmark_lights.clear()
-	if theme == "manhattan":
-		for cell in wall_cells:
-			var landmark_name: String = ManhattanMazeScript.landmark_at(cell.x, cell.y)
-			if landmark_name != "":
-				var accent: Color = MANHATTAN_LANDMARK_ACCENTS[landmark_lights.size() % MANHATTAN_LANDMARK_ACCENTS.size()]
-				var wm := WordMeshScript.build(landmark_name, accent, {"font_size": 15, "depth": WALL_H * 0.55, "emission_energy": 2.4})
-				wm.position = Vector3(cell.y * CELL, WALL_H * 0.55, cell.x * CELL)
-				wm.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
-				word_wall_root.add_child(wm)
-				var light := OmniLight3D.new()
-				light.light_color = accent
-				light.omni_range = 3.4
-				light.light_energy = 1.2
-				wm.add_child(light)
-				landmark_lights.append(light)
-			else:
-				var neon: Color = MANHATTAN_NEON_PALETTE[absi(cell.x * 31 + cell.y) % MANHATTAN_NEON_PALETTE.size()]
-				var bw := WordMeshScript.build("BUILDING", neon, {"font_size": 22, "depth": WALL_H * 0.6, "emission_energy": 1.1})
-				bw.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
-				bw.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
-				word_wall_root.add_child(bw)
-	else:
-		for cell in wall_cells:
-			var wm2 := WordMeshScript.build("WALL", Color(0.25, 1.0, 0.35), {"font_size": 30, "depth": WALL_H * 0.6, "emission_energy": 1.1})
-			wm2.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
-			# Alternate facing so corridors running either axis catch a
-			# readable face at least some of the time — the reference look
-			# is scattered lettering, not perfectly UV-mapped signage.
-			wm2.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
-			word_wall_root.add_child(wm2)
+	for cell in wall_cells:
+		var landmark_name := ""
+		if city_theme.landmark_provider_script != null:
+			landmark_name = city_theme.landmark_provider_script.landmark_at(cell.x, cell.y)
+		var rot_y := 0.0
+		if city_theme.wall_alternate_rotation and (cell.x + cell.y) % 2 != 0:
+			rot_y = PI / 2.0
+		if landmark_name != "":
+			var accent: Color = city_theme.landmark_accents[landmark_lights.size() % city_theme.landmark_accents.size()]
+			var wm := WordMeshScript.build(landmark_name, accent, {"font_size": city_theme.landmark_font_size, "depth": WALL_H * city_theme.landmark_depth_scale, "emission_energy": city_theme.landmark_emission_energy})
+			wm.position = Vector3(cell.y * CELL, WALL_H * city_theme.landmark_depth_scale, cell.x * CELL)
+			wm.rotation.y = rot_y
+			word_wall_root.add_child(wm)
+			var light := OmniLight3D.new()
+			light.light_color = accent
+			light.omni_range = 3.4
+			light.light_energy = 1.2
+			wm.add_child(light)
+			landmark_lights.append(light)
+		else:
+			var block_color: Color = city_theme.wall_palette[absi(cell.x * 31 + cell.y) % city_theme.wall_palette.size()]
+			var bw := WordMeshScript.build(city_theme.wall_word, block_color, {"font_size": city_theme.wall_font_size, "depth": WALL_H * city_theme.wall_depth_scale, "emission_energy": city_theme.wall_emission_energy})
+			bw.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
+			bw.rotation.y = rot_y
+			word_wall_root.add_child(bw)
 
 	walls_body = StaticBody3D.new()
 	walls_body.collision_layer = 2
@@ -205,25 +185,20 @@ func _build_floor_ceiling() -> void:
 	plane.size = Vector2(floor_w, floor_d)
 
 	var floor_mat := StandardMaterial3D.new()
-	var ceil_mat := StandardMaterial3D.new()
-	if theme == "manhattan":
-		# Neo-noir cyberpunk: near-black wet-asphalt floor with a faint
-		# magenta sheen, and a deep violet "night sky" ceiling that catches
-		# the neon glow from the word-built buildings.
-		floor_mat.albedo_color = Color(0.015, 0.01, 0.03)
-		floor_mat.roughness = 0.25
-		floor_mat.metallic = 0.35
+	floor_mat.albedo_color = city_theme.floor_color
+	floor_mat.roughness = city_theme.floor_roughness
+	floor_mat.metallic = city_theme.floor_metallic
+	if city_theme.floor_emission_enabled:
 		floor_mat.emission_enabled = true
-		floor_mat.emission = Color(0.35, 0.02, 0.3)
-		floor_mat.emission_energy_multiplier = 0.12
-		ceil_mat.albedo_color = Color(0.03, 0.01, 0.07)
+		floor_mat.emission = city_theme.floor_emission_color
+		floor_mat.emission_energy_multiplier = city_theme.floor_emission_energy
+
+	var ceil_mat := StandardMaterial3D.new()
+	ceil_mat.albedo_color = city_theme.ceil_color
+	if city_theme.ceil_emission_enabled:
 		ceil_mat.emission_enabled = true
-		ceil_mat.emission = Color(0.05, 0.02, 0.25)
-		ceil_mat.emission_energy_multiplier = 0.1
-	else:
-		floor_mat.albedo_color = Color(0.024, 0.039, 0.094)
-		floor_mat.roughness = 0.9
-		ceil_mat.albedo_color = Color(0.016, 0.024, 0.067)
+		ceil_mat.emission = city_theme.ceil_emission_color
+		ceil_mat.emission_energy_multiplier = city_theme.ceil_emission_energy
 
 	var floor_mesh := MeshInstance3D.new()
 	floor_mesh.mesh = plane
@@ -299,11 +274,11 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = []) -> void:
 		if cell != start_cell and not reserved_set.has(cell):
 			candidates.append(cell)
 
-	# Manhattan has no power-ups at all (no power pellets, no Word Mode
-	# pickup below) — it has no ghosts to use them against and is meant to
-	# be a calm explore, not a chase level. Every open cell there is just a
-	# plain collectible pellet.
-	power_cells = [] if theme == "manhattan" else _pick_power_cells(candidates)
+	# A "calm explorer" theme (city_theme.has_power_ups == false, e.g.
+	# Manhattan) has no power-ups at all (no power pellets, no Word Mode
+	# pickup below) — it has no ghosts to use them against. Every open cell
+	# there is just a plain collectible pellet.
+	power_cells = _pick_power_cells(candidates) if city_theme.has_power_ups else []
 	var power_set := {}
 	for cell in power_cells:
 		power_set[cell] = true
@@ -312,10 +287,11 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = []) -> void:
 		if not power_set.has(cell):
 			pellet_cells.append(cell)
 
-	# Word Mode power-up: one per normal level, taken out of the regular
-	# pellet grid (not an extra pellet on top of it) so there's exactly one
-	# clearly-special pickup to find. Manhattan has none (see build()).
-	if theme != "manhattan" and pellet_cells.size() > 0:
+	# Word Mode power-up: one per level that has power-ups at all, taken out
+	# of the regular pellet grid (not an extra pellet on top of it) so
+	# there's exactly one clearly-special pickup to find. A "calm explorer"
+	# theme like Manhattan has none (see build()/has_power_ups).
+	if city_theme.has_power_ups and pellet_cells.size() > 0:
 		word_powerup_cell = _pick_farthest_cell(pellet_cells, start_cell)
 		pellet_cells.erase(word_powerup_cell)
 

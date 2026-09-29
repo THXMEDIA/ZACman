@@ -28,14 +28,8 @@ const MANHATTAN_METRO_RADIUS := 0.75
 const MANHATTAN_LIMO_COLOR := Color(0.82, 0.86, 0.95) # chrome/silver
 const MANHATTAN_TAXI_COLOR := Color(1.0, 0.82, 0.05)
 
-## Manhattan's neo-noir cyberpunk ambience — swapped in over the normal
-## levels' cooler blue while playing_manhattan (see _apply_manhattan_environment).
-const MANHATTAN_BG_COLOR := Color(0.02, 0.006, 0.05)
-const MANHATTAN_FOG_COLOR := Color(0.35, 0.02, 0.4)
-const MANHATTAN_AMBIENT_COLOR := Color(0.5, 0.08, 0.55)
-const NORMAL_BG_COLOR := Color(0.0196, 0.0275, 0.0627)
-const NORMAL_FOG_COLOR := Color(0.0196, 0.0275, 0.0627)
-const NORMAL_AMBIENT_COLOR := Color(0.165, 0.227, 0.4)
+const CityThemesScript := preload("res://scripts/city_themes.gd")
+const ConditionsScript := preload("res://scripts/conditions.gd")
 
 const ENEMY_PALETTE := [
 	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
@@ -67,6 +61,17 @@ var level_start_time := 0.0
 var playing_manhattan := false
 var word_mode_until := 0.0
 
+## The selected "Kondition" for the current run (see scripts/conditions.gd's
+## registry) — a whole-run modifier like Matrix Ghost (no wall collision) or
+## Fear & Loathing (noisy/inverted controls), independent of and additional
+## to the per-level Word Mode pickup above. null/"" = no condition, plays
+## unmodified. Persists across start_level()/start_manhattan_level() calls
+## until set_condition() is called again — there is no selection UI yet
+## (see this project's "Explorer-Level-Erweiterung, Leaderboard &
+## Konditionen" doc), so nothing currently changes it from the default.
+var current_condition = null
+var condition_id := ""
+
 var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
 var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only (Pedestrian, ManWalkingDog or KidGroup)
@@ -94,40 +99,38 @@ func _ready() -> void:
 
 
 func _build_environment() -> void:
+	var normal_theme = CityThemesScript.get_theme("normal")
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.0196, 0.0275, 0.0627)
+	env.background_color = normal_theme.env_bg_color
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.0196, 0.0275, 0.0627)
-	env.fog_density = 0.03
+	env.fog_light_color = normal_theme.env_fog_color
+	env.fog_density = normal_theme.env_fog_density
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = NORMAL_AMBIENT_COLOR
-	env.ambient_light_energy = 0.9
+	env.ambient_light_color = normal_theme.env_ambient_color
+	env.ambient_light_energy = normal_theme.env_ambient_energy
 	world_env = WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
 
 
-## Toggles the whole scene's ambience between the normal levels' cool blue
-## and Manhattan's neon Neo-Noir Cyberpunk palette (magenta fog, violet
-## ambient light) — the word_mesh.gd buildings/landmarks provide the neon
-## light sources, this just sets the mood they glow into.
-func _apply_manhattan_environment(active: bool) -> void:
+## Swaps the whole scene's ambience to match a CityTheme's environment
+## fields (background/fog/ambient light) — e.g. the normal levels' cool
+## blue vs. Manhattan's neon Neo-Noir Cyberpunk palette (magenta fog,
+## violet ambient light). The word_mesh.gd buildings/landmarks provide the
+## neon light sources themselves; this just sets the mood they glow into.
+## A future Explorer level (Tokyo, Paris, Rio, ...) needs no new code here
+## — just its own CityTheme in city_themes.gd.
+func _apply_theme_environment(theme_id: String) -> void:
 	if world_env == null or world_env.environment == null:
 		return
+	var ct = CityThemesScript.get_theme(theme_id)
 	var env: Environment = world_env.environment
-	if active:
-		env.background_color = MANHATTAN_BG_COLOR
-		env.fog_light_color = MANHATTAN_FOG_COLOR
-		env.fog_density = 0.045
-		env.ambient_light_color = MANHATTAN_AMBIENT_COLOR
-		env.ambient_light_energy = 0.55
-	else:
-		env.background_color = NORMAL_BG_COLOR
-		env.fog_light_color = NORMAL_FOG_COLOR
-		env.fog_density = 0.03
-		env.ambient_light_color = NORMAL_AMBIENT_COLOR
-		env.ambient_light_energy = 0.9
+	env.background_color = ct.env_bg_color
+	env.fog_light_color = ct.env_fog_color
+	env.fog_density = ct.env_fog_density
+	env.ambient_light_color = ct.env_ambient_color
+	env.ambient_light_energy = ct.env_ambient_energy
 
 
 func _build_player() -> void:
@@ -170,7 +173,7 @@ func start_level(index: int) -> void:
 
 	level_index = index
 	maze_view.build(maze, start_cell, "normal")
-	_apply_manhattan_environment(false)
+	_apply_theme_environment("normal")
 	fruit_spawned = false
 	word_mode_until = 0.0
 	player.set_noclip(false)
@@ -242,7 +245,7 @@ func start_manhattan_level() -> void:
 	var metro_cells := _pick_manhattan_metro_cells(pedestrian_cells)
 	var reserved_cells: Array = pedestrian_cells + metro_cells
 	maze_view.build(maze, start_cell, "manhattan", reserved_cells)
-	_apply_manhattan_environment(true)
+	_apply_theme_environment("manhattan")
 	fruit_spawned = false
 	word_mode_until = 0.0
 	player.set_noclip(false)
@@ -460,7 +463,7 @@ func manhattan_complete_sequence() -> void:
 	await get_tree().create_timer(2.2).timeout
 	hud.show_levelclear(false)
 	playing_manhattan = false
-	_apply_manhattan_environment(false)
+	_apply_theme_environment("normal")
 	Sfx.stop_all()
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
@@ -551,7 +554,7 @@ func end_game() -> void:
 	hud.show_gameover(score, level_display, high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	playing_manhattan = false
-	_apply_manhattan_environment(false)
+	_apply_theme_environment("normal")
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 
@@ -646,13 +649,22 @@ func _process(delta: float) -> void:
 			p.update(delta, now)
 		for m in metro_stations:
 			m.update(delta, now)
+
+	# Pickups are checked before the obstacle push so a taxi/pedestrian that
+	# happens to be passing over the player's exact cell this frame can
+	# never transiently block a pellet the player has already reached —
+	# obstacles just slide the player back out afterward, same as always.
+	_check_pickups()
+
+	if playing_manhattan:
 		_check_manhattan_obstacles()
 		_check_metro_entry()
 
-	_check_pickups()
-
 	if word_mode_until > 0.0 and now >= word_mode_until:
 		_deactivate_word_mode()
+
+	if current_condition != null:
+		current_condition.on_process(delta, self)
 
 	hud.set_timer(now - level_start_time)
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
@@ -746,6 +758,21 @@ func _deactivate_word_mode() -> void:
 	player.set_noclip(false)
 	for enemy in enemies:
 		enemy.set_word_skin(false)
+
+
+## ---------------- Konditionen (whole-run modifiers) ----------------
+## See scripts/conditions.gd's registry and scripts/conditions/condition_base.gd.
+## Selects (or clears, with "") the condition applied for the current and
+## future runs until changed again. Safe to call whether or not a level is
+## currently running/built.
+func set_condition(id: String) -> void:
+	if current_condition != null:
+		current_condition.on_end(self)
+	condition_id = id
+	current_condition = ConditionsScript.get_condition(id)
+	player.active_condition = current_condition
+	if current_condition != null:
+		current_condition.on_start(self)
 
 
 ## ---------------- high score persistence ----------------

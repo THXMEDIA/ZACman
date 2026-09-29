@@ -296,7 +296,8 @@ func _run_checks() -> void:
 				if child.mesh.text == entry[0]:
 					landmark_found = true
 	_check("manhattan: a real landmark name appears among the rendered walls", landmark_found)
-	_check("manhattan: neon environment applied", main.world_env.environment.background_color.is_equal_approx(main.MANHATTAN_BG_COLOR))
+	var manhattan_theme = load("res://scripts/city_themes.gd").get_theme("manhattan")
+	_check("manhattan: neon environment applied", main.world_env.environment.background_color.is_equal_approx(manhattan_theme.env_bg_color))
 	_check("manhattan: metro stations spawned", main.metro_stations.size() > 0, "got %d" % main.metro_stations.size())
 
 	var metro = main.metro_stations[0]
@@ -309,6 +310,27 @@ func _run_checks() -> void:
 	await get_tree().create_timer(1.6).timeout
 	_check("manhattan: entering a metro station ends the Manhattan run", main.playing_manhattan == false)
 	_check("manhattan: entering a metro station returns to the normal speedrun", main.running == true and main.level_index == 0)
-	_check("manhattan: normal environment restored after metro exit", main.world_env.environment.background_color.is_equal_approx(main.NORMAL_BG_COLOR))
+	var normal_theme = load("res://scripts/city_themes.gd").get_theme("normal")
+	_check("manhattan: normal environment restored after metro exit", main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
+
+	# ---- Konditionen: selectable whole-run modifiers (see scripts/conditions.gd) ----
+	_check("conditions: no condition selected by default", main.current_condition == null and main.player.active_condition == null)
+
+	main.set_condition("matrix_ghost")
+	await get_tree().process_frame
+	_check("conditions: matrix_ghost sets condition_id", main.condition_id == "matrix_ghost")
+	_check("conditions: matrix_ghost turns on word-built walls", main.maze_view.word_mode_active == true)
+	_check("conditions: matrix_ghost turns on player noclip", main.player.collision_mask == 0)
+	_check("conditions: matrix_ghost wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "matrix_ghost")
+
+	main.set_condition("fear_and_loathing")
+	await get_tree().process_frame
+	_check("conditions: switching condition reverts the previous one (word mode off)", main.maze_view.word_mode_active == false)
+	_check("conditions: switching condition reverts the previous one (noclip off)", main.player.collision_mask == 2)
+	_check("conditions: fear_and_loathing wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+
+	main.set_condition("")
+	await get_tree().process_frame
+	_check("conditions: clearing the condition removes it from the player", main.current_condition == null and main.player.active_condition == null)
 
 	Speedrun.reset_all()
