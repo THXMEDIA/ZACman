@@ -18,8 +18,11 @@ var dir := 1.0
 var speed := 3.0
 var word_mesh: MeshInstance3D
 
-
-func setup(p_axis: String, p_fixed_coord: float, p_min: float, p_max: float, p_speed: float) -> void:
+## Traffic variety: any vehicle is still just its own name driving up and
+## down a lane, but the word and color can change — e.g. "VERYLONGLIMOUSINE"
+## in chrome/silver reads as a long car simply because the word itself is
+## long, with zero extra geometry work.
+func setup(p_axis: String, p_fixed_coord: float, p_min: float, p_max: float, p_speed: float, vehicle_word: String = "TAXI", color: Color = Color(1.0, 0.82, 0.05), font_size: int = 30) -> void:
 	axis = p_axis
 	fixed_coord = p_fixed_coord
 	min_coord = p_min
@@ -28,7 +31,7 @@ func setup(p_axis: String, p_fixed_coord: float, p_min: float, p_max: float, p_s
 	pos_along = lerpf(min_coord, max_coord, randf())
 	dir = 1.0 if randf() > 0.5 else -1.0
 
-	word_mesh = WordMeshScript.build("TAXI", Color(1.0, 0.82, 0.05), {"font_size": 30, "depth": 0.22, "emission_energy": 1.0})
+	word_mesh = WordMeshScript.build(vehicle_word, color, {"font_size": font_size, "depth": 0.22, "emission_energy": 1.0})
 	add_child(word_mesh)
 	_apply_position()
 

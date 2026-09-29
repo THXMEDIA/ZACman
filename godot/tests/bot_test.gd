@@ -286,4 +286,29 @@ func _run_checks() -> void:
 	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
 	_check("manhattan: obstacles cost no life", main.lives == lives_before_obstacle)
 
+	# ---- Manhattan's Neo-Noir Cyberpunk dressing: real landmark names in
+	# the walls, a neon environment tint, and metro stations that return the
+	# player to the normal speedrun ----
+	var landmark_found := false
+	for child in main.maze_view.word_wall_root.get_children():
+		if child is MeshInstance3D and child.mesh is TextMesh:
+			for entry in load("res://scripts/manhattan_maze.gd").LANDMARKS:
+				if child.mesh.text == entry[0]:
+					landmark_found = true
+	_check("manhattan: a real landmark name appears among the rendered walls", landmark_found)
+	_check("manhattan: neon environment applied", main.world_env.environment.background_color.is_equal_approx(main.MANHATTAN_BG_COLOR))
+	_check("manhattan: metro stations spawned", main.metro_stations.size() > 0, "got %d" % main.metro_stations.size())
+
+	var metro = main.metro_stations[0]
+	main.player.global_position = Vector3(metro.position.x, main.player.global_position.y, metro.position.z)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	# _enter_metro shows a brief banner before actually returning control
+	# (see main.gd) — give its await get_tree().create_timer(1.4) time to
+	# finish rather than checking mid-transition.
+	await get_tree().create_timer(1.6).timeout
+	_check("manhattan: entering a metro station ends the Manhattan run", main.playing_manhattan == false)
+	_check("manhattan: entering a metro station returns to the normal speedrun", main.running == true and main.level_index == 0)
+	_check("manhattan: normal environment restored after metro exit", main.world_env.environment.background_color.is_equal_approx(main.NORMAL_BG_COLOR))
+
 	Speedrun.reset_all()

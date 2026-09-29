@@ -23,6 +23,19 @@ const MANHATTAN_TAXI_ROW_COUNT := 3
 const MANHATTAN_TAXI_COL_COUNT := 2
 const MANHATTAN_PEDESTRIAN_COUNT := 10
 const MANHATTAN_OBSTACLE_RADIUS := 0.55
+const MANHATTAN_METRO_COUNT := 4
+const MANHATTAN_METRO_RADIUS := 0.75
+const MANHATTAN_LIMO_COLOR := Color(0.82, 0.86, 0.95) # chrome/silver
+const MANHATTAN_TAXI_COLOR := Color(1.0, 0.82, 0.05)
+
+## Manhattan's neo-noir cyberpunk ambience — swapped in over the normal
+## levels' cooler blue while playing_manhattan (see _apply_manhattan_environment).
+const MANHATTAN_BG_COLOR := Color(0.02, 0.006, 0.05)
+const MANHATTAN_FOG_COLOR := Color(0.35, 0.02, 0.4)
+const MANHATTAN_AMBIENT_COLOR := Color(0.5, 0.08, 0.55)
+const NORMAL_BG_COLOR := Color(0.0196, 0.0275, 0.0627)
+const NORMAL_FOG_COLOR := Color(0.0196, 0.0275, 0.0627)
+const NORMAL_AMBIENT_COLOR := Color(0.165, 0.227, 0.4)
 
 const ENEMY_PALETTE := [
 	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
@@ -56,8 +69,10 @@ var word_mode_until := 0.0
 
 var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
-var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only
+var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only (Pedestrian, ManWalkingDog or KidGroup)
+var metro_stations: Array = [] # Array[MetroStation] — Manhattan only
 var obstacle_root: Node3D
+var world_env: WorldEnvironment
 
 
 func _ready() -> void:
@@ -86,11 +101,33 @@ func _build_environment() -> void:
 	env.fog_light_color = Color(0.0196, 0.0275, 0.0627)
 	env.fog_density = 0.03
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.165, 0.227, 0.4)
+	env.ambient_light_color = NORMAL_AMBIENT_COLOR
 	env.ambient_light_energy = 0.9
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
+	world_env = WorldEnvironment.new()
+	world_env.environment = env
+	add_child(world_env)
+
+
+## Toggles the whole scene's ambience between the normal levels' cool blue
+## and Manhattan's neon Neo-Noir Cyberpunk palette (magenta fog, violet
+## ambient light) — the word_mesh.gd buildings/landmarks provide the neon
+## light sources, this just sets the mood they glow into.
+func _apply_manhattan_environment(active: bool) -> void:
+	if world_env == null or world_env.environment == null:
+		return
+	var env: Environment = world_env.environment
+	if active:
+		env.background_color = MANHATTAN_BG_COLOR
+		env.fog_light_color = MANHATTAN_FOG_COLOR
+		env.fog_density = 0.045
+		env.ambient_light_color = MANHATTAN_AMBIENT_COLOR
+		env.ambient_light_energy = 0.55
+	else:
+		env.background_color = NORMAL_BG_COLOR
+		env.fog_light_color = NORMAL_FOG_COLOR
+		env.fog_density = 0.03
+		env.ambient_light_color = NORMAL_AMBIENT_COLOR
+		env.ambient_light_energy = 0.9
 
 
 func _build_player() -> void:
@@ -133,6 +170,7 @@ func start_level(index: int) -> void:
 
 	level_index = index
 	maze_view.build(maze, start_cell, "normal")
+	_apply_manhattan_environment(false)
 	fruit_spawned = false
 	word_mode_until = 0.0
 	player.set_noclip(false)
@@ -196,11 +234,15 @@ func start_manhattan_level() -> void:
 	start_cell = maze.start_cell
 	level_index = -1
 
-	# Pedestrian cells are picked before the maze view builds its pellets,
-	# and handed in as reserved cells, so a stationary pedestrian can never
-	# end up parked on top of a pellet the player could never then reach.
+	# Pedestrian and metro-station cells are picked before the maze view
+	# builds its pellets, and handed in together as reserved cells, so
+	# neither a stationary pedestrian nor a metro sign can ever end up
+	# parked on top of a pellet the player could never then reach.
 	var pedestrian_cells := _pick_manhattan_pedestrian_cells()
-	maze_view.build(maze, start_cell, "manhattan", pedestrian_cells)
+	var metro_cells := _pick_manhattan_metro_cells(pedestrian_cells)
+	var reserved_cells: Array = pedestrian_cells + metro_cells
+	maze_view.build(maze, start_cell, "manhattan", reserved_cells)
+	_apply_manhattan_environment(true)
 	fruit_spawned = false
 	word_mode_until = 0.0
 	player.set_noclip(false)
@@ -213,6 +255,7 @@ func start_manhattan_level() -> void:
 	enemies.clear() # Manhattan has no ghosts — see this function's header comment
 
 	_spawn_manhattan_obstacles(pedestrian_cells)
+	_spawn_metro_stations(metro_cells)
 
 	hud.set_level("MANHATTAN")
 	hud.set_score(score)
@@ -228,6 +271,9 @@ func _clear_manhattan_obstacles() -> void:
 	for p in pedestrians:
 		p.queue_free()
 	pedestrians.clear()
+	for m in metro_stations:
+		m.queue_free()
+	metro_stations.clear()
 
 
 ## Picks stationary pedestrian cells ahead of pellet placement (see
@@ -248,10 +294,28 @@ func _pick_manhattan_pedestrian_cells() -> Array:
 	return picked
 
 
-## Taxis run the full length of a handful of streets/avenues; pedestrians
-## stand at the cells `_pick_manhattan_pedestrian_cells` already reserved
-## for them. Both are built fresh per Manhattan run, same as enemies are
-## per level.
+## Metro-station cells, picked the same way as pedestrian cells and
+## excluding any cell pedestrian picking already claimed, so the two never
+## collide and neither ever lands on a pellet.
+func _pick_manhattan_metro_cells(pedestrian_cells: Array) -> Array:
+	var open_cells: Array = MazeGen.cells_in_room(maze, false)
+	open_cells.shuffle()
+	var picked := []
+	for cell in open_cells:
+		if picked.size() >= MANHATTAN_METRO_COUNT:
+			break
+		if cell == start_cell or cell in pedestrian_cells:
+			continue
+		picked.append(cell)
+	return picked
+
+
+## Taxis (and the occasional VeryLongLimousine — same entity, a longer word
+## in chrome) run the full length of a handful of streets/avenues;
+## pedestrians stand at the cells `_pick_manhattan_pedestrian_cells` already
+## reserved for them, each one randomly a lone PERSON, a ManWalkingDog, or a
+## KidGroup, for a varied street scene. Both are built fresh per Manhattan
+## run, same as enemies are per level.
 func _spawn_manhattan_obstacles(pedestrian_cells: Array) -> void:
 	_clear_manhattan_obstacles()
 
@@ -277,21 +341,47 @@ func _spawn_manhattan_obstacles(pedestrian_cells: Array) -> void:
 		var taxi := Node3D.new()
 		taxi.set_script(load("res://scripts/taxi.gd"))
 		obstacle_root.add_child(taxi)
-		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 2.6 + randf() * 1.0)
+		var is_limo := randf() < 0.3
+		if is_limo:
+			taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 1.8 + randf() * 0.6, "VERYLONGLIMOUSINE", MANHATTAN_LIMO_COLOR, 18)
+		else:
+			taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 2.6 + randf() * 1.0, "TAXI", MANHATTAN_TAXI_COLOR, 30)
 		taxis.append(taxi)
 	for i in mini(MANHATTAN_TAXI_COL_COUNT, col_choices.size()):
 		var taxi2 := Node3D.new()
 		taxi2.set_script(load("res://scripts/taxi.gd"))
 		obstacle_root.add_child(taxi2)
-		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 2.6 + randf() * 1.0)
+		var is_limo2 := randf() < 0.3
+		if is_limo2:
+			taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 1.8 + randf() * 0.6, "VERYLONGLIMOUSINE", MANHATTAN_LIMO_COLOR, 18)
+		else:
+			taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 2.6 + randf() * 1.0, "TAXI", MANHATTAN_TAXI_COLOR, 30)
 		taxis.append(taxi2)
 
+	var pedestrian_scripts := [
+		"res://scripts/pedestrian.gd",
+		"res://scripts/man_walking_dog.gd",
+		"res://scripts/kid_group.gd",
+	]
 	for cell in pedestrian_cells:
+		var script_path: String = pedestrian_scripts[randi() % pedestrian_scripts.size()]
 		var ped := Node3D.new()
-		ped.set_script(load("res://scripts/pedestrian.gd"))
+		ped.set_script(load(script_path))
 		obstacle_root.add_child(ped)
 		ped.setup(Vector3(cell.y * CELL, 0.4, cell.x * CELL))
 		pedestrians.append(ped)
+
+
+## Glowing "SUBWAY" signs at the reserved metro cells; entering one ends
+## the Manhattan run and drops the player back into the normal speedrun
+## progression (see _check_metro_entry / _enter_metro).
+func _spawn_metro_stations(metro_cells: Array) -> void:
+	for cell in metro_cells:
+		var station := Node3D.new()
+		station.set_script(load("res://scripts/metro_station.gd"))
+		obstacle_root.add_child(station)
+		station.setup(Vector3(cell.y * CELL, 0.9, cell.x * CELL))
+		metro_stations.append(station)
 
 
 func _check_manhattan_obstacles() -> void:
@@ -299,6 +389,33 @@ func _check_manhattan_obstacles() -> void:
 		_push_player_away_from(t.position)
 	for p in pedestrians:
 		_push_player_away_from(p.position)
+
+
+## Proximity check: stepping close enough to a metro station's sign ends
+## the Manhattan bonus run early and drops the player back into the normal
+## speedrun progression (a fresh run from level 1 — "kehrt man zurück ins
+## normale Speedrun Level").
+func _check_metro_entry() -> void:
+	for m in metro_stations:
+		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
+		if d < MANHATTAN_METRO_RADIUS:
+			_enter_metro()
+			return
+
+
+func _enter_metro() -> void:
+	running = false
+	Sfx.set_siren(false, false)
+	Sfx.level_clear()
+	if score > high_score:
+		high_score = score
+		_save_highscore(high_score)
+	hud.show_levelclear(true, "SUBWAY — zurück zum Speedrun!")
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	await get_tree().create_timer(1.4).timeout
+	hud.show_levelclear(false)
+	playing_manhattan = false
+	begin_game()
 
 
 ## Soft-blocks the player out to MANHATTAN_OBSTACLE_RADIUS from an obstacle
@@ -343,6 +460,7 @@ func manhattan_complete_sequence() -> void:
 	await get_tree().create_timer(2.2).timeout
 	hud.show_levelclear(false)
 	playing_manhattan = false
+	_apply_manhattan_environment(false)
 	Sfx.stop_all()
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
@@ -433,6 +551,7 @@ func end_game() -> void:
 	hud.show_gameover(score, level_display, high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	playing_manhattan = false
+	_apply_manhattan_environment(false)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 
@@ -525,7 +644,10 @@ func _process(delta: float) -> void:
 			t.update(delta)
 		for p in pedestrians:
 			p.update(delta, now)
+		for m in metro_stations:
+			m.update(delta, now)
 		_check_manhattan_obstacles()
+		_check_metro_entry()
 
 	_check_pickups()
 

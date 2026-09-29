@@ -82,10 +82,34 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   12 Sekunden den Wort-Welt-Look *und* geht kollisionsfrei durch Wände
   (`player_controller.gd::set_noclip`). Im **Manhattan-Bonuslevel** ist der
   Wort-Welt-Look dauerhaft aktiv statt eines Power-ups — dort gibt es weder
-  Power-ups noch Geister (ein ruhiger Explorer), dafür fahren `TAXI`-Objekte
-  auf festen Straßen/Avenues hin und her und `PERSON`-Fußgänger stehen an
-  zufälligen Kreuzungen; beide sind reine Hindernisse (schieben den Spieler
-  weg), verursachen aber nie Schaden.
+  Power-ups noch Geister (ein ruhiger Explorer), dafür fahren Fahrzeuge auf
+  festen Straßen/Avenues hin und her und Fußgänger stehen an zufälligen
+  Kreuzungen; beide sind reine Hindernisse (schieben den Spieler weg),
+  verursachen aber nie Schaden.
+- **Manhattan: echte Gebäudenamen & Neo-Noir-Cyberpunk-Look**
+  (`godot/scripts/manhattan_maze.gd`, `maze_view.gd`): 17 echte Midtown-
+  Wahrzeichen (Empire State Building, Times Square, Grand Central, Rockefeller
+  Center, ...) sind an ihrer realen Kreuzung im Straßenraster verankert und
+  ersetzen dort das generische `BUILDING`-Wortmodell durch ihren echten
+  Namen, mit pulsierendem Akzent-Licht. Alle übrigen Gebäudeblöcke tragen das
+  Wort `BUILDING` in einer von fünf zyklisch vergebenen Neonfarben. Boden,
+  Decke und die Umgebungsbeleuchtung sind für Manhattan auf ein
+  magenta-violettes Neo-Noir-Cyberpunk-Schema umgestellt
+  (`main.gd::_apply_manhattan_environment`) und kehren beim Verlassen zur
+  normalen kühlen Blau-Palette zurück.
+- **Verkehrs- und Fußgänger-Vielfalt in Manhattan** (`taxi.gd`,
+  `man_walking_dog.gd`, `kid_group.gd`): neben normalen `TAXI`-Fahrzeugen
+  fährt gelegentlich eine `VERYLONGLIMOUSINE` in Chrom-Silber vorbei — das
+  lange Wort selbst steht für die Fahrzeuglänge. Fußgänger sind zufällig
+  entweder eine einzelne `PERSON`, ein `ManWalkingDog` (das Wort `MAN` als
+  vertikal gestapelte Buchstaben, daneben tiefer das Wort `DOG`) oder eine
+  `KidGroup` (drei versetzte `KID`-Wortmodelle) für ein abwechslungsreiches
+  Straßenbild.
+- **U-Bahn-Stationen** (`metro_station.gd`): leuchtend-pulsierende `SUBWAY`-
+  Schilder markieren feste Punkte im Manhattan-Level, platziert wie Taxis/
+  Fußgänger kollisionsfrei mit den Pellets. Betritt der Spieler eine Station,
+  endet der Manhattan-Bonuslauf sofort und es geht zurück ins normale
+  Speedrun-Level (frischer Lauf ab Level 1).
 
 ## Steam-Veröffentlichung
 

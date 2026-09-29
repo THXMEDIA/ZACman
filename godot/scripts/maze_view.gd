@@ -6,6 +6,24 @@ extends Node3D
 const CELL := 2.0
 const WALL_H := 1.9
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
+const ManhattanMazeScript := preload("res://scripts/manhattan_maze.gd")
+
+## Neo-Noir cyberpunk palette for Manhattan's ordinary "BUILDING" blocks —
+## cycled per-cell so the skyline reads as varied neon rather than one flat
+## tint. Named landmarks (see manhattan_maze.gd's LANDMARKS) get their own,
+## brighter accent colors instead, cycled from MANHATTAN_LANDMARK_ACCENTS.
+const MANHATTAN_NEON_PALETTE := [
+	Color(1.0, 0.05, 0.75), # magenta
+	Color(0.0, 0.95, 1.0), # cyan
+	Color(0.6, 0.05, 1.0), # violet
+	Color(1.0, 0.8, 0.0), # neon amber
+	Color(0.05, 1.0, 0.45), # neon green
+]
+const MANHATTAN_LANDMARK_ACCENTS := [
+	Color(1.0, 0.85, 0.25), # neon gold
+	Color(1.0, 0.05, 0.55), # hot pink
+	Color(0.15, 0.85, 1.0), # electric blue
+]
 
 var maze # MazeGen.Maze
 var theme := "normal" # "normal" | "manhattan"
@@ -31,6 +49,7 @@ var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
 var word_wall_root: Node3D
 var word_mode_active := false
+var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed in _process
 var _t := 0.0
 
 var wall_material: StandardMaterial3D
@@ -123,26 +142,48 @@ func _build_walls() -> void:
 	normal_wall_mmi.multimesh = mm
 	add_child(normal_wall_mmi)
 
-	# The word-built-world skin: every wall cell doubles as a "WALL" 3D
-	# letterform. Built alongside the normal boxy walls (not on demand) so
-	# toggling Word Mode mid-level is instant; hidden until set_word_mode()
-	# turns it on. Manhattan uses a warm "building facade" tint, the normal
-	# levels a Matrix green to match the ASCII look they're switching out of.
+	# The word-built-world skin: every wall cell doubles as a 3D letterform.
+	# Built alongside the normal boxy walls (not on demand) so toggling Word
+	# Mode mid-level is instant; hidden until set_word_mode() turns it on.
+	# The normal levels use a flat Matrix green ("WALL", matching the ASCII
+	# look they're switching out of); Manhattan is a Neo-Noir cyberpunk
+	# skyline — every ordinary block cycles through a neon palette as
+	# "BUILDING", and any block ManhattanMazeScript.LANDMARKS actually names
+	# (see manhattan_maze.gd) gets that real name, a brighter accent color,
+	# and its own pulsing light (animated in _process, see landmark_lights).
 	word_wall_root = Node3D.new()
 	add_child(word_wall_root)
-	var word_color := Color(0.25, 1.0, 0.35)
-	var word_emission := 1.1
+	landmark_lights.clear()
 	if theme == "manhattan":
-		word_color = Color(0.85, 0.68, 0.34)
-		word_emission = 0.35
-	for cell in wall_cells:
-		var wm := WordMeshScript.build("WALL", word_color, {"font_size": 30, "depth": WALL_H * 0.6, "emission_energy": word_emission})
-		wm.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
-		# Alternate facing so corridors running either axis catch a readable
-		# face at least some of the time — the reference look is scattered
-		# lettering, not perfectly UV-mapped signage.
-		wm.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
-		word_wall_root.add_child(wm)
+		for cell in wall_cells:
+			var landmark_name: String = ManhattanMazeScript.landmark_at(cell.x, cell.y)
+			if landmark_name != "":
+				var accent: Color = MANHATTAN_LANDMARK_ACCENTS[landmark_lights.size() % MANHATTAN_LANDMARK_ACCENTS.size()]
+				var wm := WordMeshScript.build(landmark_name, accent, {"font_size": 15, "depth": WALL_H * 0.55, "emission_energy": 2.4})
+				wm.position = Vector3(cell.y * CELL, WALL_H * 0.55, cell.x * CELL)
+				wm.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
+				word_wall_root.add_child(wm)
+				var light := OmniLight3D.new()
+				light.light_color = accent
+				light.omni_range = 3.4
+				light.light_energy = 1.2
+				wm.add_child(light)
+				landmark_lights.append(light)
+			else:
+				var neon: Color = MANHATTAN_NEON_PALETTE[absi(cell.x * 31 + cell.y) % MANHATTAN_NEON_PALETTE.size()]
+				var bw := WordMeshScript.build("BUILDING", neon, {"font_size": 22, "depth": WALL_H * 0.6, "emission_energy": 1.1})
+				bw.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
+				bw.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
+				word_wall_root.add_child(bw)
+	else:
+		for cell in wall_cells:
+			var wm2 := WordMeshScript.build("WALL", Color(0.25, 1.0, 0.35), {"font_size": 30, "depth": WALL_H * 0.6, "emission_energy": 1.1})
+			wm2.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
+			# Alternate facing so corridors running either axis catch a
+			# readable face at least some of the time — the reference look
+			# is scattered lettering, not perfectly UV-mapped signage.
+			wm2.rotation.y = 0.0 if (cell.x + cell.y) % 2 == 0 else PI / 2.0
+			word_wall_root.add_child(wm2)
 
 	walls_body = StaticBody3D.new()
 	walls_body.collision_layer = 2
@@ -164,8 +205,25 @@ func _build_floor_ceiling() -> void:
 	plane.size = Vector2(floor_w, floor_d)
 
 	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.024, 0.039, 0.094)
-	floor_mat.roughness = 0.9
+	var ceil_mat := StandardMaterial3D.new()
+	if theme == "manhattan":
+		# Neo-noir cyberpunk: near-black wet-asphalt floor with a faint
+		# magenta sheen, and a deep violet "night sky" ceiling that catches
+		# the neon glow from the word-built buildings.
+		floor_mat.albedo_color = Color(0.015, 0.01, 0.03)
+		floor_mat.roughness = 0.25
+		floor_mat.metallic = 0.35
+		floor_mat.emission_enabled = true
+		floor_mat.emission = Color(0.35, 0.02, 0.3)
+		floor_mat.emission_energy_multiplier = 0.12
+		ceil_mat.albedo_color = Color(0.03, 0.01, 0.07)
+		ceil_mat.emission_enabled = true
+		ceil_mat.emission = Color(0.05, 0.02, 0.25)
+		ceil_mat.emission_energy_multiplier = 0.1
+	else:
+		floor_mat.albedo_color = Color(0.024, 0.039, 0.094)
+		floor_mat.roughness = 0.9
+		ceil_mat.albedo_color = Color(0.016, 0.024, 0.067)
 
 	var floor_mesh := MeshInstance3D.new()
 	floor_mesh.mesh = plane
@@ -173,8 +231,6 @@ func _build_floor_ceiling() -> void:
 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
 	add_child(floor_mesh)
 
-	var ceil_mat := StandardMaterial3D.new()
-	ceil_mat.albedo_color = Color(0.016, 0.024, 0.067)
 	var ceil_mesh := MeshInstance3D.new()
 	ceil_mesh.mesh = plane
 	ceil_mesh.material_override = ceil_mat
@@ -384,3 +440,6 @@ func _process(delta: float) -> void:
 		word_powerup_node.rotate_y(delta * 2.0)
 		var ws := 0.5 + sin(_t * 5.0) * 0.06
 		word_powerup_node.scale = Vector3.ONE * ws
+	for i in landmark_lights.size():
+		var light: OmniLight3D = landmark_lights[i]
+		light.light_energy = 1.0 + sin(_t * 3.0 + i * 0.7) * 0.55

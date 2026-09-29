@@ -53,6 +53,55 @@ static func street_at(row: int) -> String:
 	return ""
 
 
+## Real Midtown landmarks: [name, avenue_index, street_index] at each one's
+## real intersection. Flavor data, not a live map fetch (OSM/Overpass isn't
+## reachable from this sandbox — see this file's header) — the real names,
+## placed at their real approximate position within this hand-authored
+## Midtown grid, on the nearest building block (block_for_intersection)
+## rather than the intersection itself (which is open street, not a wall).
+## Used by maze_view.gd's word-wall builder in place of the generic
+## "BUILDING" label wherever a wall cell matches one of these blocks.
+const LANDMARKS := [
+	["EMPIRE STATE BUILDING", 7, 0],
+	["MACY'S", 6, 0],
+	["JAVITS CENTER", 1, 1],
+	["PORT AUTHORITY", 4, 3],
+	["BRYANT PARK", 6, 3],
+	["TIMES SQUARE", 5, 4],
+	["NY PUBLIC LIBRARY", 7, 4],
+	["GRAND CENTRAL", 9, 6],
+	["CHRYSLER BUILDING", 10, 5],
+	["ST PATRICK'S CATHEDRAL", 7, 7],
+	["ROCKEFELLER CENTER", 6, 8],
+	["RADIO CITY", 5, 8],
+	["MOMA", 7, 9],
+	["CARNEGIE HALL", 5, 11],
+	["TRUMP TOWER", 7, 11],
+	["TIFFANY & CO", 8, 11],
+	["THE PLAZA", 6, 12],
+]
+
+
+## The building block nearest a given avenue/street intersection — one grid
+## step northeast of it, clamped into the interior block range. Deterministic
+## and cheap; landmark_at() below is the actual lookup consumers use.
+static func block_for_intersection(avenue_index: int, street_index: int) -> Vector2i:
+	var col: int = clampi(avenue_index * 2 + 2, 2, AVENUES.size() * 2 - 2)
+	var row: int = clampi(street_index * 2 + 2, 2, STREETS.size() * 2 - 2)
+	return Vector2i(row, col)
+
+
+## The landmark name for this exact wall-block grid cell, or "" if it's just
+## an ordinary building. `row`/`col` are grid coordinates (Maze.grid indices),
+## not avenue/street indices.
+static func landmark_at(row: int, col: int) -> String:
+	for entry in LANDMARKS:
+		var block := block_for_intersection(entry[1], entry[2])
+		if block.x == row and block.y == col:
+			return entry[0]
+	return ""
+
+
 func generate() -> MazeGenScript.Maze:
 	var maze: MazeGenScript.Maze = MazeGenScript.Maze.new()
 	maze.rows = STREETS.size() * 2 + 1

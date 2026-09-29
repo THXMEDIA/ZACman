@@ -76,6 +76,44 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL avenue_at/street_at did not resolve every intersection")
 
+	# Every hand-authored landmark (manhattan_maze.gd's LANDMARKS) must land
+	# on a distinct, real wall cell — not open street, not another
+	# landmark's cell, and not inside the (now-open) former ghost-house
+	# interior — or maze_view.gd's word-wall builder would silently never
+	# render it. This is the same check that caught GRAND CENTRAL's first
+	# placement landing on open floor.
+	checks += 1
+	var seen_blocks := {}
+	var landmark_problems := 0
+	for entry in mm_script.LANDMARKS:
+		var block: Vector2i = mm_script.block_for_intersection(entry[1], entry[2])
+		if block.x < 0 or block.x >= maze.rows or block.y < 0 or block.y >= maze.cols:
+			landmark_problems += 1
+			print("FAIL landmark %s resolves out of grid bounds: %s" % [entry[0], block])
+			continue
+		if maze.grid[block.x][block.y] != 1:
+			landmark_problems += 1
+			print("FAIL landmark %s at %s is not a wall cell" % [entry[0], block])
+		var key := "%d,%d" % [block.x, block.y]
+		if seen_blocks.has(key):
+			landmark_problems += 1
+			print("FAIL landmark %s collides on cell %s with %s" % [entry[0], block, seen_blocks[key]])
+		else:
+			seen_blocks[key] = entry[0]
+		if mm_script.landmark_at(block.x, block.y) != entry[0]:
+			landmark_problems += 1
+			print("FAIL landmark_at(%s) did not return %s" % [block, entry[0]])
+	if landmark_problems > 0:
+		failures += 1
+
+	# An ordinary wall cell with no landmark on it must report "" (this is
+	# what maze_view.gd's word-wall builder uses to fall back to the
+	# generic "BUILDING" label).
+	checks += 1
+	if mm_script.landmark_at(0, 0) != "":
+		failures += 1
+		print("FAIL landmark_at(0,0) (corner, no landmark) should return \"\"")
+
 	maze_gen.free()
 	mm.free()
 	print("")
