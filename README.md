@@ -66,12 +66,17 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Zeichen (8x8-Bitmuster, kein Font-Asset nötig), die von oben nach unten
   scrollen wie ein Terminal, mit eigenem Tempo/Phase je Spalte. Immer und in
   jeder Entfernung voll sichtbar, nicht nur ab einer gewissen Distanz — ein
-  Materialeffekt, kein Screen-Space-Blend. Feines Raster (16x30 Zeichen pro
-  Wandfläche), damit es nicht blockig wirkt.
+  Materialeffekt, kein Screen-Space-Blend. Sehr feines Raster (48x90 Zeichen
+  pro Wandfläche), damit es nicht blockig wirkt.
 - **Boden/Himmel-Mashup** (bewusster Stilbruch zu den grünen Matrix-Wänden):
   brauner Erdboden, blauer "Himmel" als Deckenfarbe mit verstreuten weißen
   Voxel-Wolken im Super-Mario-/Minecraft-Pixel-Look (`godot/scripts/
-  cloud_mesh.gd`, gesteuert über `CityTheme.ceil_sky_clouds`).
+  cloud_mesh.gd`, gesteuert über `CityTheme.ceil_sky_clouds`). An beiden
+  Enden des seitlichen Wrap-Tunnels (`maze.tunnel_row`) steht statt des
+  blauen Himmels eine gemalte Super-Mario-artige Kulisse
+  (`godot/shaders/mario_vista.gdshader`: Hügel, Büsche, Sonne, bewusst in
+  warmen statt blauen Tönen) — sonst würde der Tunnelausgang einfach ins
+  flache Himmelblau auslaufen.
 - **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
   Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten,
   schaltet sich das **Manhattan-Bonuslevel** dauerhaft frei — ein von Hand

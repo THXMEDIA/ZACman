@@ -70,6 +70,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_build_walls()
 	_build_floor_ceiling()
 	_build_sky_clouds()
+	_build_tunnel_vistas()
 	_build_pellets(start_cell, reserved_cells)
 	# A permanently-word-built theme (Manhattan) starts in the word-built-
 	# world look; other themes start out looking normal and only switch when
@@ -240,12 +241,57 @@ func _build_sky_clouds() -> void:
 	var cloud_count: int = clampi(candidates.size() / 22, 4, 14)
 	for i in mini(cloud_count, candidates.size()):
 		var cell: Vector2i = candidates[i]
-		var cloud := CloudMeshScript.build({"voxel_size": 0.1 + randf() * 0.06})
+		# 1.5x the original 0.10-0.16 range, per the user's "clouds 1.5x
+		# taller" request.
+		var voxel_size: float = (0.1 + randf() * 0.06) * 1.5
+		var cloud := CloudMeshScript.build({"voxel_size": voxel_size})
 		var jitter_x := (randf() - 0.5) * CELL * 0.6
 		var jitter_z := (randf() - 0.5) * CELL * 0.6
-		cloud.position = Vector3(cell.y * CELL + jitter_x, WALL_H - 0.32, cell.x * CELL + jitter_z)
+		# Keep the cloud's top edge just under the ceiling regardless of its
+		# (now bigger) size: CloudMesh is CloudMeshScript.ROWS tall, centered
+		# on its own origin, so half that height plus a small gap sits above
+		# the origin we place it at.
+		var half_h: float = CloudMeshScript.ROWS * voxel_size * 0.5
+		cloud.position = Vector3(cell.y * CELL + jitter_x, WALL_H - 0.15 - half_h, cell.x * CELL + jitter_z)
 		cloud.rotation.y = randf() * TAU
 		add_child(cloud)
+
+
+## Caps both ends of the maze's side tunnel (maze.tunnel_row, where
+## MazeGen leaves the two edge columns open for the Pac-Man-style
+## wraparound — see player_controller.gd's wrap_tunnel) with a flat
+## Super-Mario-style backdrop panel (mario_vista.gdshader) instead of
+## letting the tunnel mouth open straight onto the plain background clear
+## color. That background is now a bright "sky" blue for this theme (see
+## city_themes.gd), and it was bleeding through those two open tunnel
+## ends looking like a flat blue void — this caps it with an actual
+## (deliberately non-blue) vista instead. Only runs for themes with
+## CityTheme.ceil_sky_clouds set, same as the clouds above; other themes'
+## backgrounds (e.g. Manhattan's neo-noir violet) don't have this problem.
+func _build_tunnel_vistas() -> void:
+	if not city_theme.ceil_sky_clouds:
+		return
+	var shader := load("res://shaders/mario_vista.gdshader")
+	var world_width: float = maze.cols * CELL
+	var z: float = maze.tunnel_row * CELL
+	# Left end: sits at the wrap threshold (see wrap_tunnel's -CELL*0.5),
+	# facing +X so its front is visible to a player approaching from inside.
+	_add_tunnel_vista_panel(Vector3(-CELL * 0.5, WALL_H * 0.5, z), PI / 2.0, shader)
+	# Right end: mirrored, facing -X.
+	_add_tunnel_vista_panel(Vector3(world_width - CELL * 0.5, WALL_H * 0.5, z), -PI / 2.0, shader)
+
+
+func _add_tunnel_vista_panel(pos: Vector3, rot_y: float, shader: Shader) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(CELL, WALL_H)
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	quad.material = mat
+	var mi := MeshInstance3D.new()
+	mi.mesh = quad
+	mi.position = pos
+	mi.rotation.y = rot_y
+	add_child(mi)
 
 
 ## Swaps the visible wall skin: word-built ("WALL" letterforms) vs the

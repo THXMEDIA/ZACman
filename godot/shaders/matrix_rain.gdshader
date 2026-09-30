@@ -21,9 +21,9 @@
 shader_type spatial;
 render_mode unshaded, cull_back;
 
-uniform float cols_per_face = 16.0;  // glyph columns across one wall face's width
-uniform float rows_per_face = 30.0;  // glyph rows across one wall face's height (WALL_H)
-uniform float fall_speed = 5.0;      // base rows scrolled per second
+uniform float cols_per_face = 48.0;  // glyph columns across one wall face's width (3x finer than the previous 16)
+uniform float rows_per_face = 90.0;  // glyph rows across one wall face's height (3x finer than the previous 30)
+uniform float fall_speed = 15.0;     // base rows scrolled per second (3x, to match the finer grid's apparent speed)
 uniform float glyph_density = 0.8;   // fraction of cells showing a glyph rather than empty background
 uniform vec3 glyph_color = vec3(0.25, 1.0, 0.35);
 uniform vec3 bg_color = vec3(0.004, 0.03, 0.012);
