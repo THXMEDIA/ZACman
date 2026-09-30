@@ -17,16 +17,33 @@
 // the standard trick for an endless scrolling procedural texture. Each
 // column gets its own random speed/phase (from a hash of its column
 // index) so the whole wall doesn't scroll as one flat sheet.
+//
+// Floor-fade (floor_fade_frac below): a full-height, uniformly-downward-
+// scrolling pattern running edge-to-edge down every wall in a corridor is
+// exactly the trigger vection research (illusory self-motion — see e.g.
+// https://en.wikipedia.org/wiki/Illusions_of_self-motion and VR-comfort
+// guides like Meta's locomotion-comfort docs) describes for "the ground
+// feels like it's moving/tilting": a large, high-contrast, coherently-
+// moving field right down to the floor line, with the motion cutting off
+// abruptly where the (static) floor begins. That abrupt handoff reads as
+// the floor rising to meet the falling rain. The fix those sources give is
+// a static reference frame right at the trouble spot — here, fading the
+// scrolling glyphs out to the (static, non-scrolling) bg_color over the
+// bottom slice of each wall gives the eye a calm, motionless strip right
+// at floor level instead of live motion running straight into it.
 
 shader_type spatial;
 render_mode unshaded, cull_back;
 
 uniform float cols_per_face = 48.0;  // glyph columns across one wall face's width (3x finer than the previous 16)
 uniform float rows_per_face = 90.0;  // glyph rows across one wall face's height (3x finer than the previous 30)
-uniform float fall_speed = 15.0;     // base rows scrolled per second (3x, to match the finer grid's apparent speed)
-uniform float glyph_density = 0.8;   // fraction of cells showing a glyph rather than empty background
+uniform float fall_speed = 11.0;     // base rows scrolled per second (lowered from 15 — less optic-flow magnitude, a smaller vection trigger)
+uniform float glyph_density = 0.7;   // fraction of cells showing a glyph rather than empty background (lowered from 0.8 — less coherent moving contrast)
 uniform vec3 glyph_color = vec3(0.25, 1.0, 0.35);
 uniform vec3 bg_color = vec3(0.004, 0.03, 0.012);
+uniform float floor_fade_frac = 0.16; // bottom fraction of the wall's own height that fades out to bg_color (a static strip right at floor level)
+
+varying float local_y; // this wall instance's own local mesh Y, -0.5 (floor) .. +0.5 (top) — independent of per-instance height scaling
 
 // 10 glyph shapes, each an 8x8 bit pattern (MSB = leftmost pixel),
 // index 0 left as blank/space. Same table as ascii_post.gdshader.
@@ -56,6 +73,10 @@ int glyph_bit(int glyph_index, ivec2 local) {
 	return (row >> (7 - local.x)) & 1;
 }
 
+void vertex() {
+	local_y = VERTEX.y;
+}
+
 void fragment() {
 	float col = floor(UV.x * cols_per_face);
 	float col_seed = hash1(col * 91.7 + 3.1);
@@ -78,6 +99,13 @@ void fragment() {
 		float brightness = 0.55 + 0.45 * hash2(cell_key + vec2(5.0, 0.0));
 		color = mix(bg_color, glyph_color * brightness, float(lit));
 	}
+
+	// Fade the scrolling pattern out to the static bg_color over the
+	// bottom floor_fade_frac of the wall's height — see the header comment
+	// on floor_fade_frac for why (countering the "floor looks like it's
+	// rising" illusion).
+	float floor_fade = smoothstep(-0.5, -0.5 + floor_fade_frac, local_y);
+	color = mix(bg_color, color, floor_fade);
 
 	ALBEDO = color;
 	EMISSION = color * 1.5;
