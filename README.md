@@ -286,6 +286,71 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   endet der Manhattan-Bonuslauf sofort und es geht zurück ins normale
   Speedrun-Level (frischer Lauf ab Level 1).
 
+- **Mehr Zeichenvielfalt, dunklerer/leuchtenderer Matrix-Regen, mehr
+  Kondition-Item-Spawns, synthetisierte Hintergrundmusik**
+  (`shaders/matrix_rain.gdshader`, `scripts/maze_view.gd`,
+  `scripts/audio_synth.gd`, `scripts/main.gd`, `tests/bot_test.gd`,
+  `tests/test_audio_synth.gd`):
+  - **Zeichenvielfalt**: Die Glyphen-Tabelle des Matrix-Regen-Shaders ist
+    von 10 auf 31 8×8-Bitmap-Zeichen gewachsen (`GLYPH_ROWS`/`GLYPH_COUNT`)
+    — die zusätzlichen 21 sind skriptgeneriert (ein paar zufällige
+    "Striche" plus gelegentliche Querstriche, zu leere/zu volle Muster
+    verworfen), ein Skript-Äquivalent zum Von-Hand-Zeichnen weiterer zwei
+    Dutzend Pixel-Glyphen. `sample_layer()` wählt jetzt aus dem vollen
+    `GLYPH_COUNT`-Bereich statt nur aus den ursprünglichen 9.
+  - **Farbe**: `bg_color` ist deutlich näher an Schwarz gezogen und
+    `glyph_color` ein tieferes, gesättigteres Grün als vorher (statt des
+    eher blassen Mittelgrüns); `EMISSION` ist von `color * 1.5` auf
+    `color * 2.2` angehoben. Zusammen ergibt das eine Wand, die insgesamt
+    dunkler wirkt (mehr Kontrast, mehr Schwarzraum zwischen den Zeichen),
+    während die aufleuchtenden Glyphen selbst stärker/neonhafter glühen —
+    "dunkler UND leuchtender" statt nur insgesamt gedimmt.
+  - **Mehr Kondition-Item-Spawns**: Sowohl das WORD-Pickup (weißes
+    Kaninchen) als auch das Fear-&-Loathing-Pickup spawnen jetzt
+    `WORD_POWERUP_COUNT`/`FEAR_POWERUP_COUNT` (je 2) statt nur je einmal
+    pro Level. `MazeView` hält dafür jetzt Array-Felder
+    (`word_powerup_cells`/`_nodes`/`_alive`, `fear_powerup_cells`/`_nodes`/
+    `_alive`) statt einzelner Werte — dasselbe Parallel-Array-Muster wie
+    bereits bei den Power-Pellets (`power_cells`/`power_nodes`/
+    `power_alive`). Ein neues `_pick_multiple_farthest()` verteilt die
+    mehreren Spawns eines Typs per Farthest-Point-Sampling über
+    unterschiedliche Ecken des Labyrinths, statt sie zu häufen.
+  - **Musik**: Für die "frei verfügbare" Arcade-Musik im Pac-Man-Stil (normale
+    Speedrun-Level) und die Musik im Stil von Roudoudou/Air/The Herbaliser
+    (Explorer-/Manhattan-Level) wurde **keine externe Audiodatei
+    heruntergeladen** — zum einen verbietet die Sandbox, in der dieses
+    Feature gebaut wurde, beliebige Downloads von Drittanbieter-Seiten
+    (nur npm/PyPI/GitHub sind erreichbar), zum anderen widerspräche es dem
+    bereits bestehenden Architekturprinzip von `audio_synth.gd`
+    ("kein Sample-/Asset-File irgendwo — spiegelt den Web-Audio-
+    Synthese-Ansatz des Browser-Prototyps"). Stattdessen komponieren zwei
+    neue, original geschriebene Stücke direkt in GDScript, gerendert mit
+    genau derselben Oszillator+Hüllkurven-Technik wie jeder andere
+    Sound-Effekt in dieser Datei:
+    - `play_arcade_music()`: knackige Square-Wave-Lead-Melodie über
+      Triangle-Bass mit einem leisen Off-Beat-Klick, ein kurzer sich
+      wiederholender ~4,8-s-Loop im I–vi–IV–V-Bounce-Gefühl klassischer
+      Coin-op-Chiptunes. Startet in `Main.begin_game()`.
+    - `play_explorer_music()`: warme gehaltene Dreiklang-Akkorde
+      (Fmaj7–Dm9–Gm7–Cmaj7) auf Triangle, ein gemächlicher Sinus-Bass und
+      ein leiser gebürsteter Noise-Shaker — ein ruhiger, jazziger
+      Downtempo-/Lounge-Loop im Sinne von Roudoudou/Air/The Herbaliser, bei
+      ca. 84 BPM. Startet in `Main._start_explorer_run()` (auch für
+      Manhattan).
+    - Beide Loops verwenden dieselbe `AudioStreamWAV`-Loop-Technik wie die
+      bestehende Sirene (`_siren_loop`), verallgemeinert über einen neuen
+      `_compose_loop()`-Helfer auf mehrstimmige Notenfolgen statt eines
+      einzelnen Dauertons. `Sfx.stop_all()` stoppt jetzt auch die Musik
+      (`stop_music()`), damit ein Game-Over sauber still wird.
+  - Getestet: `tests/bot_test.gd` prüft die neue Glyphenzahl/Farb-/
+    Emission-Defaults im Shader-Quelltext, dass beide Kondition-Item-Typen
+    mit mehr als einem Exemplar spawnen, und dass `Sfx.music_state()` beim
+    Start eines normalen bzw. Manhattan-Laufs auf `"arcade"`/`"explorer"`
+    wechselt. Ein neuer eigener Test, `tests/test_audio_synth.gd`, baut
+    `Sfx` isoliert auf und prüft, dass beide Musik-Loops als nicht-leere,
+    nahtlos schleifende PCM-Buffer gerendert werden und dass
+    `play_*_music()`/`stop_all()`/`music_state()` korrekt zusammenspielen.
+
 ## Steam-Veröffentlichung
 
 Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md): Godot-Export-Setup,

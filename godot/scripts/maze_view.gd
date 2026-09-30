@@ -36,18 +36,24 @@ var fruit_expire_at := 0.0
 ## The "Word Mode" power-up (normal levels only — see spawn_word_powerup
 ## note in _build_pellets). Manhattan never has one: it's set permanently
 ## into word-mode instead, and has no power-ups at all.
-var word_powerup_cell := Vector2i(-1, -1)
-var word_powerup_node: Node3D = null # a MultiMeshInstance3D (the pixel-rabbit — see pixel_rabbit_mesh.gd), typed as the common Node3D base
-var word_powerup_alive := false
+##
+## More than one now spawns per level ("mehr spawn der Kondition Items") —
+## parallel arrays, same pattern as power_cells/power_nodes/power_alive
+## above, rather than a single cell/node/alive triple.
+const WORD_POWERUP_COUNT := 2
+var word_powerup_cells: Array = [] # Array[Vector2i]
+var word_powerup_nodes: Array = [] # Array[Node3D] — each a MultiMeshInstance3D (the pixel-rabbit — see pixel_rabbit_mesh.gd), typed as the common Node3D base
+var word_powerup_alive: Array = [] # Array[bool]
 
 ## The Fear & Loathing pickup (normal levels only, same rules as the WORD
 ## pickup above): eating it temporarily applies the Fear & Loathing
 ## condition's control-scrambling (see Main._activate_fear_powerup), turns
 ## the matrix_rain wall shader psychedelic (see set_psychedelic), and
 ## randomly flips the player's wall collision on and off for a few seconds.
-var fear_powerup_cell := Vector2i(-1, -1)
-var fear_powerup_node: Node3D = null
-var fear_powerup_alive := false
+const FEAR_POWERUP_COUNT := 2
+var fear_powerup_cells: Array = [] # Array[Vector2i]
+var fear_powerup_nodes: Array = [] # Array[Node3D]
+var fear_powerup_alive: Array = [] # Array[bool]
 
 var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
@@ -81,12 +87,12 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	power_alive.clear()
 	fruit_node = null
 	fruit_alive = false
-	word_powerup_cell = Vector2i(-1, -1)
-	word_powerup_node = null
-	word_powerup_alive = false
-	fear_powerup_cell = Vector2i(-1, -1)
-	fear_powerup_node = null
-	fear_powerup_alive = false
+	word_powerup_cells.clear()
+	word_powerup_nodes.clear()
+	word_powerup_alive.clear()
+	fear_powerup_cells.clear()
+	fear_powerup_nodes.clear()
+	fear_powerup_alive.clear()
 	sky_cloud_nodes.clear()
 
 	maze = new_maze
@@ -456,34 +462,66 @@ func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
 ## The WORD pickup's visual: a small blocky white pixel-rabbit (see
 ## pixel_rabbit_mesh.gd) rather than the literal word "WORD" — "follow the
 ## white rabbit" for the pickup that drops wall collision and reskins the
-## level into its word-built-world look.
-func _build_word_powerup_mesh() -> void:
+## level into its word-built-world look. One instance per cell in
+## word_powerup_cells (see WORD_POWERUP_COUNT).
+func _build_word_powerup_mesh(cell: Vector2i) -> void:
 	var mesh := PixelRabbitMeshScript.build()
 	mesh.scale = Vector3.ONE * 1.4
-	mesh.position = Vector3(word_powerup_cell.y * CELL, 0.55, word_powerup_cell.x * CELL)
+	mesh.position = Vector3(cell.y * CELL, 0.55, cell.x * CELL)
 	var light := OmniLight3D.new()
 	light.light_color = Color(0.85, 0.9, 1.0)
 	light.omni_range = 2.6
 	light.light_energy = 0.85
 	mesh.add_child(light)
 	add_child(mesh)
-	word_powerup_node = mesh
-	word_powerup_alive = true
+	word_powerup_nodes.append(mesh)
+	word_powerup_alive.append(true)
 
 
-## The Fear & Loathing pickup's visual — see psychedelic_head_mesh.gd.
-func _build_fear_powerup_mesh() -> void:
+## The Fear & Loathing pickup's visual — see psychedelic_head_mesh.gd. One
+## instance per cell in fear_powerup_cells (see FEAR_POWERUP_COUNT).
+func _build_fear_powerup_mesh(cell: Vector2i) -> void:
 	var head := PsychedelicHeadMeshScript.build()
 	head.scale = Vector3.ONE * 0.5
-	head.position = Vector3(fear_powerup_cell.y * CELL, 0.55, fear_powerup_cell.x * CELL)
+	head.position = Vector3(cell.y * CELL, 0.55, cell.x * CELL)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.4, 0.9)
 	light.omni_range = 2.6
 	light.light_energy = 0.9
 	head.add_child(light)
 	add_child(head)
-	fear_powerup_node = head
-	fear_powerup_alive = true
+	fear_powerup_nodes.append(head)
+	fear_powerup_alive.append(true)
+
+
+## Greedy farthest-point sampling seeded by `anchor` (not itself part of the
+## output): picks up to `count` cells out of `cells` so each new pick is as
+## far as possible from `anchor` *and* every cell already picked — spreads
+## several same-type pickups across different neighborhoods instead of
+## clustering them together. Used for the WORD/Fear & Loathing pickups below
+## now that more than one of each can spawn per level.
+func _pick_multiple_farthest(cells: Array, count: int, anchor: Vector2i) -> Array:
+	var picked := []
+	var refs := [anchor]
+	var pool := cells.duplicate()
+	for i in count:
+		if pool.is_empty():
+			break
+		var best = null
+		var best_d := -1.0
+		for cell in pool:
+			var d := INF
+			for r in refs:
+				var dd: float = (cell.x - r.x) * (cell.x - r.x) + (cell.y - r.y) * (cell.y - r.y)
+				if dd < d:
+					d = dd
+			if d > best_d:
+				best_d = d
+				best = cell
+		picked.append(best)
+		refs.append(best)
+		pool.erase(best)
+	return picked
 
 
 func _pick_power_cells(candidates: Array) -> Array:
@@ -617,20 +655,25 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 	else:
 		pellet_cells = pellet_candidates
 
-	# Word Mode power-up: one per level that has power-ups at all, taken out
-	# of the regular pellet grid (not an extra pellet on top of it) so
-	# there's exactly one clearly-special pickup to find. A "calm explorer"
+	# Word Mode power-up: WORD_POWERUP_COUNT per level that has power-ups at
+	# all, taken out of the regular pellet grid (not extra pellets on top of
+	# it) and spread apart via farthest-point sampling so they land in
+	# different corners of the maze rather than clustering. A "calm explorer"
 	# theme like Manhattan has none (see build()/has_power_ups).
 	if city_theme.has_power_ups and pellet_cells.size() > 0:
-		word_powerup_cell = _pick_farthest_cell(pellet_cells, start_cell)
-		pellet_cells.erase(word_powerup_cell)
+		word_powerup_cells = _pick_multiple_farthest(pellet_cells, WORD_POWERUP_COUNT, start_cell)
+		for cell in word_powerup_cells:
+			pellet_cells.erase(cell)
 
-	# Fear & Loathing pickup: a second, rarer special pickup, taken out of
-	# the pellet grid the same way as the WORD pickup above and placed as
-	# far as possible from it so the two don't end up next to each other.
+	# Fear & Loathing pickup: a second, rarer special pickup type, taken out
+	# of the pellet grid the same way as the WORD pickups above and spread
+	# apart from both the start and the WORD pickups so the two types don't
+	# end up bunched together.
 	if city_theme.has_power_ups and pellet_cells.size() > 0:
-		fear_powerup_cell = _pick_farthest_cell(pellet_cells, word_powerup_cell)
-		pellet_cells.erase(fear_powerup_cell)
+		var fear_anchor: Vector2i = word_powerup_cells[0] if word_powerup_cells.size() > 0 else start_cell
+		fear_powerup_cells = _pick_multiple_farthest(pellet_cells, FEAR_POWERUP_COUNT, fear_anchor)
+		for cell in fear_powerup_cells:
+			pellet_cells.erase(cell)
 
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.11
@@ -661,10 +704,10 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		power_nodes.append(mesh)
 		power_alive.append(true)
 
-	if word_powerup_cell.x >= 0:
-		_build_word_powerup_mesh()
-	if fear_powerup_cell.x >= 0:
-		_build_fear_powerup_mesh()
+	for cell in word_powerup_cells:
+		_build_word_powerup_mesh(cell)
+	for cell in fear_powerup_cells:
+		_build_fear_powerup_mesh(cell)
 
 
 func total_pickups() -> int:
@@ -723,18 +766,24 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			node.visible = false
 			result.power = true
 
-	if word_powerup_alive and word_powerup_node != null:
-		var d := Vector2(word_powerup_node.position.x - pos.x, word_powerup_node.position.z - pos.z).length()
+	for i in word_powerup_nodes.size():
+		if not word_powerup_alive[i]:
+			continue
+		var node: Node3D = word_powerup_nodes[i]
+		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
 		if d < 0.5:
-			word_powerup_alive = false
-			word_powerup_node.visible = false
+			word_powerup_alive[i] = false
+			node.visible = false
 			result.word_powerup = true
 
-	if fear_powerup_alive and fear_powerup_node != null:
-		var d := Vector2(fear_powerup_node.position.x - pos.x, fear_powerup_node.position.z - pos.z).length()
+	for i in fear_powerup_nodes.size():
+		if not fear_powerup_alive[i]:
+			continue
+		var node: Node3D = fear_powerup_nodes[i]
+		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
 		if d < 0.5:
-			fear_powerup_alive = false
-			fear_powerup_node.visible = false
+			fear_powerup_alive[i] = false
+			node.visible = false
 			result.fear_powerup = true
 
 	if fruit_alive and fruit_node != null:
@@ -758,17 +807,23 @@ func _process(delta: float) -> void:
 			power_nodes[i].scale = Vector3.ONE * s
 	if fruit_alive and fruit_node != null:
 		fruit_node.rotate_y(delta * 1.4)
-	if word_powerup_alive and word_powerup_node != null:
-		word_powerup_node.rotate_y(delta * 2.0)
-		var ws := 1.4 + sin(_t * 5.0) * 0.14
-		word_powerup_node.scale = Vector3.ONE * ws
-	if fear_powerup_alive and fear_powerup_node != null:
-		fear_powerup_node.rotate_y(delta * 1.4)
-		var fs := 0.5 + sin(_t * 3.0) * 0.05
-		fear_powerup_node.scale = Vector3.ONE * fs
-		for child in fear_powerup_node.get_children():
+	for i in word_powerup_nodes.size():
+		if not word_powerup_alive[i]:
+			continue
+		var wnode: Node3D = word_powerup_nodes[i]
+		wnode.rotate_y(delta * 2.0)
+		var ws := 1.4 + sin(_t * 5.0 + i) * 0.14
+		wnode.scale = Vector3.ONE * ws
+	for i in fear_powerup_nodes.size():
+		if not fear_powerup_alive[i]:
+			continue
+		var fnode: Node3D = fear_powerup_nodes[i]
+		fnode.rotate_y(delta * 1.4)
+		var fs := 0.5 + sin(_t * 3.0 + i) * 0.05
+		fnode.scale = Vector3.ONE * fs
+		for child in fnode.get_children():
 			if child is MeshInstance3D and child.name.begins_with("aura"):
-				var hue := fmod(_t * 0.3 + float(child.get_index()) / 8.0, 1.0)
+				var hue := fmod(_t * 0.3 + float(child.get_index()) / 8.0 + i * 0.5, 1.0)
 				var c := Color.from_hsv(hue, 0.9, 1.0)
 				var mat: StandardMaterial3D = child.material_override
 				mat.albedo_color = c

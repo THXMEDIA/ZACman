@@ -85,6 +85,23 @@ func _run_checks() -> void:
 	_check("begin_game: maze built", main.maze != null)
 	_check("begin_game: lives == 3", main.lives == 3, "got %d" % main.lives)
 	_check("begin_game: enemies spawned", main.enemies.size() >= 3, "got %d" % main.enemies.size())
+
+	# ---- Matrix wall shader: much more glyph variance, and the new
+	# darker-but-more-luminous color tuning ----
+	var wall_shader: Shader = main.maze_view.wall_material.shader
+	_check("matrix wall: glyph table has far more than the original 10 shapes", wall_shader.code.find("GLYPH_COUNT = 31") != -1)
+	# Uniforms aren't overridden per-material here (no set_shader_parameter
+	# call — see MazeView._make_materials), so get_shader_parameter() would
+	# just return the "no override" nil rather than the shader's own default;
+	# check the darker/more-saturated defaults straight in the shader source
+	# instead.
+	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.001, 0.012, 0.004)") != -1)
+	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.08, 0.95, 0.22)") != -1)
+	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.2") != -1)
+
+	# ---- Background music: an original synthesized "arcade" loop starts a
+	# normal run (see Sfx.play_arcade_music / audio_synth.gd) ----
+	_check("music: arcade track starts on a normal run", Sfx.music_state() == "arcade")
 	var all_house := true
 	for e in main.enemies:
 		if e.mode != "house":
@@ -234,6 +251,7 @@ func _run_checks() -> void:
 	_check("manhattan: playing_manhattan flag set", main.playing_manhattan == true)
 	_check("manhattan: maze built", main.maze != null and main.maze.rows > 0)
 	_check("manhattan: no ghosts (calm explore level)", main.enemies.size() == 0, "got %d" % main.enemies.size())
+	_check("music: explorer track starts on a Manhattan run", Sfx.music_state() == "explorer")
 	_check("manhattan: no power pellets either", main.maze_view.power_cells.size() == 0, "got %d" % main.maze_view.power_cells.size())
 	_check("manhattan: player warped to start_cell", main.player.cell() == main.start_cell, "got %s want %s" % [main.player.cell(), main.start_cell])
 
@@ -293,7 +311,8 @@ func _run_checks() -> void:
 	await get_tree().process_frame
 	_check("word mode: off at level start", main.maze_view.word_mode_active == false)
 	_check("word mode: player has normal wall collision at level start", main.player.collision_mask == 2)
-	main.player.global_position = Vector3(main.maze_view.word_powerup_node.position.x, main.player.global_position.y, main.maze_view.word_powerup_node.position.z)
+	_check("word mode: more than one WORD pickup spawns", main.maze_view.word_powerup_nodes.size() > 1, "got %d" % main.maze_view.word_powerup_nodes.size())
+	main.player.global_position = Vector3(main.maze_view.word_powerup_nodes[0].position.x, main.player.global_position.y, main.maze_view.word_powerup_nodes[0].position.z)
 	await get_tree().process_frame
 	_check("word mode: picking up WORD activates it", main.word_mode_until > main.now)
 	_check("word mode: maze_view switches to word-built walls", main.maze_view.word_mode_active == true)
@@ -321,8 +340,9 @@ func _run_checks() -> void:
 	main.begin_game()
 	await get_tree().process_frame
 	_check("fear powerup: off at level start", main.fear_mode_until <= main.now)
-	_check("fear powerup: pickup node exists", main.maze_view.fear_powerup_node != null)
-	main.player.global_position = Vector3(main.maze_view.fear_powerup_node.position.x, main.player.global_position.y, main.maze_view.fear_powerup_node.position.z)
+	_check("fear powerup: pickup node exists", main.maze_view.fear_powerup_nodes.size() > 0)
+	_check("fear powerup: more than one Fear & Loathing pickup spawns", main.maze_view.fear_powerup_nodes.size() > 1, "got %d" % main.maze_view.fear_powerup_nodes.size())
+	main.player.global_position = Vector3(main.maze_view.fear_powerup_nodes[0].position.x, main.player.global_position.y, main.maze_view.fear_powerup_nodes[0].position.z)
 	await get_tree().process_frame
 	_check("fear powerup: picking it up activates it", main.fear_mode_until > main.now)
 	_check("fear powerup: player.active_condition becomes fear_and_loathing", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
@@ -348,7 +368,7 @@ func _run_checks() -> void:
 	main.begin_manhattan_game()
 	await get_tree().process_frame
 	_check("manhattan: permanently word-built (no power-up needed)", main.maze_view.word_mode_active == true)
-	_check("manhattan: no word power-up node exists", main.maze_view.word_powerup_node == null)
+	_check("manhattan: no word power-up node exists", main.maze_view.word_powerup_nodes.is_empty())
 	_check("manhattan: taxis spawned", main.taxis.size() > 0, "got %d" % main.taxis.size())
 	_check("manhattan: pedestrians spawned", main.pedestrians.size() > 0, "got %d" % main.pedestrians.size())
 	var lives_before_obstacle: int = main.lives

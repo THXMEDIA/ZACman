@@ -52,8 +52,15 @@ uniform float cols_per_face = 48.0;  // glyph columns across one wall face's wid
 uniform float rows_per_face = 90.0;  // glyph rows across one wall face's height (3x finer than the previous 30)
 uniform float fall_speed = 11.0;     // base rows scrolled per second (lowered from 15 — less optic-flow magnitude, a smaller vection trigger)
 uniform float glyph_density = 0.7;   // fraction of cells showing a glyph rather than empty background (lowered from 0.8 — less coherent moving contrast)
-uniform vec3 glyph_color = vec3(0.25, 1.0, 0.35);
-uniform vec3 bg_color = vec3(0.004, 0.03, 0.012);
+// Darker base + a more saturated, more luminous glow than before: the flat
+// mid-green (0.25, 1.0, 0.35) read as a fairly bright, slightly washed-out
+// green at every brightness level. glyph_color is now deeper and more
+// saturated (less blue/less desaturation), bg_color is pulled further
+// toward near-black, and EMISSION below is boosted — net effect is a wall
+// that reads as darker overall (more contrast, more black space between
+// glyphs) while the lit glyphs themselves glow harder/more neon.
+uniform vec3 glyph_color = vec3(0.08, 0.95, 0.22);
+uniform vec3 bg_color = vec3(0.001, 0.012, 0.004);
 uniform float floor_fade_frac = 0.16; // bottom fraction of the wall's own height that fades out to bg_color (a static strip right at floor level)
 
 const int LAYER_COUNT = 5; // "5 rows of code running behind each other" — see header comment above
@@ -70,19 +77,47 @@ uniform float psychedelic_amount = 0.0;
 
 varying float local_y; // this wall instance's own local mesh Y, -0.5 (floor) .. +0.5 (top) — independent of per-instance height scaling
 
-// 10 glyph shapes, each an 8x8 bit pattern (MSB = leftmost pixel),
-// index 0 left as blank/space. Same table as ascii_post.gdshader.
-const int GLYPH_ROWS[80] = int[80](
+// 31 glyph shapes, each an 8x8 bit pattern (MSB = leftmost pixel), index 0
+// left as blank/space. Up from the original 10 ("viel mehr Varianz in die
+// verwendeten Zeichen") — the extra 21 are procedurally generated (a few
+// random vertical "strokes" plus the occasional horizontal tick, rejecting
+// anything too sparse or too dense to read as a character), a script-
+// generated equivalent of hand-authoring another couple dozen 8x8 pixel
+// glyphs by eye. See scratchpad/gen_glyphs.py in the session history for
+// the generator (not checked into the repo — this table is the output).
+const int GLYPH_COUNT = 31;
+const int GLYPH_ROWS[248] = int[248](
 	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,24,24,0,
-	0,24,24,0,24,24,0,0,
-	0,0,0,126,0,0,0,0,
-	0,0,126,0,126,0,0,0,
-	0,24,24,126,126,24,24,0,
-	36,24,126,24,36,0,0,0,
-	102,102,255,102,255,102,102,0,
-	99,102,60,24,60,102,198,0,
-	60,102,110,106,110,96,60,0
+	2,2,6,6,6,6,6,14,
+	207,192,192,128,192,220,224,64,
+	45,57,41,9,13,13,9,1,
+	0,16,19,17,25,17,13,0,
+	4,6,6,7,7,7,6,6,
+	3,99,65,227,195,193,227,129,
+	0,0,194,194,207,11,11,3,
+	0,0,2,66,66,98,67,0,
+	0,32,56,32,34,35,15,0,
+	6,6,103,254,70,70,6,15,
+	228,7,102,70,64,64,96,0,
+	62,4,68,71,71,6,4,4,
+	4,4,4,174,164,36,55,32,
+	0,3,3,2,14,10,14,0,
+	0,48,48,96,252,224,224,224,
+	0,0,3,98,226,255,240,216,
+	0,0,158,128,208,208,144,24,
+	0,0,2,35,34,32,32,0,
+	0,0,4,126,100,64,111,0,
+	96,64,72,104,72,104,76,108,
+	10,43,42,14,2,0,252,0,
+	62,13,45,45,45,37,36,0,
+	126,0,0,6,15,12,12,6,
+	0,3,79,114,16,16,0,0,
+	0,0,64,224,160,160,254,0,
+	2,3,3,103,71,70,98,2,
+	0,0,0,63,51,50,18,16,
+	0,96,98,123,58,0,0,0,
+	128,196,158,196,134,134,4,6,
+	0,48,49,35,48,63,48,48
 );
 
 float hash1(float n) {
@@ -132,7 +167,7 @@ vec3 sample_layer(vec2 uv, int depth, out bool hit) {
 	vec3 color = bg_color;
 
 	if (hash2(cell_key) < glyph_density) {
-		int glyph_index = 1 + int(hash2(cell_key + vec2(11.0, 0.0)) * 9.0); // 1..9, never blank
+		int glyph_index = 1 + int(hash2(cell_key + vec2(11.0, 0.0)) * float(GLYPH_COUNT - 1)); // 1..GLYPH_COUNT-1, never blank
 		vec2 local_frac = vec2(fract(uv.x * cols + phase), fract(scaled_row));
 		ivec2 local = clamp(ivec2(local_frac * 8.0), ivec2(0), ivec2(7));
 		int lit = glyph_bit(glyph_index, local);
@@ -192,5 +227,10 @@ void fragment() {
 	color = mix(bg_color, color, floor_fade);
 
 	ALBEDO = color;
-	EMISSION = color * 1.5;
+	// Boosted from 1.5x — a darker base (bg_color/glyph_color above) with a
+	// stronger emission multiplier is what actually reads as "darker AND
+	// more luminous": the unlit background sits closer to true black while
+	// the lit glyphs glow harder against it, instead of everything just
+	// getting dimmer together.
+	EMISSION = color * 2.2;
 }

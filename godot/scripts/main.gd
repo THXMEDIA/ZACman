@@ -258,6 +258,7 @@ func begin_game() -> void:
 	paused = false
 	player.input_enabled = true
 	Sfx.set_siren(true, false)
+	Sfx.play_arcade_music()
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -513,6 +514,7 @@ func _start_explorer_run(city_id: String, cond_id: String) -> void:
 	paused = false
 	player.input_enabled = true
 	Sfx.set_siren(true, false)
+	Sfx.play_explorer_music()
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
