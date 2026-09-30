@@ -18,6 +18,19 @@
 // column gets its own random speed/phase (from a hash of its column
 // index) so the whole wall doesn't scroll as one flat sheet.
 //
+// Depth layers (LAYER_COUNT below): rather than one flat sheet of glyphs,
+// the wall now composites LAYER_COUNT independent glyph "tapes" — like
+// stacking multiple panes of falling code one behind another, closest to
+// farthest. Each layer back from the front one is a little finer-grained
+// (smaller glyphs, reading as farther away), a little dimmer (atmospheric
+// falloff), a little slower, and phase-shifted sideways (its own offset
+// into the random tape) so the layers never line up. They're composited
+// back-to-front: wherever a nearer layer has no lit glyph (i.e. it's
+// showing empty background), the layer behind it shows through instead of
+// flat bg_color — the classic "columns of code raining past each other at
+// different depths" look from the film this whole word-built-world idea
+// nods to, instead of one uniform plane of text.
+//
 // Floor-fade (floor_fade_frac below): a full-height, uniformly-downward-
 // scrolling pattern running edge-to-edge down every wall in a corridor is
 // exactly the trigger vection research (illusory self-motion — see e.g.
@@ -42,6 +55,8 @@ uniform float glyph_density = 0.7;   // fraction of cells showing a glyph rather
 uniform vec3 glyph_color = vec3(0.25, 1.0, 0.35);
 uniform vec3 bg_color = vec3(0.004, 0.03, 0.012);
 uniform float floor_fade_frac = 0.16; // bottom fraction of the wall's own height that fades out to bg_color (a static strip right at floor level)
+
+const int LAYER_COUNT = 5; // "5 rows of code running behind each other" — see header comment above
 
 varying float local_y; // this wall instance's own local mesh Y, -0.5 (floor) .. +0.5 (top) — independent of per-instance height scaling
 
@@ -77,27 +92,61 @@ void vertex() {
 	local_y = VERTEX.y;
 }
 
-void fragment() {
-	float col = floor(UV.x * cols_per_face);
-	float col_seed = hash1(col * 91.7 + 3.1);
+// One glyph "tape" at a given depth (0 = nearest/front layer, LAYER_COUNT-1
+// = farthest/back layer). Farther layers use a finer grid (smaller glyphs,
+// reading as more distant), drift a little slower, are phase-shifted
+// sideways so they never line up with the layer in front, and are dimmed
+// toward bg_color (atmospheric/depth falloff). depth=0 reproduces exactly
+// the original single-layer look (same scale/speed/brightness as before).
+vec3 sample_layer(vec2 uv, int depth, out bool hit) {
+	float d = float(depth);
+	float depth_scale = 1.0 + d * 0.35;
+	float speed_mul = 1.0 - d * 0.12;
+	float phase = d * 37.5;
+
+	float cols = cols_per_face * depth_scale;
+	float rows = rows_per_face * depth_scale;
+
+	float col = floor(uv.x * cols + phase);
+	float col_seed = hash1(col * 91.7 + 3.1 + d * 17.0);
 	// Subtracting TIME*speed before flooring makes a fixed point on the
 	// wall sample an ever-advancing sequence of "rows" from an infinite
 	// random tape — i.e. the pattern appears to scroll toward +V (down)
 	// as time passes. Each column's own seed varies its speed a bit so
 	// columns drift out of sync, like real digital rain.
-	float scaled_row = UV.y * rows_per_face - TIME * fall_speed * (0.6 + col_seed * 0.8);
+	float scaled_row = uv.y * rows - TIME * fall_speed * speed_mul * (0.6 + col_seed * 0.8) + phase * 4.0;
 	float row = floor(scaled_row);
 
-	vec2 cell_key = vec2(col, row);
+	vec2 cell_key = vec2(col, row) + vec2(d * 53.0, d * 29.0);
+	hit = false;
 	vec3 color = bg_color;
 
 	if (hash2(cell_key) < glyph_density) {
 		int glyph_index = 1 + int(hash2(cell_key + vec2(11.0, 0.0)) * 9.0); // 1..9, never blank
-		vec2 local_frac = vec2(fract(UV.x * cols_per_face), fract(scaled_row));
+		vec2 local_frac = vec2(fract(uv.x * cols + phase), fract(scaled_row));
 		ivec2 local = clamp(ivec2(local_frac * 8.0), ivec2(0), ivec2(7));
 		int lit = glyph_bit(glyph_index, local);
-		float brightness = 0.55 + 0.45 * hash2(cell_key + vec2(5.0, 0.0));
-		color = mix(bg_color, glyph_color * brightness, float(lit));
+		if (lit == 1) {
+			hit = true;
+			float brightness = 0.55 + 0.45 * hash2(cell_key + vec2(5.0, 0.0));
+			float depth_dim = 1.0 - (d / float(LAYER_COUNT)) * 0.75;
+			color = glyph_color * brightness * depth_dim;
+		}
+	}
+	return color;
+}
+
+void fragment() {
+	// Composite back-to-front: start from the farthest layer and let each
+	// nearer layer paint over it only where that layer actually has a lit
+	// glyph, so gaps in a near layer reveal the layer(s) behind it.
+	vec3 color = bg_color;
+	bool hit;
+	for (int i = LAYER_COUNT - 1; i >= 0; i--) {
+		vec3 layer_color = sample_layer(UV, i, hit);
+		if (hit) {
+			color = layer_color;
+		}
 	}
 
 	// Fade the scrolling pattern out to the static bg_color over the
