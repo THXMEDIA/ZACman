@@ -44,6 +44,10 @@ func _initialize() -> void:
 	if normal.wall_word_tall != "" or normal.wall_height_min > 0.0 or normal.wall_vertical_text or normal.pellets_follow_metro_trails:
 		failures += 1
 		print("FAIL normal theme should keep the old uniform-height, horizontal-word, fill-every-cell behavior")
+	checks += 1
+	if not normal.ceil_enabled or normal.wall_footprint_scale != 1.0:
+		failures += 1
+		print("FAIL normal theme should keep its physical ceiling and full-cell-edge-to-edge buildings")
 
 	# --- manhattan: BUILDING blocks, real landmark provider, no power-ups ---
 	var manhattan = CityThemes.get_theme("manhattan")
@@ -83,7 +87,7 @@ func _initialize() -> void:
 	checks += 1
 	if manhattan.wall_palette.size() < 2:
 		failures += 1
-		print("FAIL manhattan theme's wall_palette should cycle through several neon colors")
+		print("FAIL manhattan theme's wall_palette should cycle through several colors")
 
 	# --- manhattan: real skyscrapers, hochkant, pellets as metro signposts ---
 	checks += 1
@@ -110,6 +114,14 @@ func _initialize() -> void:
 	if not manhattan.pellets_follow_metro_trails:
 		failures += 1
 		print("FAIL manhattan theme's pellets should follow metro trails, not fill every open cell")
+	checks += 1
+	if manhattan.ceil_enabled:
+		failures += 1
+		print("FAIL manhattan theme should have no physical ceiling (its skyscrapers are taller than the old fixed ceiling height)")
+	checks += 1
+	if not (manhattan.wall_footprint_scale > 0.0 and manhattan.wall_footprint_scale < 1.0):
+		failures += 1
+		print("FAIL manhattan theme's buildings should sit back from their cell edges (wall_footprint_scale < 1.0), got %f" % manhattan.wall_footprint_scale)
 
 	# Every hand-authored landmark (manhattan_maze.gd's LANDMARKS) needs a
 	# real height here, or it would silently fall back to a flat default —

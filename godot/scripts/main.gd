@@ -17,16 +17,21 @@ const LEVELS := [
 ]
 
 ## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
-## explore level. Taxis and pedestrians are its only obstacles: harmless,
-## just something to walk around (Main._check_manhattan_obstacles).
-const MANHATTAN_TAXI_ROW_COUNT := 3
-const MANHATTAN_TAXI_COL_COUNT := 2
-const MANHATTAN_PEDESTRIAN_COUNT := 10
+## explore level. Traffic and pedestrians are its only obstacles: harmless,
+## just something to walk around (Main._check_manhattan_obstacles). Both
+## are real moving traffic now — more lanes and more variety of each
+## (TAXI/CAR/BIKE/VERYLONGLIMOUSINE, MAN/WOMAN/KID/DAD+KID) than the
+## original handful of stationary pedestrians + 5 cars.
+const MANHATTAN_TAXI_ROW_COUNT := 5
+const MANHATTAN_TAXI_COL_COUNT := 4
+const MANHATTAN_PEDESTRIAN_COUNT := 16
 const MANHATTAN_OBSTACLE_RADIUS := 0.55
 const MANHATTAN_METRO_COUNT := 4
 const MANHATTAN_METRO_RADIUS := 0.75
 const MANHATTAN_LIMO_COLOR := Color(0.82, 0.86, 0.95) # chrome/silver
 const MANHATTAN_TAXI_COLOR := Color(1.0, 0.82, 0.05)
+const MANHATTAN_CAR_COLOR := Color(0.55, 0.65, 0.8) # ordinary traffic, muted steel-blue
+const MANHATTAN_BIKE_COLOR := Color(0.35, 0.85, 0.45)
 
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const ConditionsScript := preload("res://scripts/conditions.gd")
@@ -253,13 +258,13 @@ func start_manhattan_level() -> void:
 	start_cell = maze.start_cell
 	level_index = -1
 
-	# Pedestrian and metro-station cells are picked before the maze view
-	# builds its pellets, and handed in together as reserved cells, so
-	# neither a stationary pedestrian nor a metro sign can ever end up
-	# parked on top of a pellet the player could never then reach.
-	var pedestrian_cells := _pick_manhattan_pedestrian_cells()
-	var metro_cells := _pick_manhattan_metro_cells(pedestrian_cells)
-	var reserved_cells: Array = pedestrian_cells + metro_cells
+	# Metro-station cells are picked before the maze view builds its
+	# pellets and handed in as reserved cells, so a metro sign can never
+	# end up parked on top of a pellet the player could never then reach.
+	# Pedestrians now walk the streets like traffic (see _spawn_manhattan_
+	# obstacles), so they no longer need a reserved home cell of their own.
+	var metro_cells := _pick_manhattan_metro_cells()
+	var reserved_cells: Array = metro_cells
 	maze_view.build(maze, start_cell, "manhattan", reserved_cells, metro_cells)
 	_apply_theme_environment("manhattan")
 	fruit_spawned = false
@@ -273,7 +278,7 @@ func start_manhattan_level() -> void:
 		e.queue_free()
 	enemies.clear() # Manhattan has no ghosts — see this function's header comment
 
-	_spawn_manhattan_obstacles(pedestrian_cells)
+	_spawn_manhattan_obstacles()
 	_spawn_metro_stations(metro_cells)
 
 	hud.set_level("MANHATTAN")
@@ -295,17 +300,15 @@ func _clear_manhattan_obstacles() -> void:
 	metro_stations.clear()
 
 
-## Picks stationary pedestrian cells ahead of pellet placement (see
-## maze_view.gd's `build`/`_build_pellets` reserved_cells parameter) so a
-## pedestrian can never end up parked on a pellet the player could never
-## reach. Pure cell selection, no node spawning — spawning happens in
-## _spawn_manhattan_obstacles once maze_view has already excluded these.
-func _pick_manhattan_pedestrian_cells() -> Array:
+## Metro-station cells, picked ahead of pellet placement (see maze_view.gd's
+## `build`/`_build_pellets` reserved_cells parameter) so a metro sign can
+## never end up parked on a pellet the player could never then reach.
+func _pick_manhattan_metro_cells() -> Array:
 	var open_cells: Array = MazeGen.cells_in_room(maze, false)
 	open_cells.shuffle()
 	var picked := []
 	for cell in open_cells:
-		if picked.size() >= MANHATTAN_PEDESTRIAN_COUNT:
+		if picked.size() >= MANHATTAN_METRO_COUNT:
 			break
 		if cell == start_cell:
 			continue
@@ -313,29 +316,39 @@ func _pick_manhattan_pedestrian_cells() -> Array:
 	return picked
 
 
-## Metro-station cells, picked the same way as pedestrian cells and
-## excluding any cell pedestrian picking already claimed, so the two never
-## collide and neither ever lands on a pellet.
-func _pick_manhattan_metro_cells(pedestrian_cells: Array) -> Array:
-	var open_cells: Array = MazeGen.cells_in_room(maze, false)
-	open_cells.shuffle()
-	var picked := []
-	for cell in open_cells:
-		if picked.size() >= MANHATTAN_METRO_COUNT:
-			break
-		if cell == start_cell or cell in pedestrian_cells:
-			continue
-		picked.append(cell)
-	return picked
+## A weighted pool of Manhattan street traffic: TAXI and CAR are the common
+## sights, BIKE a lighter/faster one, VERYLONGLIMOUSINE a rare chrome
+## stretch — each entry names its word, color, font size and a speed range
+## (bikes fastest, limos slowest/stateliest). Picked per-taxi-node so both
+## the row and column streets get a genuine mix rather than "always a taxi,
+## occasionally a limo".
+func _manhattan_vehicle_pool() -> Array:
+	return [
+		{"weight": 4, "word": "TAXI", "color": MANHATTAN_TAXI_COLOR, "font_size": 30, "speed_min": 2.6, "speed_max": 3.6},
+		{"weight": 4, "word": "CAR", "color": MANHATTAN_CAR_COLOR, "font_size": 26, "speed_min": 2.2, "speed_max": 3.2},
+		{"weight": 2, "word": "BIKE", "color": MANHATTAN_BIKE_COLOR, "font_size": 20, "speed_min": 3.6, "speed_max": 5.0},
+		{"weight": 1, "word": "VERYLONGLIMOUSINE", "color": MANHATTAN_LIMO_COLOR, "font_size": 18, "speed_min": 1.8, "speed_max": 2.4},
+	]
 
 
-## Taxis (and the occasional VeryLongLimousine — same entity, a longer word
-## in chrome) run the full length of a handful of streets/avenues;
-## pedestrians stand at the cells `_pick_manhattan_pedestrian_cells` already
-## reserved for them, each one randomly a lone PERSON, a ManWalkingDog, or a
-## KidGroup, for a varied street scene. Both are built fresh per Manhattan
-## run, same as enemies are per level.
-func _spawn_manhattan_obstacles(pedestrian_cells: Array) -> void:
+func _pick_weighted_vehicle(pool: Array) -> Dictionary:
+	var total := 0
+	for v in pool:
+		total += int(v["weight"])
+	var roll := randi() % total
+	for v in pool:
+		roll -= int(v["weight"])
+		if roll < 0:
+			return v
+	return pool[0]
+
+
+## Taxis/cars/bikes/limos run the full length of a handful of streets/
+## avenues; pedestrians (a mix of lone MAN/WOMAN walkers, a ManWalkingDog,
+## a KidGroup, or a DadAndKid) now walk those same streets too instead of
+## standing still, each assigned its own row or column lane. Both are built
+## fresh per Manhattan run, same as enemies are per level.
+func _spawn_manhattan_obstacles() -> void:
 	_clear_manhattan_obstacles()
 
 	var row_choices := []
@@ -356,38 +369,43 @@ func _spawn_manhattan_obstacles(pedestrian_cells: Array) -> void:
 	var min_z: float = 1 * CELL
 	var max_z: float = (maze.rows - 2) * CELL
 
+	var vehicle_pool := _manhattan_vehicle_pool()
+
 	for i in mini(MANHATTAN_TAXI_ROW_COUNT, row_choices.size()):
 		var taxi := Node3D.new()
 		taxi.set_script(load("res://scripts/taxi.gd"))
 		obstacle_root.add_child(taxi)
-		var is_limo := randf() < 0.3
-		if is_limo:
-			taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 1.8 + randf() * 0.6, "VERYLONGLIMOUSINE", MANHATTAN_LIMO_COLOR, 18)
-		else:
-			taxi.setup("row", row_choices[i] * CELL, min_x, max_x, 2.6 + randf() * 1.0, "TAXI", MANHATTAN_TAXI_COLOR, 30)
+		var v := _pick_weighted_vehicle(vehicle_pool)
+		var speed: float = v["speed_min"] + randf() * (v["speed_max"] - v["speed_min"])
+		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, speed, v["word"], v["color"], v["font_size"])
 		taxis.append(taxi)
 	for i in mini(MANHATTAN_TAXI_COL_COUNT, col_choices.size()):
 		var taxi2 := Node3D.new()
 		taxi2.set_script(load("res://scripts/taxi.gd"))
 		obstacle_root.add_child(taxi2)
-		var is_limo2 := randf() < 0.3
-		if is_limo2:
-			taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 1.8 + randf() * 0.6, "VERYLONGLIMOUSINE", MANHATTAN_LIMO_COLOR, 18)
-		else:
-			taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, 2.6 + randf() * 1.0, "TAXI", MANHATTAN_TAXI_COLOR, 30)
+		var v2 := _pick_weighted_vehicle(vehicle_pool)
+		var speed2: float = v2["speed_min"] + randf() * (v2["speed_max"] - v2["speed_min"])
+		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, speed2, v2["word"], v2["color"], v2["font_size"])
 		taxis.append(taxi2)
 
 	var pedestrian_scripts := [
 		"res://scripts/pedestrian.gd",
 		"res://scripts/man_walking_dog.gd",
 		"res://scripts/kid_group.gd",
+		"res://scripts/dad_and_kid.gd",
 	]
-	for cell in pedestrian_cells:
+	for i in MANHATTAN_PEDESTRIAN_COUNT:
 		var script_path: String = pedestrian_scripts[randi() % pedestrian_scripts.size()]
 		var ped := Node3D.new()
 		ped.set_script(load(script_path))
 		obstacle_root.add_child(ped)
-		ped.setup(Vector3(cell.y * CELL, 0.4, cell.x * CELL))
+		var speed := 0.8 + randf() * 0.7
+		if row_choices.is_empty() or (not col_choices.is_empty() and randf() > 0.5):
+			var col: int = col_choices[randi() % col_choices.size()]
+			ped.setup(Vector3(col * CELL, 0.4, min_z), "col", min_z, max_z, speed)
+		else:
+			var row: int = row_choices[randi() % row_choices.size()]
+			ped.setup(Vector3(min_x, 0.4, row * CELL), "row", min_x, max_x, speed)
 		pedestrians.append(ped)
 
 

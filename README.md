@@ -120,9 +120,9 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   12 Sekunden den Wort-Welt-Look *und* geht kollisionsfrei durch Wände
   (`player_controller.gd::set_noclip`). Im **Manhattan-Bonuslevel** ist der
   Wort-Welt-Look dauerhaft aktiv statt eines Power-ups — dort gibt es weder
-  Power-ups noch Geister (ein ruhiger Explorer), dafür fahren Fahrzeuge auf
-  festen Straßen/Avenues hin und her und Fußgänger stehen an zufälligen
-  Kreuzungen; beide sind reine Hindernisse (schieben den Spieler weg),
+  Power-ups noch Geister (ein ruhiger Explorer), dafür fahren Fahrzeuge und
+  laufen Fußgänger gleichermaßen auf festen Straßen/Avenues hin und her
+  (siehe unten); beide sind reine Hindernisse (schieben den Spieler weg),
   verursachen aber nie Schaden.
 - **Manhattan: echte Gebäudenamen, echte Höhen, echte Wolkenkratzer**
   (`godot/scripts/manhattan_maze.gd`, `maze_view.gd`, `word_mesh.gd`,
@@ -148,11 +148,38 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   *Grundfläche* der Gebäude ist nicht modelliert — jeder Block bleibt eine
   2×2-Meter-Zelle im Straßenraster, wie schon zuvor; echte 3D-Modelle
   einzelner Gebäude sind aus dieser Sandbox nicht ladbar, siehe unten.)
-  Alle übrigen generischen Blöcke zyklen weiter durch fünf Neonfarben. Boden,
-  Decke und die Umgebungsbeleuchtung sind für Manhattan auf ein
-  magenta-violettes Neo-Noir-Cyberpunk-Schema umgestellt
+  Alle übrigen generischen Blöcke zyklen weiter durch eine warme,
+  gedeckte Fünf-Farben-Palette (Ocker, Braun, Rostorange, Sandcreme,
+  dunkles Oliv-Braun — kein Neon mehr; die ursprüngliche magenta-violette
+  Neo-Noir-Cyberpunk-Fassung wich der wärmeren, gedeckten Bildsprache der
+  Alex-Gopher-"The Child"-Referenzbilder, siehe `city_themes.gd::manhattan()`
+  für die volle Palette samt Boden-/Himmel-/Ambient-Farben). Wahrzeichen
+  heben sich weiterhin farblich ab, jetzt in Warmcreme-Gold, Rostorange-Rot
+  und warmem Steingrau statt in Neonakzenten. Boden, Umgebungsfarbe/-Nebel
+  und Ambient-Licht sind entsprechend umgestellt
   (`main.gd::_apply_theme_environment`) und kehren beim Verlassen zur
-  normalen kühlen Blau-Palette zurück.
+  normalen kühlen Blau-Palette der Matrix-Level zurück.
+  **Keine physische Deckenebene mehr** (`CityTheme.ceil_enabled = false`
+  für Manhattan): die alte, bei fester `MazeView.WALL_H`-Höhe liegende
+  Deckenebene hat reale Wolkenkratzer (bis zu ~76 Einheiten hoch) von unten
+  betrachtet verdeckt, sobald sie über diese Höhe hinausragten — sichtbar
+  als Bug, bei dem von einem hohen `BUILDING`-Namen nur die untersten
+  Buchstaben (z. B. nur "ING") zu lesen waren, der Rest aber wie
+  abgeschnitten wirkte. Die Ursache war keine Text-, sondern eine
+  Verdeckungs-Geometrie: eine deckende Ebene unterhalb der Turmspitze blockt
+  jeden Blickstrahl von unten auf alles, was darüber liegt. Der neue
+  `ceil_enabled`-Schalter lässt Manhattan ohne Deckenebene laufen (Himmel/
+  Nebel/Hintergrundfarbe wirken direkt als offener Himmel), während die
+  Matrix-Level ihre physische Wolken-Decke unverändert behalten.
+  **Breitere Straßen** (`CityTheme.wall_footprint_scale = 0.55`): statt das
+  Straßenraster selbst zu ändern (das hätte `MazeGen.cells_in_room()`s
+  fest auf ein 2er-Perioden-Gitter angenommene Zellzählung projektweit
+  gebrochen — Pellet-/Fußgänger-/Metro-Platzierung, Erreichbarkeits-Checks),
+  sitzt jedes Gebäude jetzt sichtbar und kollisionsseitig von den Rändern
+  seiner Rasterzelle zurückgesetzt (55 % der vollen Zellkante statt 100 %) —
+  gleiche Topologie, gleiche Kollisionssicherheit (immer noch ein einzelner,
+  mittig sitzender Block), aber spürbar mehr Luft zwischen zwei
+  gegenüberliegenden Häuserfronten.
 - **Punkte als Wegweiser zur Metro** (`maze_view.gd::_metro_trail_cells`):
   in Manhattan liegen die einsammelbaren Punkte nicht mehr auf jeder offenen
   Zelle, sondern nur noch entlang einer Handvoll kürzester Wege von
@@ -206,13 +233,25 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   sobald eine zweite Stadt registriert ist, werden alle vier Kombinationen
   automatisch unterschiedlich, ohne Code-Änderung an diesem Panel.
 - **Verkehrs- und Fußgänger-Vielfalt in Manhattan** (`taxi.gd`,
-  `man_walking_dog.gd`, `kid_group.gd`): neben normalen `TAXI`-Fahrzeugen
-  fährt gelegentlich eine `VERYLONGLIMOUSINE` in Chrom-Silber vorbei — das
-  lange Wort selbst steht für die Fahrzeuglänge. Fußgänger sind zufällig
-  entweder eine einzelne `PERSON`, ein `ManWalkingDog` (das Wort `MAN` als
-  vertikal gestapelte Buchstaben, daneben tiefer das Wort `DOG`) oder eine
-  `KidGroup` (drei versetzte `KID`-Wortmodelle) für ein abwechslungsreiches
-  Straßenbild.
+  `pedestrian.gd`, `man_walking_dog.gd`, `kid_group.gd`, `dad_and_kid.gd`,
+  `main.gd::_manhattan_vehicle_pool`): der Verkehr ist jetzt gewichtet
+  gemischt statt fast nur `TAXI` — `TAXI` und ein neues, unauffälligeres
+  `CAR` (stumpfes Stahlblau) sind am häufigsten, ein schnelleres, leichteres
+  `BIKE` (Grün) seltener, und weiterhin gelegentlich eine `VERYLONGLIMOUSINE`
+  in Chrom-Silber (das lange Wort steht selbst für die Fahrzeuglänge) als
+  seltenster Typ. Mehr Fahrspuren (5 Zeilen-/4 Spalten-Straßen statt 3/2) und
+  mehr Fahrzeuge insgesamt sorgen für dichteren Verkehr. Fußgänger **stehen
+  nicht mehr still, sondern laufen** wie die Fahrzeuge eine feste Straße
+  entlang und drehen an den Enden um (`pedestrian.gd`/`man_walking_dog.gd`/
+  `kid_group.gd`/`dad_and_kid.gd` teilen sich dafür dieselbe optionale
+  Lauf-Achsen-Logik wie `taxi.gd`, abwärtskompatibel zum alten
+  Ein-Parameter-`setup()` für stehende Fußgänger). Ihre Zahl ist von 10 auf
+  16 erhöht. Jeder Fußgänger ist zufällig entweder ein einzelner `MAN` oder
+  `WOMAN`, ein `ManWalkingDog` (das Wort `MAN` als vertikal gestapelte
+  Buchstaben, daneben tiefer das Wort `DOG`), eine `KidGroup` (drei versetzte
+  `KID`-Wortmodelle) oder ein neues `DadAndKid` (das Wort `DAD` vertikal
+  gestapelt, daneben ein kleineres `KID`) — für ein deutlich dichteres,
+  belebteres und abwechslungsreicheres Straßenbild.
 - **U-Bahn-Stationen** (`metro_station.gd`): leuchtend-pulsierende `SUBWAY`-
   Schilder markieren feste Punkte im Manhattan-Level, platziert wie Taxis/
   Fußgänger kollisionsfrei mit den Pellets. Betritt der Spieler eine Station,

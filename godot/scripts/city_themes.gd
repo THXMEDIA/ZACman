@@ -46,10 +46,16 @@ static func normal() -> Resource:
 	return t
 
 
-## Manhattan bonus level: Neo-Noir Cyberpunk skyline. Ordinary blocks cycle
-## through a neon palette as "BUILDING"; blocks manhattan_maze.gd's
-## LANDMARKS table names get their real name and a brighter accent color
-## instead. A calm explorer — no power-ups, no ghosts.
+## Manhattan bonus level: the Alex Gopher "The Child" look this whole
+## word-built-world idea is ported from — warm, muted, printed-poster
+## colors (ochre, rust, sand, dark brown/olive) against a dark teal-black
+## backdrop, deliberately NOT neon (an earlier version of this theme was a
+## neon cyberpunk skyline; the reference images call for something closer
+## to old film-grain city photography than a nightclub sign). Ordinary
+## blocks cycle through that palette as "BUILDING"/"SKYSCRAPER"; blocks
+## manhattan_maze.gd's LANDMARKS table names get their real name and a
+## brighter (still warm) accent color instead. A calm explorer — no
+## power-ups, no ghosts.
 static func manhattan() -> Resource:
 	var t = CityThemeScript.new()
 	t.id = "manhattan"
@@ -57,24 +63,35 @@ static func manhattan() -> Resource:
 	t.wall_word = "BUILDING"
 	t.wall_font_size = 22
 	t.wall_depth_scale = 0.6
-	t.wall_emission_energy = 1.1
+	t.wall_emission_energy = 0.85
 	t.wall_palette = [
-		Color(1.0, 0.05, 0.75), # magenta
-		Color(0.0, 0.95, 1.0), # cyan
-		Color(0.6, 0.05, 1.0), # violet
-		Color(1.0, 0.8, 0.0), # neon amber
-		Color(0.05, 1.0, 0.45), # neon green
+		Color(0.82, 0.62, 0.28), # ochre
+		Color(0.55, 0.36, 0.2), # brown
+		Color(0.78, 0.42, 0.16), # rust/burnt orange
+		Color(0.86, 0.78, 0.56), # sand/cream
+		Color(0.4, 0.36, 0.26), # dark olive-brown
 	]
 	t.wall_alternate_rotation = true
 	t.landmark_provider_script = ManhattanMazeScript
 	t.landmark_accents = [
-		Color(1.0, 0.85, 0.25), # neon gold
-		Color(1.0, 0.05, 0.55), # hot pink
-		Color(0.15, 0.85, 1.0), # electric blue
+		Color(0.95, 0.86, 0.6), # warm cream-gold
+		Color(0.88, 0.4, 0.14), # burnt orange-red
+		Color(0.72, 0.68, 0.58), # warm stone grey
 	]
 	t.landmark_font_size = 15
 	t.landmark_depth_scale = 0.55
-	t.landmark_emission_energy = 2.4
+	t.landmark_emission_energy = 1.7
+
+	# Streets wider than the old edge-to-edge blocks: every building sits
+	# back from its cell's edges (see CityTheme.wall_footprint_scale), so
+	# the visible/walkable gap between two building faces is noticeably
+	# more than one bare CELL now.
+	t.wall_footprint_scale = 0.55
+
+	# No physical ceiling plane (see CityTheme.ceil_enabled) — real-height
+	# skyscrapers need open sky above them, not a flat roof at the old
+	# MazeView.WALL_H that would slice through every one of them.
+	t.ceil_enabled = false
 
 	# Real skyscrapers, actually skyscraper-sized: every ordinary block is
 	# either a regular "BUILDING" or (skyscraper_chance_pct odds) a much
@@ -118,22 +135,28 @@ static func manhattan() -> Resource:
 		"BRYANT PARK": 8.0 * METERS_TO_UNITS, # a park, not a building — kept low on purpose
 	}
 
-	t.floor_color = Color(0.015, 0.01, 0.03)
-	t.floor_roughness = 0.25
-	t.floor_metallic = 0.35
+	# Dark warm asphalt/print-poster floor instead of the old glossy magenta-
+	# tinted one; ceil_color/ceil_emission_* are unused now (ceil_enabled is
+	# false — see above) but left set to something sane in case a future
+	# theme change flips it back on.
+	t.floor_color = Color(0.05, 0.04, 0.03)
+	t.floor_roughness = 0.55
+	t.floor_metallic = 0.1
 	t.floor_emission_enabled = true
-	t.floor_emission_color = Color(0.35, 0.02, 0.3)
-	t.floor_emission_energy = 0.12
-	t.ceil_color = Color(0.03, 0.01, 0.07)
-	t.ceil_emission_enabled = true
-	t.ceil_emission_color = Color(0.05, 0.02, 0.25)
-	t.ceil_emission_energy = 0.1
+	t.floor_emission_color = Color(0.35, 0.22, 0.1)
+	t.floor_emission_energy = 0.06
+	t.ceil_color = Color(0.03, 0.045, 0.04)
+	t.ceil_emission_enabled = false
+	t.ceil_emission_color = Color.BLACK
+	t.ceil_emission_energy = 0.0
 
-	t.env_bg_color = Color(0.02, 0.006, 0.05)
-	t.env_fog_color = Color(0.35, 0.02, 0.4)
-	t.env_fog_density = 0.045
-	t.env_ambient_color = Color(0.5, 0.08, 0.55)
-	t.env_ambient_energy = 0.55
+	# Dark teal-black night sky (image reference: the Brooklyn Bridge shot's
+	# backdrop) rather than the old near-black magenta.
+	t.env_bg_color = Color(0.02, 0.05, 0.045)
+	t.env_fog_color = Color(0.05, 0.09, 0.08)
+	t.env_fog_density = 0.03
+	t.env_ambient_color = Color(0.4, 0.32, 0.24)
+	t.env_ambient_energy = 0.65
 
 	t.has_power_ups = false
 	t.permanently_word_built = true

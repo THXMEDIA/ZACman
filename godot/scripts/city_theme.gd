@@ -62,6 +62,15 @@ var landmark_default_height := 0.0 # 0.0 = disabled (falls back to MazeView.WALL
 ## height — "hochkant", like a skyscraper's name read up its own face —
 ## instead of one horizontal word centered on the block.
 var wall_vertical_text := false
+## A block's visible/collision footprint as a fraction of the full CELL x
+## CELL grid square it occupies (1.0 = fills the cell edge-to-edge, the old
+## behavior). A theme with real street-width proportions in mind (e.g.
+## Manhattan) sets this below 1.0 so every building sits back from its
+## cell's edges, leaving a real gap between building faces on top of the
+## open street cell between them — same grid, same collision safety
+## (still one solid block centered in its cell, so nothing can be cut
+## through diagonally), just visibly and physically wider streets.
+var wall_footprint_scale := 1.0
 
 ## ---- Optional per-cell landmark override ----
 ## A script exposing a static `landmark_at(row: int, col: int) -> String`
@@ -90,6 +99,14 @@ var ceil_emission_energy := 0.0
 ## sky, meant to go with a bright ceil_color rather than the original dark
 ## "underground" ceiling.
 var ceil_sky_clouds := false
+## When false, MazeView doesn't build a physical ceiling plane at all — the
+## env_bg_color/fog above simply reads as open sky. Needed by any theme
+## whose buildings can be much taller than the old fixed MazeView.WALL_H
+## (e.g. Manhattan's real-height skyscrapers): a low flat ceiling plane
+## would otherwise slice straight through them, hiding everything above it
+## behind an opaque "cave roof" — which is exactly the "only the bottom few
+## letters of a tall building's name are visible" bug this fixes.
+var ceil_enabled := true
 
 ## ---- Scene-wide environment (background/fog/ambient) — read by Main ----
 var env_bg_color := Color(0.0196, 0.0275, 0.0627)

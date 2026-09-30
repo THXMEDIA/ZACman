@@ -200,10 +200,11 @@ func _build_walls() -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = box_mesh
 	mm.instance_count = wall_cells.size()
+	var fp: float = city_theme.wall_footprint_scale
 	for i in wall_cells.size():
 		var cell: Vector2i = wall_cells[i]
 		var h: float = heights[cell]
-		var basis := Basis().scaled(Vector3(1.0, h, 1.0))
+		var basis := Basis().scaled(Vector3(fp, h, fp))
 		var xf := Transform3D(basis, Vector3(cell.y * CELL, h * 0.5, cell.x * CELL))
 		mm.set_instance_transform(i, xf)
 
@@ -267,7 +268,7 @@ func _build_walls() -> void:
 	for cell in wall_cells:
 		var h2: float = heights[cell]
 		var shape := BoxShape3D.new()
-		shape.size = Vector3(CELL, h2, CELL)
+		shape.size = Vector3(CELL * fp, h2, CELL * fp)
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
 		cs.position = Vector3(cell.y * CELL, h2 * 0.5, cell.x * CELL)
@@ -302,12 +303,17 @@ func _build_floor_ceiling() -> void:
 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
 	add_child(floor_mesh)
 
-	var ceil_mesh := MeshInstance3D.new()
-	ceil_mesh.mesh = plane
-	ceil_mesh.material_override = ceil_mat
-	ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, WALL_H, (maze.rows - 1) * CELL * 0.5)
-	ceil_mesh.rotation.x = PI
-	add_child(ceil_mesh)
+	# A theme with much-taller-than-WALL_H buildings (e.g. Manhattan's real
+	# skyscraper heights) skips the ceiling plane entirely — see CityTheme.
+	# ceil_enabled's own comment for why a fixed-height ceiling and tall
+	# buildings don't mix (it hides everything above it, letter by letter).
+	if city_theme.ceil_enabled:
+		var ceil_mesh := MeshInstance3D.new()
+		ceil_mesh.mesh = plane
+		ceil_mesh.material_override = ceil_mat
+		ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, WALL_H, (maze.rows - 1) * CELL * 0.5)
+		ceil_mesh.rotation.x = PI
+		add_child(ceil_mesh)
 
 
 ## Mario/Minecraft-style voxel sky: scatters a handful of blocky white

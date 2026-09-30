@@ -71,18 +71,33 @@ func _initialize() -> void:
 		print("FAIL pedestrian should spawn exactly at the given position, got %s" % ped.position)
 
 	checks += 1
-	if ped.word_mesh == null or ped.word_mesh.mesh.text != "PERSON":
+	if ped.word_mesh == null or not (ped.word_mesh.mesh.text == "MAN" or ped.word_mesh.mesh.text == "WOMAN"):
 		failures += 1
-		print("FAIL pedestrian should be built from the word PERSON")
+		print("FAIL pedestrian should be built from the word MAN or WOMAN, got '%s'" % (ped.word_mesh.mesh.text if ped.word_mesh else "<null>"))
 
 	ped.update(0.1, 0.0)
 	var root_pos_after: Vector3 = ped.position
 	checks += 1
 	if root_pos_after != spawn_pos:
 		failures += 1
-		print("FAIL pedestrian root position must stay fixed (only its word mesh bobs), moved to %s" % root_pos_after)
+		print("FAIL a pedestrian with no walk axis must stay fixed (only its word mesh bobs), moved to %s" % root_pos_after)
 
 	ped.free()
+
+	# --- Pedestrian: given a walk axis, it actually walks the lane --------
+	var ped_walk = load("res://scripts/pedestrian.gd").new()
+	ped_walk.setup(Vector3(0.0, 0.4, 4.0), "col", 0.0, 10.0, 3.0)
+	var pos_before: Vector3 = ped_walk.position
+	ped_walk.update(0.5, 0.5)
+	checks += 1
+	if is_equal_approx(ped_walk.position.z, pos_before.z):
+		failures += 1
+		print("FAIL a pedestrian with a walk axis should move along it, stayed at %s" % ped_walk.position)
+	checks += 1
+	if not is_equal_approx(ped_walk.position.x, pos_before.x):
+		failures += 1
+		print("FAIL a 'col' axis pedestrian should keep a fixed X while walking, moved to %s" % ped_walk.position)
+	ped_walk.free()
 
 	# --- Taxi variant: VeryLongLimousine (same script, different word) -----
 	var limo = load("res://scripts/taxi.gd").new()
@@ -92,6 +107,23 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL limousine variant should be built from the word VERYLONGLIMOUSINE")
 	limo.free()
+
+	# --- Taxi variants: CAR and BIKE (same script, different word/color) ---
+	var car = load("res://scripts/taxi.gd").new()
+	car.setup("row", 2.0, 0.0, 10.0, 3.0, "CAR", Color(0.55, 0.65, 0.8), 26)
+	checks += 1
+	if car.word_mesh == null or car.word_mesh.mesh.text != "CAR":
+		failures += 1
+		print("FAIL car variant should be built from the word CAR")
+	car.free()
+
+	var bike = load("res://scripts/taxi.gd").new()
+	bike.setup("row", 2.0, 0.0, 10.0, 4.5, "BIKE", Color(0.35, 0.85, 0.45), 20)
+	checks += 1
+	if bike.word_mesh == null or bike.word_mesh.mesh.text != "BIKE":
+		failures += 1
+		print("FAIL bike variant should be built from the word BIKE")
+	bike.free()
 
 	# --- ManWalkingDog: stacked MAN letters + a DOG mesh beside them -------
 	var mwd = load("res://scripts/man_walking_dog.gd").new()
@@ -147,6 +179,50 @@ func _initialize() -> void:
 			print("FAIL kid_group's meshes should all be the word KID")
 	kids.update(0.1, 1.0)
 	kids.free()
+
+	# --- DadAndKid: stacked DAD letters + a KID mesh beside them -----------
+	var dak = load("res://scripts/dad_and_kid.gd").new()
+	var dak_pos := Vector3(1.0, 0.4, 9.0)
+	dak.setup(dak_pos)
+	checks += 1
+	if dak.position != dak_pos:
+		failures += 1
+		print("FAIL dad_and_kid should spawn exactly at the given position, got %s" % dak.position)
+	checks += 1
+	if dak.dad_letters == null or dak.dad_letters.get_child_count() != 3:
+		failures += 1
+		print("FAIL dad_and_kid should stack 3 letters for DAD")
+	else:
+		var dad_word := ""
+		for child in dak.dad_letters.get_children():
+			dad_word += child.mesh.text
+		checks += 1
+		if dad_word != "DAD":
+			failures += 1
+			print("FAIL dad_and_kid's stacked letters should spell DAD, got '%s'" % dad_word)
+	checks += 1
+	if dak.kid_mesh == null or dak.kid_mesh.mesh.text != "KID":
+		failures += 1
+		print("FAIL dad_and_kid should have a KID companion word mesh")
+	dak.update(0.1, 1.0)
+	checks += 1
+	if dak.position != dak_pos:
+		failures += 1
+		print("FAIL dad_and_kid root position must stay fixed when given no walk axis, moved to %s" % dak.position)
+	dak.free()
+
+	# --- Pedestrian scripts given a walk axis actually move (spot-check
+	# man_walking_dog/kid_group/dad_and_kid share the same machinery as
+	# pedestrian.gd's own walk-axis check above) --------------------------
+	var mwd_walk = load("res://scripts/man_walking_dog.gd").new()
+	mwd_walk.setup(Vector3(0.0, 0.4, 2.0), "row", 0.0, 10.0, 3.0)
+	var mwd_before: Vector3 = mwd_walk.position
+	mwd_walk.update(0.5, 0.5)
+	checks += 1
+	if is_equal_approx(mwd_walk.position.x, mwd_before.x):
+		failures += 1
+		print("FAIL man_walking_dog with a walk axis should move along it, stayed at %s" % mwd_walk.position)
+	mwd_walk.free()
 
 	# --- MetroStation: pulsing SUBWAY sign -----------------------------
 	var metro = load("res://scripts/metro_station.gd").new()
