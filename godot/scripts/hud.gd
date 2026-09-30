@@ -50,7 +50,7 @@ var twitch_channel_edit: LineEdit
 var twitch_status_label: Label
 
 var minimap_maze = null
-var minimap_view = null
+var minimap_maze_view = null # MazeView — read for pellet_cells/pellet_alive/power_cells/power_alive
 var minimap_player: Node3D = null
 var minimap_enemies: Array = []
 var minimap_frightened := false
@@ -481,12 +481,16 @@ func set_best_time(seconds: float) -> void:
 	best_label.text = Speedrun.format_time(seconds)
 
 
-## Minimap: fed a maze + player + enemies each frame by Main, drawn via _draw().
-func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool) -> void:
+## Minimap: fed a maze + player + enemies + maze_view (for the pellets —
+## consumed pickups just aren't drawn anymore, same pellet_alive/power_alive
+## arrays MazeView already keeps, nothing new to track here) each frame by
+## Main, drawn via _draw().
+func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool, maze_view = null) -> void:
 	minimap_maze = maze
 	minimap_player = player
 	minimap_enemies = enemies
 	minimap_frightened = frightened
+	minimap_maze_view = maze_view
 	minimap.queue_redraw()
 
 
@@ -501,6 +505,17 @@ func _draw_minimap() -> void:
 		for c in minimap_maze.cols:
 			if minimap_maze.grid[r][c] == 1:
 				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), Color(0.118, 0.227, 0.478))
+	if minimap_maze_view != null:
+		for i in minimap_maze_view.pellet_cells.size():
+			if not minimap_maze_view.pellet_alive[i]:
+				continue
+			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
+			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, Color(1.0, 0.82, 0.4))
+		for i in minimap_maze_view.power_cells.size():
+			if not minimap_maze_view.power_alive[i]:
+				continue
+			var pw: Vector2i = minimap_maze_view.power_cells[i]
+			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, Color(1.0, 0.365, 0.635))
 	for e in minimap_enemies:
 		var col: Color = Color(0.35, 0.82, 1.0) if minimap_frightened else e.palette_color
 		minimap.draw_circle(Vector2((e.position.x / 2.0) * sx, (e.position.z / 2.0) * sy), 2.4, col)

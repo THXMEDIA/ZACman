@@ -5,6 +5,7 @@ extends Node3D
 
 const CELL := 2.0
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
+const GhostMeshScript := preload("res://scripts/ghost_mesh.gd")
 
 var palette_color := Color(1, 0.23, 0.36)
 var palette_glow := Color(1, 0.42, 0.51)
@@ -21,7 +22,7 @@ var t := 1.0
 var release_at := 0.0
 var eaten_until := 0.0
 
-var body_mesh: MeshInstance3D
+var body_mesh: Node3D
 var body_material: StandardMaterial3D
 var word_mesh: MeshInstance3D
 var light: OmniLight3D
@@ -36,12 +37,6 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	base_speed = speed
 	_bob_seed = randf() * 10.0
 
-	var icosa := SphereMesh.new()
-	icosa.radius = 0.36
-	icosa.height = 0.72
-	icosa.radial_segments = 8
-	icosa.rings = 5
-
 	body_material = StandardMaterial3D.new()
 	body_material.albedo_color = color
 	body_material.emission_enabled = true
@@ -49,10 +44,10 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	body_material.emission_energy_multiplier = 0.7
 	body_material.metallic = 0.2
 	body_material.roughness = 0.3
-
-	body_mesh = MeshInstance3D.new()
-	body_mesh.mesh = icosa
-	body_mesh.material_override = body_material
+	# Blocky pixel-art ghost (see ghost_mesh.gd) instead of a smooth sphere —
+	# frightened/eaten still just recolor body_material in place below, the
+	# ghost itself never needs rebuilding.
+	body_mesh = GhostMeshScript.build(body_material)
 	add_child(body_mesh)
 
 	# Word Mode reskin: the same enemy, drawn as the word GHOST instead of

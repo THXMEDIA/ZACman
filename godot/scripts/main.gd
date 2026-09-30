@@ -747,7 +747,7 @@ func _process(delta: float) -> void:
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
 	if now >= frightened_until and Sfx.siren_state() == "frightened":
 		Sfx.set_siren(true, false)
-	hud.update_minimap(maze, player, enemies, frightened_active)
+	hud.update_minimap(maze, player, enemies, frightened_active, maze_view)
 
 
 func _check_enemy_collision(enemy, frightened_active: bool) -> void:

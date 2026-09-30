@@ -47,8 +47,17 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Generator (`godot/scripts/maze_gen.gd`) ist ein 1:1-Port der getesteten
   JS-Logik (`core/maze-core.js`) — beide sind unabhängig voneinander auf
   Konnektivität getestet.
-- **Gegner**: vier bis fünf leuchtende Polyeder mit BFS-Pfadsuche zum Spieler;
-  im "Frightened"-Modus nach einer Power-Kugel fliehen sie und lassen sich fressen.
+- **Gegner**: vier bis fünf blockige Pixel-Geister (`godot/scripts/ghost_mesh.gd`
+  — ein MultiMesh aus kleinen Würfeln, das die klassische Pac-Man-Geist-Silhouette
+  nachbildet, im selben chunky Retro-Look wie der ASCII-Shader und die
+  Wort-Mesh-Objekte) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
+  einer Power-Kugel fliehen sie und lassen sich fressen.
+- **Minimap**: zeigt neben Wänden, Spieler und Gegnern jetzt auch die
+  verbleibenden Pellets/Power-Pellets (`hud.gd::_draw_minimap`, liest direkt
+  MazeView.pellet_alive/power_alive — ein eingesammeltes Pellet verschwindet
+  dort also sofort mit). Pellets respawnen innerhalb eines Levels nie
+  (`MazeView.consume_at` schaltet sie dauerhaft `alive=false`); ein Level ist
+  beendet, sobald `remaining_pickups() <= 0` ist.
 - **Sound**: komplett synthetisch (Godot: zur Ladezeit gerenderte PCM-Buffer
   aus Oszillator + Hüllkurve; Web: Web-Audio-Oszillatoren) — keine Samples.
 - **Matrix-ASCII-Look**: ein Screen-Space-Post-Effekt (`godot/shaders/ascii_post.gdshader`,
