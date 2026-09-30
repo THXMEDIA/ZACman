@@ -34,7 +34,7 @@ func _ready() -> void:
 	camera = Camera3D.new()
 	camera.position = Vector3(0, EYE_H, 0)
 	camera.fov = 72.0
-	camera.near = 0.05
+	camera.near = 0.03
 	camera.far = 100.0
 	add_child(camera)
 
@@ -52,12 +52,18 @@ func _ready() -> void:
 ## ascii_post.gdshader (screen-space, no external font/assets — see that
 ## file for how the glyphs are encoded). Ported from the ReclaimTheStreets
 ## project's identical technique.
+##
+## The quad must sit safely IN FRONT of camera.near, not exactly on it —
+## placing it exactly at the near-clip distance risks the whole quad being
+## clipped away on some GPUs/drivers (a floating-point coin-flip at the
+## clip plane), which shows the raw unshaded scene instead of the ASCII
+## effect. 4x camera.near leaves a comfortable margin either way.
 func _setup_ascii_quad(cam: Camera3D) -> void:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.2, 1.4)
 	var mi := MeshInstance3D.new()
 	mi.mesh = quad
-	mi.position = Vector3(0, 0, -0.05)
+	mi.position = Vector3(0, 0, -cam.near * 4.0)
 	mi.extra_cull_margin = 16384.0
 	var shader := load("res://shaders/ascii_post.gdshader")
 	var mat := ShaderMaterial.new()

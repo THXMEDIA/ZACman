@@ -4,7 +4,7 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
-const WALL_H := 1.9
+const WALL_H := 3.8 # doubled from the original 1.9 per user request — taller, more imposing corridors
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 
