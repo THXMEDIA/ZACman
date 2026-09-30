@@ -71,7 +71,14 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 - **Boden/Himmel-Mashup** (bewusster Stilbruch zu den grünen Matrix-Wänden):
   brauner Erdboden, blauer "Himmel" als Deckenfarbe mit verstreuten weißen
   Voxel-Wolken im Super-Mario-/Minecraft-Pixel-Look (`godot/scripts/
-  cloud_mesh.gd`, gesteuert über `CityTheme.ceil_sky_clouds`). An beiden
+  cloud_mesh.gd`, gesteuert über `CityTheme.ceil_sky_clouds`). Sowohl die
+  Wolken als auch die Himmel-Deckenebene selbst schweben dafür bei
+  `WALL_H * 1.5` statt direkt auf Höhe der Wandoberkanten (`MazeView.
+  CLOUD_HEIGHT_MULT`) — vorher hingen die Wolken quasi auf den Mauern statt
+  sichtbar darüber; ein zusätzlicher fester Mindestabstand
+  (`CLOUD_MIN_WALL_CLEARANCE`, 0.6 Einheiten über den Wandoberkanten) sorgt
+  dafür, dass auch eine ungewöhnlich große (zufällig skalierte) Wolke nie
+  näher an die Mauern heranrutscht. An beiden
   Enden des seitlichen Wrap-Tunnels (`maze.tunnel_row`) steht statt des
   blauen Himmels eine gemalte Super-Mario-artige Kulisse
   (`godot/shaders/mario_vista.gdshader`: Hügel, Büsche, Sonne, bewusst in

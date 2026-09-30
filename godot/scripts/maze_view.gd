@@ -5,6 +5,14 @@ extends Node3D
 
 const CELL := 2.0
 const WALL_H := 3.8 # doubled from the original 1.9 per user request — taller, more imposing corridors
+## The voxel-cloud sky sits well above the wall tops rather than hugging
+## them: both the sky ceiling and the clouds under it float at
+## WALL_H * CLOUD_HEIGHT_MULT (see _build_floor_ceiling/_build_sky_clouds),
+## and CLOUD_MIN_WALL_CLEARANCE is an explicit floor under that so a cloud
+## can never end up closer to the wall tops than that, regardless of its
+## own (randomized) size.
+const CLOUD_HEIGHT_MULT := 1.5
+const CLOUD_MIN_WALL_CLEARANCE := 0.6
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const CloudMeshScript := preload("res://scripts/cloud_mesh.gd")
@@ -46,6 +54,7 @@ var normal_wall_mmi: MultiMeshInstance3D
 var word_wall_root: Node3D
 var word_mode_active := false
 var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed in _process
+var sky_cloud_nodes: Array = [] # Array[MultiMeshInstance3D], sky-cloud themes only — see _build_sky_clouds; tracked mainly so tests can check their height
 var _t := 0.0
 
 var wall_material: Material # StandardMaterial3D normally, or a matrix_rain ShaderMaterial (see CityTheme.wall_matrix_rain)
@@ -78,6 +87,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	fear_powerup_cell = Vector2i(-1, -1)
 	fear_powerup_node = null
 	fear_powerup_alive = false
+	sky_cloud_nodes.clear()
 
 	maze = new_maze
 	theme = maze_theme
@@ -322,10 +332,15 @@ func _build_floor_ceiling() -> void:
 	# ceil_enabled's own comment for why a fixed-height ceiling and tall
 	# buildings don't mix (it hides everything above it, letter by letter).
 	if city_theme.ceil_enabled:
+		# A sky-cloud theme's ceiling sits at CLOUD_HEIGHT_MULT x WALL_H
+		# (matching where _build_sky_clouds floats its clouds), not right at
+		# the wall tops — the voxel clouds need real headroom above the maze
+		# to read as sky rather than as a low cap sitting on the walls.
+		var ceil_h: float = WALL_H * CLOUD_HEIGHT_MULT if city_theme.ceil_sky_clouds else WALL_H
 		var ceil_mesh := MeshInstance3D.new()
 		ceil_mesh.mesh = plane
 		ceil_mesh.material_override = ceil_mat
-		ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, WALL_H, (maze.rows - 1) * CELL * 0.5)
+		ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, ceil_h, (maze.rows - 1) * CELL * 0.5)
 		ceil_mesh.rotation.x = PI
 		add_child(ceil_mesh)
 
@@ -343,22 +358,31 @@ func _build_sky_clouds() -> void:
 		return
 	candidates.shuffle()
 	var cloud_count: int = clampi(candidates.size() / 22, 4, 14)
+	# The sky ceiling itself floats at WALL_H * CLOUD_HEIGHT_MULT for this
+	# theme (see _build_floor_ceiling) — clouds hug just under it, same as
+	# before, just at that raised height instead of right at the wall tops.
+	var sky_ceil_h: float = WALL_H * CLOUD_HEIGHT_MULT
 	for i in mini(cloud_count, candidates.size()):
 		var cell: Vector2i = candidates[i]
-		# 1.5x the original 0.10-0.16 range, per the user's "clouds 1.5x
-		# taller" request.
+		# 1.5x the original 0.10-0.16 voxel-size range, per an earlier
+		# request that the clouds themselves be visually bigger.
 		var voxel_size: float = (0.1 + randf() * 0.06) * 1.5
 		var cloud := CloudMeshScript.build({"voxel_size": voxel_size})
 		var jitter_x := (randf() - 0.5) * CELL * 0.6
 		var jitter_z := (randf() - 0.5) * CELL * 0.6
-		# Keep the cloud's top edge just under the ceiling regardless of its
-		# (now bigger) size: CloudMesh is CloudMeshScript.ROWS tall, centered
-		# on its own origin, so half that height plus a small gap sits above
-		# the origin we place it at.
+		# Keep the cloud's top edge just under the (raised) ceiling
+		# regardless of its own randomized size: CloudMesh is
+		# CloudMeshScript.ROWS tall, centered on its own origin, so half
+		# that height plus a small gap sits above the origin we place it
+		# at. CLOUD_MIN_WALL_CLEARANCE is then an explicit floor under that
+		# — the cloud can never end up nearer the wall tops than this, even
+		# for an unusually large cloud.
 		var half_h: float = CloudMeshScript.ROWS * voxel_size * 0.5
-		cloud.position = Vector3(cell.y * CELL + jitter_x, WALL_H - 0.15 - half_h, cell.x * CELL + jitter_z)
+		var cloud_y: float = maxf(sky_ceil_h - 0.15 - half_h, WALL_H + CLOUD_MIN_WALL_CLEARANCE)
+		cloud.position = Vector3(cell.y * CELL + jitter_x, cloud_y, cell.x * CELL + jitter_z)
 		cloud.rotation.y = randf() * TAU
 		add_child(cloud)
+		sky_cloud_nodes.append(cloud)
 
 
 ## Caps both ends of the maze's side tunnel (maze.tunnel_row, where

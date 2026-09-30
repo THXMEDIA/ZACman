@@ -91,6 +91,14 @@ func _run_checks() -> void:
 			all_house = false
 	_check("begin_game: enemies start in house", all_house)
 
+	# ---- sky clouds float well above the wall tops, not right at them ----
+	var mv: Node = main.maze_view
+	_check("sky clouds: at least one spawned on a normal level", mv.sky_cloud_nodes.size() > 0, "got %d" % mv.sky_cloud_nodes.size())
+	var lowest_cloud_y := INF
+	for cloud in mv.sky_cloud_nodes:
+		lowest_cloud_y = minf(lowest_cloud_y, cloud.position.y)
+	_check("sky clouds: every cloud keeps the minimum clearance above the wall tops", lowest_cloud_y >= mv.WALL_H + mv.CLOUD_MIN_WALL_CLEARANCE - 0.001, "lowest cloud y=%f, WALL_H=%f, min clearance=%f" % [lowest_cloud_y, mv.WALL_H, mv.CLOUD_MIN_WALL_CLEARANCE])
+
 	# ---- bot random walk: no crash, no NaN, over many real frames ----
 	var actions := ["move_forward", "move_back", "move_left", "move_right"]
 	var current := "move_forward"
