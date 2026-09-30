@@ -23,15 +23,23 @@ static func normal() -> Resource:
 	t.wall_matrix_rain = true
 	t.landmark_provider_script = null
 
-	t.floor_color = Color(0.024, 0.039, 0.094)
-	t.floor_roughness = 0.9
-	t.ceil_color = Color(0.016, 0.024, 0.067)
+	# Brown dirt ground + a bright blue "sky" ceiling with blocky white
+	# clouds (see ceil_sky_clouds / cloud_mesh.gd) — a deliberate Super-
+	# Mario/Minecraft mashup against the green Matrix-code walls, per the
+	# user's request.
+	t.floor_color = Color(0.36, 0.22, 0.1)
+	t.floor_roughness = 0.85
+	t.ceil_color = Color(0.35, 0.65, 1.0)
+	t.ceil_emission_enabled = true
+	t.ceil_emission_color = Color(0.35, 0.65, 1.0)
+	t.ceil_emission_energy = 0.35
+	t.ceil_sky_clouds = true
 
-	t.env_bg_color = Color(0.0196, 0.0275, 0.0627)
-	t.env_fog_color = Color(0.0196, 0.0275, 0.0627)
-	t.env_fog_density = 0.03
-	t.env_ambient_color = Color(0.165, 0.227, 0.4)
-	t.env_ambient_energy = 0.9
+	t.env_bg_color = Color(0.35, 0.65, 1.0)
+	t.env_fog_color = Color(0.35, 0.65, 1.0)
+	t.env_fog_density = 0.015
+	t.env_ambient_color = Color(0.55, 0.7, 0.85)
+	t.env_ambient_energy = 1.1
 
 	t.has_power_ups = true
 	t.permanently_word_built = false

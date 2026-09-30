@@ -7,6 +7,7 @@ const CELL := 2.0
 const WALL_H := 3.8 # doubled from the original 1.9 per user request — taller, more imposing corridors
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
+const CloudMeshScript := preload("res://scripts/cloud_mesh.gd")
 
 var maze # MazeGen.Maze
 var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "manhattan" | ...)
@@ -68,6 +69,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
+	_build_sky_clouds()
 	_build_pellets(start_cell, reserved_cells)
 	# A permanently-word-built theme (Manhattan) starts in the word-built-
 	# world look; other themes start out looking normal and only switch when
@@ -221,6 +223,29 @@ func _build_floor_ceiling() -> void:
 	ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, WALL_H, (maze.rows - 1) * CELL * 0.5)
 	ceil_mesh.rotation.x = PI
 	add_child(ceil_mesh)
+
+
+## Mario/Minecraft-style voxel sky: scatters a handful of blocky white
+## pixel-cloud clusters (cloud_mesh.gd) just below the ceiling, over open
+## (non-wall) cells only — floating one directly above a wall column would
+## sit half-buried in the top of that wall block. Purely decorative, no
+## collision. Only runs for themes with CityTheme.ceil_sky_clouds set.
+func _build_sky_clouds() -> void:
+	if not city_theme.ceil_sky_clouds:
+		return
+	var candidates: Array = MazeGen.cells_in_room(maze, false)
+	if candidates.is_empty():
+		return
+	candidates.shuffle()
+	var cloud_count: int = clampi(candidates.size() / 22, 4, 14)
+	for i in mini(cloud_count, candidates.size()):
+		var cell: Vector2i = candidates[i]
+		var cloud := CloudMeshScript.build({"voxel_size": 0.1 + randf() * 0.06})
+		var jitter_x := (randf() - 0.5) * CELL * 0.6
+		var jitter_z := (randf() - 0.5) * CELL * 0.6
+		cloud.position = Vector3(cell.y * CELL + jitter_x, WALL_H - 0.32, cell.x * CELL + jitter_z)
+		cloud.rotation.y = randf() * TAU
+		add_child(cloud)
 
 
 ## Swaps the visible wall skin: word-built ("WALL" letterforms) vs the

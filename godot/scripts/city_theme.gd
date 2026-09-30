@@ -58,6 +58,11 @@ var ceil_color := Color(0.016, 0.024, 0.067)
 var ceil_emission_enabled := false
 var ceil_emission_color := Color.BLACK
 var ceil_emission_energy := 0.0
+## When true, MazeView scatters blocky white pixel-cloud clusters (see
+## cloud_mesh.gd) just below the ceiling — a Mario/Minecraft-style voxel
+## sky, meant to go with a bright ceil_color rather than the original dark
+## "underground" ceiling.
+var ceil_sky_clouds := false
 
 ## ---- Scene-wide environment (background/fog/ambient) — read by Main ----
 var env_bg_color := Color(0.0196, 0.0275, 0.0627)

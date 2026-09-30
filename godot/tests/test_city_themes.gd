@@ -36,6 +36,10 @@ func _initialize() -> void:
 	if not normal.wall_matrix_rain:
 		failures += 1
 		print("FAIL normal theme's walls should use the matrix_rain shader")
+	checks += 1
+	if not normal.ceil_sky_clouds:
+		failures += 1
+		print("FAIL normal theme should have the voxel-cloud sky ceiling enabled")
 
 	# --- manhattan: BUILDING blocks, real landmark provider, no power-ups ---
 	var manhattan = CityThemes.get_theme("manhattan")
@@ -64,6 +68,10 @@ func _initialize() -> void:
 	if manhattan.wall_matrix_rain:
 		failures += 1
 		print("FAIL manhattan theme's boxy walls should not use the matrix_rain shader (it's always word-built anyway)")
+	checks += 1
+	if manhattan.ceil_sky_clouds:
+		failures += 1
+		print("FAIL manhattan theme should keep its own neon skyline ceiling, not the voxel-cloud sky")
 	checks += 1
 	if not manhattan.permanently_word_built:
 		failures += 1
