@@ -8,6 +8,8 @@ const WALL_H := 3.8 # doubled from the original 1.9 per user request — taller,
 const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const CloudMeshScript := preload("res://scripts/cloud_mesh.gd")
+const PixelRabbitMeshScript := preload("res://scripts/pixel_rabbit_mesh.gd")
+const PsychedelicHeadMeshScript := preload("res://scripts/psychedelic_head_mesh.gd")
 
 var maze # MazeGen.Maze
 var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "manhattan" | ...)
@@ -27,8 +29,17 @@ var fruit_expire_at := 0.0
 ## note in _build_pellets). Manhattan never has one: it's set permanently
 ## into word-mode instead, and has no power-ups at all.
 var word_powerup_cell := Vector2i(-1, -1)
-var word_powerup_node: MeshInstance3D = null
+var word_powerup_node: Node3D = null # a MultiMeshInstance3D (the pixel-rabbit — see pixel_rabbit_mesh.gd), typed as the common Node3D base
 var word_powerup_alive := false
+
+## The Fear & Loathing pickup (normal levels only, same rules as the WORD
+## pickup above): eating it temporarily applies the Fear & Loathing
+## condition's control-scrambling (see Main._activate_fear_powerup), turns
+## the matrix_rain wall shader psychedelic (see set_psychedelic), and
+## randomly flips the player's wall collision on and off for a few seconds.
+var fear_powerup_cell := Vector2i(-1, -1)
+var fear_powerup_node: Node3D = null
+var fear_powerup_alive := false
 
 var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
@@ -64,6 +75,9 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	word_powerup_cell = Vector2i(-1, -1)
 	word_powerup_node = null
 	word_powerup_alive = false
+	fear_powerup_cell = Vector2i(-1, -1)
+	fear_powerup_node = null
+	fear_powerup_alive = false
 
 	maze = new_maze
 	theme = maze_theme
@@ -393,6 +407,17 @@ func set_word_mode(active: bool) -> void:
 	normal_wall_mmi.visible = not active
 
 
+## Turns the matrix_rain wall shader's psychedelic mode on/off (see
+## shaders/matrix_rain.gdshader's psychedelic_amount uniform) — used by
+## Main for the Fear & Loathing pickup's temporary "LSD trip" wall look.
+## A no-op on themes that don't use the matrix_rain shader at all (Manhattan
+## has no walls_body/wall_material of that kind — Godot silently ignores a
+## shader-parameter set on a material without that uniform).
+func set_psychedelic(active: bool) -> void:
+	if wall_material is ShaderMaterial:
+		wall_material.set_shader_parameter("psychedelic_amount", 1.0 if active else 0.0)
+
+
 func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
 	var best: Vector2i = cells[0]
 	var best_d := -1.0
@@ -404,18 +429,37 @@ func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
 	return best
 
 
+## The WORD pickup's visual: a small blocky white pixel-rabbit (see
+## pixel_rabbit_mesh.gd) rather than the literal word "WORD" — "follow the
+## white rabbit" for the pickup that drops wall collision and reskins the
+## level into its word-built-world look.
 func _build_word_powerup_mesh() -> void:
-	var mesh := WordMeshScript.build("WORD", Color(0.25, 1.0, 0.35), {"font_size": 26, "depth": 0.16, "emission_energy": 1.7})
-	mesh.scale = Vector3.ONE * 0.5
+	var mesh := PixelRabbitMeshScript.build()
+	mesh.scale = Vector3.ONE * 1.4
 	mesh.position = Vector3(word_powerup_cell.y * CELL, 0.55, word_powerup_cell.x * CELL)
 	var light := OmniLight3D.new()
-	light.light_color = Color(0.25, 1.0, 0.35)
+	light.light_color = Color(0.85, 0.9, 1.0)
 	light.omni_range = 2.6
 	light.light_energy = 0.85
 	mesh.add_child(light)
 	add_child(mesh)
 	word_powerup_node = mesh
 	word_powerup_alive = true
+
+
+## The Fear & Loathing pickup's visual — see psychedelic_head_mesh.gd.
+func _build_fear_powerup_mesh() -> void:
+	var head := PsychedelicHeadMeshScript.build()
+	head.scale = Vector3.ONE * 0.5
+	head.position = Vector3(fear_powerup_cell.y * CELL, 0.55, fear_powerup_cell.x * CELL)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.4, 0.9)
+	light.omni_range = 2.6
+	light.light_energy = 0.9
+	head.add_child(light)
+	add_child(head)
+	fear_powerup_node = head
+	fear_powerup_alive = true
 
 
 func _pick_power_cells(candidates: Array) -> Array:
@@ -557,6 +601,13 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		word_powerup_cell = _pick_farthest_cell(pellet_cells, start_cell)
 		pellet_cells.erase(word_powerup_cell)
 
+	# Fear & Loathing pickup: a second, rarer special pickup, taken out of
+	# the pellet grid the same way as the WORD pickup above and placed as
+	# far as possible from it so the two don't end up next to each other.
+	if city_theme.has_power_ups and pellet_cells.size() > 0:
+		fear_powerup_cell = _pick_farthest_cell(pellet_cells, word_powerup_cell)
+		pellet_cells.erase(fear_powerup_cell)
+
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.11
 	sphere.height = 0.22
@@ -588,6 +639,8 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 
 	if word_powerup_cell.x >= 0:
 		_build_word_powerup_mesh()
+	if fear_powerup_cell.x >= 0:
+		_build_fear_powerup_mesh()
 
 
 func total_pickups() -> int:
@@ -625,7 +678,7 @@ func spawn_fruit(now: float) -> void:
 ## Consumes any pickup within `radius` of `pos`. Returns a Dictionary describing
 ## what was eaten this call: {pellet, power, fruit, word_powerup: bool}.
 func consume_at(pos: Vector3, now: float) -> Dictionary:
-	var result := {"pellet": false, "power": false, "fruit": false, "word_powerup": false}
+	var result := {"pellet": false, "power": false, "fruit": false, "word_powerup": false, "fear_powerup": false}
 	for i in pellet_cells.size():
 		if not pellet_alive[i]:
 			continue
@@ -653,6 +706,13 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			word_powerup_node.visible = false
 			result.word_powerup = true
 
+	if fear_powerup_alive and fear_powerup_node != null:
+		var d := Vector2(fear_powerup_node.position.x - pos.x, fear_powerup_node.position.z - pos.z).length()
+		if d < 0.5:
+			fear_powerup_alive = false
+			fear_powerup_node.visible = false
+			result.fear_powerup = true
+
 	if fruit_alive and fruit_node != null:
 		var d := Vector2(fruit_node.position.x - pos.x, fruit_node.position.z - pos.z).length()
 		if d < 0.5:
@@ -676,8 +736,19 @@ func _process(delta: float) -> void:
 		fruit_node.rotate_y(delta * 1.4)
 	if word_powerup_alive and word_powerup_node != null:
 		word_powerup_node.rotate_y(delta * 2.0)
-		var ws := 0.5 + sin(_t * 5.0) * 0.06
+		var ws := 1.4 + sin(_t * 5.0) * 0.14
 		word_powerup_node.scale = Vector3.ONE * ws
+	if fear_powerup_alive and fear_powerup_node != null:
+		fear_powerup_node.rotate_y(delta * 1.4)
+		var fs := 0.5 + sin(_t * 3.0) * 0.05
+		fear_powerup_node.scale = Vector3.ONE * fs
+		for child in fear_powerup_node.get_children():
+			if child is MeshInstance3D and child.name.begins_with("aura"):
+				var hue := fmod(_t * 0.3 + float(child.get_index()) / 8.0, 1.0)
+				var c := Color.from_hsv(hue, 0.9, 1.0)
+				var mat: StandardMaterial3D = child.material_override
+				mat.albedo_color = c
+				mat.emission = c
 	for i in landmark_lights.size():
 		var light: OmniLight3D = landmark_lights[i]
 		light.light_energy = 1.0 + sin(_t * 3.0 + i * 0.7) * 0.55

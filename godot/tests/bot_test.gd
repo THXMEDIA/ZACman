@@ -306,6 +306,35 @@ func _run_checks() -> void:
 			any_still_skinned = true
 	_check("word mode: reverts after expiry (enemies)", not any_still_skinned)
 
+	# ---- Fear & Loathing power-up: scrambles input, turns the wall shader
+	# psychedelic, and flips collision randomly for its duration, then
+	# reverts everything (including whatever whole-run condition was active
+	# before it) ----
+	main.begin_game()
+	await get_tree().process_frame
+	_check("fear powerup: off at level start", main.fear_mode_until <= main.now)
+	_check("fear powerup: pickup node exists", main.maze_view.fear_powerup_node != null)
+	main.player.global_position = Vector3(main.maze_view.fear_powerup_node.position.x, main.player.global_position.y, main.maze_view.fear_powerup_node.position.z)
+	await get_tree().process_frame
+	_check("fear powerup: picking it up activates it", main.fear_mode_until > main.now)
+	_check("fear powerup: player.active_condition becomes fear_and_loathing", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+	_check("fear powerup: wall shader gets the psychedelic uniform", main.maze_view.wall_material.get_shader_parameter("psychedelic_amount") == 1.0)
+
+	main._fear_next_noclip_toggle_at = main.now - 0.01 # force a toggle without waiting out the real interval
+	await get_tree().process_frame
+	# The flip itself is random (50/50), so check the deterministic part: the
+	# toggle actually ran and scheduled its next one in the future, and left
+	# collision_mask at a valid value (0 = noclip or 2 = normal walls).
+	_check("fear powerup: collision toggle schedules its next flip", main._fear_next_noclip_toggle_at > main.now)
+	_check("fear powerup: collision_mask stays a valid value after a random flip", main.player.collision_mask == 0 or main.player.collision_mask == 2)
+
+	main.fear_mode_until = main.now - 0.01 # force expiry without waiting out the real duration
+	await get_tree().process_frame
+	_check("fear powerup: reverts after expiry (timer cleared)", main.fear_mode_until == 0.0)
+	_check("fear powerup: reverts after expiry (wall shader)", main.maze_view.wall_material.get_shader_parameter("psychedelic_amount") == 0.0)
+	_check("fear powerup: reverts after expiry (collision restored)", main.player.collision_mask == 2)
+	_check("fear powerup: reverts after expiry (active_condition restored)", main.player.active_condition == null)
+
 	# ---- Manhattan is permanently word-built, has no Word Mode power-up,
 	# and its taxis/pedestrians block the player without costing a life ----
 	main.begin_manhattan_game()

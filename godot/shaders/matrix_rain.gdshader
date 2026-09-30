@@ -58,6 +58,16 @@ uniform float floor_fade_frac = 0.16; // bottom fraction of the wall's own heigh
 
 const int LAYER_COUNT = 5; // "5 rows of code running behind each other" — see header comment above
 
+// Fear & Loathing pickup (see MazeView.set_psychedelic / Main.
+// _activate_fear_powerup): 0.0 = the normal green code wall (default);
+// driven up to 1.0 from GDScript for the pickup's duration, warping the UV
+// with a slow wobble and cycling every glyph through a shifting rainbow
+// instead of flat green — an "LSD trip" look the wall temporarily
+// dissolves into and back out of, purely cosmetic (never affects the
+// actual collision, which Main handles separately by randomly toggling
+// noclip while this is active).
+uniform float psychedelic_amount = 0.0;
+
 varying float local_y; // this wall instance's own local mesh Y, -0.5 (floor) .. +0.5 (top) — independent of per-instance height scaling
 
 // 10 glyph shapes, each an 8x8 bit pattern (MSB = leftmost pixel),
@@ -137,16 +147,41 @@ vec3 sample_layer(vec2 uv, int depth, out bool hit) {
 }
 
 void fragment() {
+	vec2 uv = UV;
+	if (psychedelic_amount > 0.001) {
+		// Slow, sinuous UV wobble — the wall's letterforms swim and bend
+		// instead of sitting on a rigid grid.
+		float warp_x = sin(uv.y * 18.0 + TIME * 2.3) * 0.03 + sin(uv.x * 25.0 - TIME * 3.1) * 0.02;
+		float warp_y = sin(uv.x * 14.0 + TIME * 1.7) * 0.025;
+		uv.x += warp_x * psychedelic_amount;
+		uv.y += warp_y * psychedelic_amount;
+	}
+
 	// Composite back-to-front: start from the farthest layer and let each
 	// nearer layer paint over it only where that layer actually has a lit
 	// glyph, so gaps in a near layer reveal the layer(s) behind it.
 	vec3 color = bg_color;
 	bool hit;
 	for (int i = LAYER_COUNT - 1; i >= 0; i--) {
-		vec3 layer_color = sample_layer(UV, i, hit);
+		vec3 layer_color = sample_layer(uv, i, hit);
 		if (hit) {
 			color = layer_color;
 		}
+	}
+
+	if (psychedelic_amount > 0.001) {
+		// Trade the flat green for a slowly drifting rainbow, keeping each
+		// pixel's own brightness so the glyph shapes still read through the
+		// color-cycling — the "LSD trip" look, purely cosmetic.
+		const float TAU_VAL = 6.283185;
+		float hue = fract(TIME * 0.15 + uv.x * 0.6 + uv.y * 0.4);
+		float lum = max(color.r, max(color.g, color.b));
+		vec3 rainbow = vec3(
+			0.5 + 0.5 * sin(hue * TAU_VAL),
+			0.5 + 0.5 * sin(hue * TAU_VAL + 2.094),
+			0.5 + 0.5 * sin(hue * TAU_VAL + 4.189)
+		) * max(lum, 0.15);
+		color = mix(color, rainbow, psychedelic_amount);
 	}
 
 	// Fade the scrolling pattern out to the static bg_color over the

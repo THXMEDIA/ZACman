@@ -211,6 +211,27 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Kondition (`""` = keine); jede neue Kondition ist ein neues Skript unter
   `scripts/conditions/` mit einem Registry-Eintrag — der Rest des Spiels
   muss dafür nicht geändert werden.
+- **WORD-Pickup als weißes Pixel-Kaninchen, neues Fear & Loathing-Pickup**
+  (`godot/scripts/pixel_rabbit_mesh.gd`, `psychedelic_head_mesh.gd`,
+  `maze_view.gd`, `main.gd`, `shaders/matrix_rain.gdshader`): das WORD-
+  Pickup (normale Level; hebt Wandkollision auf und schaltet dauerhaft auf
+  den wort-gebauten Look) zeigt sich jetzt nicht mehr als das Wort "WORD",
+  sondern als kleines blockig-pixeliges weißes Kaninchen ("dem weißen
+  Kaninchen folgen") — dieselbe Voxel-Technik wie schon bei den Wolken
+  (`cloud_mesh.gd`). Neu dazugekommen ist ein zweites, selteneres Pickup:
+  **Fear & Loathing**, sichtbar als abstrakter, kaleidoskopisch
+  einfärbender Kopf (Totenkopf-Kugel, zwei überdimensionierte Augen, ein
+  Ring rotierender Farbkugeln — eine eigene, nicht von einem realen
+  Schauspieler oder einer bestimmten Filmfigur abgeleitete Gestalt) und für
+  `FEAR_MODE_DURATION` (10 s) drei Dinge gleichzeitig: die Steuerung wird
+  wie bei der gleichnamigen Kondition (`fear_and_loathing.gd`, direkt
+  wiederverwendet statt dupliziert) laufend verrauscht/invertiert, der
+  Matrix-Regen-Shader löst sich über einen neuen `psychedelic_amount`-
+  Uniform in eine wabernde Regenbogen-Halluzination auf
+  (`MazeView.set_psychedelic`), und die Wandkollision wird alle 0.4–1.1 s
+  zufällig an/aus geschaltet (`Main._fear_next_noclip_toggle_at`). Ein
+  vorher aktiv gewähltes Kondition (z. B. Matrix Ghost) wird beim Ende des
+  Effekts unverändert wiederhergestellt.
 - **Leaderboard** (`godot/scripts/leaderboard.gd`, Autoload `Leaderboard`):
   lokale Bestenlisten, ein Board pro Kombination aus (Stadt/Level) ×
   Kondition (`Leaderboard.board_key("manhattan", "matrix_ghost")` z. B.) —

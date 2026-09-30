@@ -7,6 +7,9 @@ extends Node3D
 const CELL := 2.0
 const FRIGHTENED_DURATION := 7.0
 const WORD_MODE_DURATION := 12.0
+const FEAR_MODE_DURATION := 10.0
+const FEAR_NOCLIP_FLIP_MIN := 0.4
+const FEAR_NOCLIP_FLIP_MAX := 1.1
 const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
 
 const LEVELS := [
@@ -65,6 +68,17 @@ var now := 0.0
 var level_start_time := 0.0
 var playing_manhattan := false
 var word_mode_until := 0.0
+
+## Fear & Loathing pickup (normal levels only — see maze_view.gd's
+## fear_powerup_cell): temporarily layers the Fear & Loathing condition's
+## control-scrambling on top of whatever whole-run condition (if any) is
+## already selected, turns the wall shader psychedelic, and randomly flips
+## the player's wall collision on and off — see _activate_fear_powerup.
+var fear_mode_until := 0.0
+var _fear_condition_instance = null
+var _fear_saved_active_condition = null
+var _fear_prev_noclip := false
+var _fear_next_noclip_toggle_at := 0.0
 
 ## Testbuild mode (see hud.gd's TESTBUILD button / _on_test_build_pressed
 ## below): plays a normal Matrix level exactly like start_pressed does, just
@@ -196,6 +210,9 @@ func start_level(index: int) -> void:
 	_apply_theme_environment("normal")
 	fruit_spawned = false
 	word_mode_until = 0.0
+	fear_mode_until = 0.0
+	_fear_condition_instance = null
+	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
 	player.set_noclip(false)
 
 	player.warp_to(start_cell, PI)
@@ -269,6 +286,9 @@ func start_manhattan_level() -> void:
 	_apply_theme_environment("manhattan")
 	fruit_spawned = false
 	word_mode_until = 0.0
+	fear_mode_until = 0.0
+	_fear_condition_instance = null
+	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
 	player.set_noclip(false)
 
 	player.warp_to(start_cell, PI)
@@ -780,6 +800,13 @@ func _process(delta: float) -> void:
 	if word_mode_until > 0.0 and now >= word_mode_until:
 		_deactivate_word_mode()
 
+	if fear_mode_until > 0.0:
+		if now >= fear_mode_until:
+			_deactivate_fear_powerup()
+		elif now >= _fear_next_noclip_toggle_at:
+			player.set_noclip(randf() > 0.5)
+			_fear_next_noclip_toggle_at = now + randf_range(FEAR_NOCLIP_FLIP_MIN, FEAR_NOCLIP_FLIP_MAX)
+
 	if current_condition != null:
 		current_condition.on_process(delta, self)
 
@@ -836,9 +863,12 @@ func _check_pickups() -> void:
 	if result.word_powerup:
 		score += 75
 		_activate_word_mode()
+	if result.fear_powerup:
+		score += 75
+		_activate_fear_powerup()
 	if result.pellet or result.power:
 		Sfx.munch()
-	if result.pellet or result.power or result.fruit or result.word_powerup:
+	if result.pellet or result.power or result.fruit or result.word_powerup or result.fear_powerup:
 		hud.set_score(score)
 
 	var total: int = maze_view.total_pickups()
@@ -875,6 +905,37 @@ func _deactivate_word_mode() -> void:
 	player.set_noclip(false)
 	for enemy in enemies:
 		enemy.set_word_skin(false)
+
+
+## ---------------- Fear & Loathing power-up (normal levels only) ----------------
+## A rarer, temporary sibling to the Word Mode pickup above: for
+## FEAR_MODE_DURATION seconds, the player's steering gets the same
+## noisy/periodically-inverted treatment as the whole-run Fear & Loathing
+## Kondition (scripts/conditions/fear_and_loathing.gd, reused directly
+## rather than duplicated), the matrix_rain wall shader dissolves into a
+## psychedelic color-cycling wobble (see set_psychedelic), and wall
+## collision randomly flips on and off every FEAR_NOCLIP_FLIP_MIN..MAX
+## seconds (_process below) — an "LSD trip" the player has to ride out
+## rather than a clean buff. Whatever whole-run condition (if any) was
+## already active is swapped back in unchanged once this ends.
+func _activate_fear_powerup() -> void:
+	fear_mode_until = now + FEAR_MODE_DURATION
+	_fear_saved_active_condition = player.active_condition
+	_fear_condition_instance = ConditionsScript.get_condition("fear_and_loathing")
+	_fear_condition_instance.on_start(self)
+	player.active_condition = _fear_condition_instance
+	_fear_prev_noclip = player.collision_mask == 0
+	_fear_next_noclip_toggle_at = now + randf_range(FEAR_NOCLIP_FLIP_MIN, FEAR_NOCLIP_FLIP_MAX)
+	maze_view.set_psychedelic(true)
+	Sfx.power()
+
+
+func _deactivate_fear_powerup() -> void:
+	fear_mode_until = 0.0
+	player.active_condition = _fear_saved_active_condition
+	_fear_condition_instance = null
+	player.set_noclip(_fear_prev_noclip)
+	maze_view.set_psychedelic(false)
 
 
 ## ---------------- Konditionen (whole-run modifiers) ----------------
