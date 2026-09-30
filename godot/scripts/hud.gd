@@ -45,6 +45,7 @@ var final_level_label: Label
 var final_hs_label: Label
 var start_hs_label: Label
 var manhattan_btn: Button
+var manhattan_bonus_label: Label
 var twitch_toggle: CheckBox
 var twitch_channel_edit: LineEdit
 var twitch_status_label: Label
@@ -247,14 +248,32 @@ func _build_start_panel() -> void:
 	twitch_status_label.add_theme_font_size_override("font_size", 11)
 	box.add_child(twitch_status_label)
 
-	var btn := _make_button("SPIEL STARTEN")
+	var mode_tag := _subtitle_label("WÄHLE DEINEN MODUS")
+	mode_tag.add_theme_font_size_override("font_size", 11)
+	box.add_child(mode_tag)
+
+	var btn := _make_button("MATRIX-LEVEL")
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
+	var matrix_sub := _subtitle_label("Ghosts, Speedrun-Bestzeiten, Konditionen — die klassischen Level.")
+	matrix_sub.add_theme_font_size_override("font_size", 11)
+	box.add_child(matrix_sub)
 
-	manhattan_btn = _make_button("MANHATTAN-BONUSLEVEL")
+	# Always available as its own choice, right from the start screen —
+	# not gated behind the speedrun bonus-unlock anymore (that still
+	# exists, see manhattan_bonus_label below, just as a nice badge now
+	# rather than a lock on the button).
+	manhattan_btn = _make_button("EXPLORER-LEVEL")
 	manhattan_btn.pressed.connect(func(): manhattan_pressed.emit())
-	manhattan_btn.visible = false
 	box.add_child(manhattan_btn)
+	var explorer_sub := _subtitle_label("Ruhige Stadt-Erkundung, kein Zeitdruck, eigenes Leaderboard.")
+	explorer_sub.add_theme_font_size_override("font_size", 11)
+	box.add_child(explorer_sub)
+	manhattan_bonus_label = _subtitle_label("★ Speedrun-Bestzeit-Bonus freigeschaltet")
+	manhattan_bonus_label.add_theme_font_size_override("font_size", 11)
+	manhattan_bonus_label.add_theme_color_override("font_color", PELLET_COLOR)
+	manhattan_bonus_label.visible = false
+	box.add_child(manhattan_bonus_label)
 
 
 func _build_pause_panel() -> void:
@@ -435,8 +454,11 @@ func set_level(v) -> void:
 	level_label.text = str(v)
 
 
+## The Explorer-level button is always visible/enabled now (see
+## _build_start_panel) — beating a speedrun target no longer gates access
+## to it, it's just a badge of honor shown alongside it.
 func set_bonus_unlocked(v: bool) -> void:
-	manhattan_btn.visible = v
+	manhattan_bonus_label.visible = v
 
 
 func set_twitch_status(text: String) -> void:

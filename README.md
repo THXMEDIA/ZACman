@@ -77,15 +77,21 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   (`godot/shaders/mario_vista.gdshader`: Hügel, Büsche, Sonne, bewusst in
   warmen statt blauen Tönen) — sonst würde der Tunnelausgang einfach ins
   flache Himmelblau auslaufen.
+- **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
+  "MATRIX-LEVEL" (die klassischen Speedrun-Level) und "EXPLORER-LEVEL"
+  (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
+  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`).
 - **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
-  Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten,
-  schaltet sich das **Manhattan-Bonuslevel** dauerhaft frei — ein von Hand
-  nach dem echten Midtown-Straßenraster gebautes Level (`godot/scripts/
-  manhattan_maze.gd`; echte Avenue-/Street-Namen, Startpunkt Penn Station,
-  Geisterhaus bei Grand Central), spielbar über den Button auf dem
-  Startbildschirm sobald freigeschaltet. Live-OSM/Overpass-Daten sind aus
-  dieser Sandbox nicht erreichbar — für eine datengetriebene Variante siehe
-  `tools/osm_to_chunks.py` im ReclaimTheStreets-Projekt, lokal ausführbar.
+  Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten, zeigt
+  der Startbildschirm zusätzlich ein "★ Speedrun-Bestzeit-Bonus
+  freigeschaltet"-Abzeichen neben dem Explorer-Button (rein kosmetisch,
+  siehe `hud.gd::set_bonus_unlocked` — schaltet nichts mehr frei/zu).
+  Manhattan ist ein von Hand nach dem echten Midtown-Straßenraster gebautes
+  Level (`godot/scripts/manhattan_maze.gd`; echte Avenue-/Street-Namen,
+  Startpunkt Penn Station, Geisterhaus bei Grand Central). Live-OSM/
+  Overpass-Daten sind aus dieser Sandbox nicht erreichbar — für eine
+  datengetriebene Variante siehe `tools/osm_to_chunks.py` im
+  ReclaimTheStreets-Projekt, lokal ausführbar.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte

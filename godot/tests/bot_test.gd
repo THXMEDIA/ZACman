@@ -57,6 +57,11 @@ func _pin_enemy_at(enemy, cell: Vector2i) -> void:
 func _run_checks() -> void:
 	Leaderboard.reset_all()
 
+	# ---- start screen offers Matrix-level vs Explorer-level right away,
+	# not gated behind the speedrun bonus unlock (see hud.gd's
+	# _build_start_panel / set_bonus_unlocked) ----
+	_check("start screen: Explorer-level button visible without unlocking anything", main.hud.manhattan_btn.visible == true)
+
 	# ---- begin_game starts cleanly ----
 	main.begin_game()
 	await get_tree().process_frame
