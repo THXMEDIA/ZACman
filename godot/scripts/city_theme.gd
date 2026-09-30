@@ -28,6 +28,13 @@ var wall_palette: Array = [Color(0.25, 1.0, 0.35)]
 ## time, rather than perfectly UV-mapped signage — set false for a theme
 ## that wants every block facing the same way.
 var wall_alternate_rotation := true
+## When true, the boxy (non-word-mode) walls are shaded with
+## matrix_rain.gdshader instead of a plain StandardMaterial3D: scrolling
+## random green glyphs baked directly into the wall surface, always fully
+## visible regardless of camera distance (see MazeView._make_materials).
+## Unlike the old screen-space post effect this doesn't fade to a flat
+## color up close — it's the wall's actual material, not a distance blend.
+var wall_matrix_rain := false
 
 ## ---- Optional per-cell landmark override ----
 ## A script exposing a static `landmark_at(row: int, col: int) -> String`

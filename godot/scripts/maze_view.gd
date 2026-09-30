@@ -36,7 +36,7 @@ var word_mode_active := false
 var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed in _process
 var _t := 0.0
 
-var wall_material: StandardMaterial3D
+var wall_material: Material # StandardMaterial3D normally, or a matrix_rain ShaderMaterial (see CityTheme.wall_matrix_rain)
 var pellet_material: StandardMaterial3D
 var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
@@ -76,13 +76,22 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 
 
 func _make_materials() -> void:
-	wall_material = StandardMaterial3D.new()
-	wall_material.albedo_color = Color(0.047, 0.086, 0.22)
-	wall_material.emission_enabled = true
-	wall_material.emission = Color(0.118, 0.373, 1.0)
-	wall_material.emission_energy_multiplier = 0.55
-	wall_material.roughness = 0.55
-	wall_material.metallic = 0.15
+	if city_theme.wall_matrix_rain:
+		# Scrolling green ASCII glyphs baked into the wall surface itself —
+		# see matrix_rain.gdshader. Always fully "ASCII", never a flat real
+		# color, at any distance (unlike the old screen-space post effect).
+		var shader_mat := ShaderMaterial.new()
+		shader_mat.shader = load("res://shaders/matrix_rain.gdshader")
+		wall_material = shader_mat
+	else:
+		var sm := StandardMaterial3D.new()
+		sm.albedo_color = Color(0.047, 0.086, 0.22)
+		sm.emission_enabled = true
+		sm.emission = Color(0.118, 0.373, 1.0)
+		sm.emission_energy_multiplier = 0.55
+		sm.roughness = 0.55
+		sm.metallic = 0.15
+		wall_material = sm
 
 	pellet_material = StandardMaterial3D.new()
 	pellet_material.albedo_color = Color(1.0, 0.82, 0.4)

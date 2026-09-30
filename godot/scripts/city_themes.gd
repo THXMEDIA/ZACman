@@ -20,6 +20,7 @@ static func normal() -> Resource:
 	t.wall_emission_energy = 1.1
 	t.wall_palette = [Color(0.25, 1.0, 0.35)]
 	t.wall_alternate_rotation = true
+	t.wall_matrix_rain = true
 	t.landmark_provider_script = null
 
 	t.floor_color = Color(0.024, 0.039, 0.094)

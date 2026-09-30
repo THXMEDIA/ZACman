@@ -3,7 +3,7 @@ extends RefCounted
 ## voxels forming a classic Pac-Man-ghost silhouette: rounded dome top,
 ## rectangular body, zig-zag skirt) instead of the plain smooth sphere the
 ## enemies used to be. Chunky/blocky by design — the same retro-pixel
-## aesthetic as ascii_post.gdshader's Matrix look and word_mesh.gd's
+## aesthetic as matrix_rain.gdshader's wall look and word_mesh.gd's
 ## letterform objects, just applied to the enemies (per the user's "wie bei
 ## Space Invaders" request: blocky pixel sprites, not rounded 3D shapes).
 ##
