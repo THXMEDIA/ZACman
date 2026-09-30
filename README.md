@@ -60,11 +60,13 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   beendet, sobald `remaining_pickups() <= 0` ist.
 - **Sound**: komplett synthetisch (Godot: zur Ladezeit gerenderte PCM-Buffer
   aus Oszillator + Hüllkurve; Web: Web-Audio-Oszillatoren) — keine Samples.
-- **Matrix-ASCII-Look**: ein Screen-Space-Post-Effekt (`godot/shaders/ascii_post.gdshader`,
-  angelehnt an das ReclaimTheStreets-Projekt) wandelt das Bild ab einer
-  gewissen Entfernung in grüne ASCII-Zeichen um — Pellets/Gegner in
-  Spielernähe bleiben scharf, die Labyrinthwände sind fast immer im
-  ASCII-Bereich.
+- **Matrix-ASCII-Look**: die Wände der Matrix-Level sind direkt mit
+  `godot/shaders/matrix_rain.gdshader` geshadet (`CityTheme.wall_matrix_rain`,
+  angewendet in `MazeView._make_materials`) — durchlaufende, zufällige grüne
+  Zeichen (8x8-Bitmuster, kein Font-Asset nötig), die von oben nach unten
+  scrollen wie ein Terminal, mit eigenem Tempo/Phase je Spalte. Immer und in
+  jeder Entfernung voll sichtbar, nicht nur ab einer gewissen Distanz — ein
+  Materialeffekt, kein Screen-Space-Blend.
 - **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
   Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten,
   schaltet sich das **Manhattan-Bonuslevel** dauerhaft frei — ein von Hand
