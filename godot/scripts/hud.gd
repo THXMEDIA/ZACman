@@ -231,8 +231,8 @@ func _make_button(text: String) -> Button:
 
 
 func _build_start_panel() -> void:
-	start_panel = _overlay_panel()
-	var box := start_panel.get_child(0)
+	start_panel = _overlay_panel(true)
+	var box := _panel_box(start_panel)
 	box.add_child(_title_label("KUGELSCHLUCKER"))
 	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus."))
 
@@ -449,10 +449,30 @@ func _build_levelclear_label() -> void:
 	levelclear_panel.add_child(levelclear_sub)
 
 
-func _overlay_panel() -> PanelContainer:
+## scrollable=true anchors the panel to a tall, centered column (5%-95% of
+## the viewport height) and wraps its content box in a ScrollContainer,
+## instead of shrink-centering the panel to its content's natural size. The
+## start panel needs this: it has picked up enough buttons/labels over time
+## (Testbuild, Explorer-Level, Twitch row, ...) that on a smaller window it
+## no longer reliably fits — the lower buttons could end up pushed off
+## screen with nothing to scroll them into view. Other panels stay on the
+## original shrink-centered behavior, which still looks right for them.
+## Use _panel_box() to get the actual content box back, since its position
+## in the tree differs between the two modes.
+func _overlay_panel(scrollable: bool = false) -> PanelContainer:
 	var root := PanelContainer.new()
-	root.set_anchors_preset(Control.PRESET_CENTER)
 	root.custom_minimum_size = Vector2(420, 0)
+	if scrollable:
+		root.anchor_left = 0.5
+		root.anchor_right = 0.5
+		root.anchor_top = 0.05
+		root.anchor_bottom = 0.95
+		root.offset_left = -210
+		root.offset_right = 210
+		root.offset_top = 0
+		root.offset_bottom = 0
+	else:
+		root.set_anchors_preset(Control.PRESET_CENTER)
 	var sb := _panel_style()
 	sb.set_content_margin_all(26)
 	sb.bg_color = Color(0.035, 0.055, 0.11, 0.97)
@@ -461,8 +481,25 @@ func _overlay_panel() -> PanelContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 14)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	root.add_child(box)
+	if scrollable:
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		root.add_child(scroll)
+		scroll.add_child(box)
+	else:
+		root.add_child(box)
 	return root
+
+
+## Returns the content VBoxContainer for a panel built by _overlay_panel(),
+## whether or not it's the scrollable variant (where the box sits one level
+## deeper, inside a ScrollContainer).
+func _panel_box(panel: PanelContainer) -> VBoxContainer:
+	var child: Node = panel.get_child(0)
+	if child is VBoxContainer:
+		return child
+	return child.get_child(0)
 
 
 func show_only(panel: Control) -> void:

@@ -85,7 +85,13 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   denselben normalen Matrix-Level, blendet in der HUD-Leiste aber zusätzlich
   einen "DEBUG"-Chip ein (FPS, Spielerposition, aktuelle Maze-Zelle, live
   aktualisiert in `main.gd::_process`) — gedacht zum schnellen Prüfen eines
-  Builds, kein eigener Spielmodus.
+  Builds, kein eigener Spielmodus. Der Startbildschirm ist inzwischen mit
+  genug Buttons/Zeilen gewachsen, dass er in einem kleineren Fenster nicht
+  mehr sicher komplett hineinpasste — der Panel-Inhalt sitzt deshalb in
+  einem `ScrollContainer` innerhalb einer auf 5%-95% der Fensterhöhe
+  verankerten Spalte (`hud.gd::_overlay_panel(scrollable=true)`), sodass
+  z. B. der EXPLORER-LEVEL-Button garantiert erreichbar bleibt, notfalls
+  per Scrollen.
 - **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
   Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten, zeigt
   der Startbildschirm zusätzlich ein "★ Speedrun-Bestzeit-Bonus
