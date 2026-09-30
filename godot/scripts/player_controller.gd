@@ -125,8 +125,13 @@ func _physics_process(delta: float) -> void:
 	if v.length() > 1.0:
 		v = v.normalized()
 
-	var dir_x := sin(yaw)
-	var dir_z := cos(yaw)
+	# Camera forward at yaw=0 is -Z (Godot's default camera look direction),
+	# not +Z — these need the minus sign to actually match it. Without it,
+	# "forward" moved the player toward +Z, i.e. behind where the camera was
+	# looking, so W/S felt swapped (right/left were unaffected: the strafe
+	# vector below already matched the camera's real right-hand direction).
+	var dir_x := -sin(yaw)
+	var dir_z := -cos(yaw)
 	var right_x := sin(yaw + PI / 2.0)
 	var right_z := cos(yaw + PI / 2.0)
 	var move_dir := Vector3(dir_x * v.y + right_x * v.x, 0.0, dir_z * v.y + right_z * v.x)
