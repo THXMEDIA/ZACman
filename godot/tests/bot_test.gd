@@ -62,6 +62,22 @@ func _run_checks() -> void:
 	# _build_start_panel / set_bonus_unlocked) ----
 	_check("start screen: Explorer-level button visible without unlocking anything", main.hud.manhattan_btn.visible == true)
 
+	# ---- Testbuild button: normal Matrix level + DEBUG chip in the HUD ----
+	_check("debug overlay: hidden before Testbuild is chosen", main.hud.debug_label.get_parent().get_parent().visible == false)
+	_check("debug_mode: off before Testbuild is chosen", main.debug_mode == false)
+	main._on_test_build_pressed()
+	await get_tree().process_frame
+	_check("debug_mode: on after Testbuild pressed", main.debug_mode == true)
+	_check("debug overlay: visible after Testbuild is chosen", main.hud.debug_label.get_parent().get_parent().visible == true)
+	_check("debug overlay: running a normal Matrix level (maze built)", main.maze != null)
+	main._process(0.016)
+	_check("debug overlay: text populated after a frame", main.hud.debug_label.text != "--" and main.hud.debug_label.text != "")
+	# switching back to a normal start turns the overlay off again
+	main._on_start_pressed()
+	await get_tree().process_frame
+	_check("debug_mode: off again after a normal Matrix-level start", main.debug_mode == false)
+	_check("debug overlay: hidden again after a normal Matrix-level start", main.hud.debug_label.get_parent().get_parent().visible == false)
+
 	# ---- begin_game starts cleanly ----
 	main.begin_game()
 	await get_tree().process_frame

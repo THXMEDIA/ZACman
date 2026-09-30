@@ -7,6 +7,7 @@ signal start_pressed
 signal resume_pressed
 signal restart_pressed
 signal manhattan_pressed
+signal test_build_pressed
 signal explorer_choice_pressed(city_id: String, condition_id: String)
 signal explorer_menu_pressed
 signal twitch_toggled(is_enabled: bool, channel: String)
@@ -46,6 +47,7 @@ var final_hs_label: Label
 var start_hs_label: Label
 var manhattan_btn: Button
 var manhattan_bonus_label: Label
+var debug_label: Label
 var twitch_toggle: CheckBox
 var twitch_channel_edit: LineEdit
 var twitch_status_label: Label
@@ -94,6 +96,12 @@ func _build_hud_bar() -> void:
 	level_label = _make_chip(left, "LEVEL", "1")
 	timer_label = _make_chip(left, "ZEIT", "0:00.00")
 	best_label = _make_chip(left, "BESTZEIT", "--:--")
+
+	# Testbuild-only debug overlay (FPS / player position / cell) — hidden
+	# unless set_debug_overlay(true) is called, see main.gd's
+	# _on_test_build_pressed handler.
+	debug_label = _make_chip(left, "DEBUG", "--")
+	debug_label.get_parent().get_parent().visible = false
 
 	var lives_chip := PanelContainer.new()
 	lives_chip.add_theme_stylebox_override("panel", _panel_style())
@@ -174,6 +182,18 @@ func _build_power_timer() -> void:
 	power_bar.add_theme_stylebox_override("fill", fg)
 	power_bar.add_theme_stylebox_override("background", bgs)
 	row.add_child(power_bar)
+
+
+## Shows/hides the DEBUG chip in the top HUD bar (Testbuild mode only).
+func set_debug_overlay(visible_now: bool) -> void:
+	debug_label.get_parent().get_parent().visible = visible_now
+
+
+## Updates the DEBUG chip's text — FPS, player world position, and the
+## player's current maze cell — called every frame while Testbuild mode
+## is active (see main.gd::_process).
+func update_debug_overlay(fps: float, pos: Vector3, cell: Vector2i) -> void:
+	debug_label.text = "%d fps  ·  (%.1f, %.1f, %.1f)  ·  cell (%d, %d)" % [int(fps), pos.x, pos.y, pos.z, cell.x, cell.y]
 
 
 func set_power_timer(remaining: float, duration: float) -> void:
@@ -258,6 +278,17 @@ func _build_start_panel() -> void:
 	var matrix_sub := _subtitle_label("Ghosts, Speedrun-Bestzeiten, Konditionen — die klassischen Level.")
 	matrix_sub.add_theme_font_size_override("font_size", 11)
 	box.add_child(matrix_sub)
+
+	# Testbuild: a normal Matrix-level run, just with the DEBUG chip
+	# (FPS / position / cell) switched on — for checking builds, not a
+	# separate game mode. Placed directly under the Matrix-level button
+	# as asked, above the Explorer-level choice.
+	var test_btn := _make_button("TESTBUILD")
+	test_btn.pressed.connect(func(): test_build_pressed.emit())
+	box.add_child(test_btn)
+	var test_sub := _subtitle_label("Matrix-Level mit Debug-Overlay (FPS, Position, Zelle).")
+	test_sub.add_theme_font_size_override("font_size", 11)
+	box.add_child(test_sub)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still

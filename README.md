@@ -80,7 +80,12 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 - **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
   "MATRIX-LEVEL" (die klassischen Speedrun-Level) und "EXPLORER-LEVEL"
   (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
-  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`).
+  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Direkt unter dem
+  Matrix-Level-Button sitzt zusätzlich ein "TESTBUILD"-Button: startet
+  denselben normalen Matrix-Level, blendet in der HUD-Leiste aber zusätzlich
+  einen "DEBUG"-Chip ein (FPS, Spielerposition, aktuelle Maze-Zelle, live
+  aktualisiert in `main.gd::_process`) — gedacht zum schnellen Prüfen eines
+  Builds, kein eigener Spielmodus.
 - **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
   Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten, zeigt
   der Startbildschirm zusätzlich ein "★ Speedrun-Bestzeit-Bonus

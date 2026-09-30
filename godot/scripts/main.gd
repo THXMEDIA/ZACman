@@ -61,6 +61,11 @@ var level_start_time := 0.0
 var playing_manhattan := false
 var word_mode_until := 0.0
 
+## Testbuild mode (see hud.gd's TESTBUILD button / _on_test_build_pressed
+## below): plays a normal Matrix level exactly like start_pressed does, just
+## with the HUD's DEBUG chip switched on (FPS, player position, cell).
+var debug_mode := false
+
 ## Which registered CityTheme (see city_themes.gd's EXPLORER_IDS) the
 ## current/last Explorer run was played on. Only "manhattan" resolves to
 ## real content today (see start_explorer_level) — this exists so the
@@ -155,6 +160,7 @@ func _build_hud() -> void:
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
 	hud.manhattan_pressed.connect(_on_manhattan_pressed)
+	hud.test_build_pressed.connect(_on_test_build_pressed)
 	hud.explorer_choice_pressed.connect(_on_explorer_choice_pressed)
 	hud.explorer_menu_pressed.connect(_on_explorer_menu_pressed)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
@@ -539,6 +545,8 @@ func _explorer_next_choices() -> Array:
 
 
 func _on_manhattan_pressed() -> void:
+	debug_mode = false
+	hud.set_debug_overlay(false)
 	begin_manhattan_game()
 
 
@@ -667,6 +675,17 @@ func level_complete_sequence() -> void:
 ## ---------------- UI callbacks ----------------
 
 func _on_start_pressed() -> void:
+	debug_mode = false
+	hud.set_debug_overlay(false)
+	begin_game()
+
+
+## Testbuild: identical to a normal Matrix-level start, just with the HUD's
+## DEBUG chip (FPS / position / cell, updated each frame in _process) turned
+## on — a quick way to check a build without a separate game mode.
+func _on_test_build_pressed() -> void:
+	debug_mode = true
+	hud.set_debug_overlay(true)
 	begin_game()
 
 
@@ -714,6 +733,9 @@ func _process(delta: float) -> void:
 	var frightened_active := now < frightened_until
 	var player_cell: Vector2i = player.cell()
 	var world_width: float = maze.cols * CELL
+
+	if debug_mode:
+		hud.update_debug_overlay(Engine.get_frames_per_second(), player.global_position, player_cell)
 
 	for enemy in enemies:
 		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
