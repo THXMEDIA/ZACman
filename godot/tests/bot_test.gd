@@ -326,16 +326,60 @@ func _run_checks() -> void:
 	# ---- Manhattan's Neo-Noir Cyberpunk dressing: real landmark names in
 	# the walls, a neon environment tint, and metro stations that return the
 	# player to the normal speedrun ----
+	# Manhattan's buildings are now real-height, "hochkant" vertical letter
+	# totems (see word_mesh.gd's build_vertical_stack / CityTheme.
+	# wall_vertical_text) rather than one MeshInstance3D holding the whole
+	# word — so a landmark shows up as a Node3D whose children spell it out
+	# one letter each, in order. Accept either shape here so this check
+	# still passes for a theme that keeps the single-word look.
 	var landmark_found := false
 	for child in main.maze_view.word_wall_root.get_children():
+		var word := ""
 		if child is MeshInstance3D and child.mesh is TextMesh:
-			for entry in load("res://scripts/manhattan_maze.gd").LANDMARKS:
-				if child.mesh.text == entry[0]:
-					landmark_found = true
+			word = child.mesh.text
+		elif child is Node3D and child.get_child_count() > 0:
+			var letters := ""
+			var all_single_letters := true
+			for gc in child.get_children():
+				if gc is MeshInstance3D and gc.mesh is TextMesh:
+					letters += gc.mesh.text
+				else:
+					all_single_letters = false
+			if all_single_letters:
+				word = letters
+		if word == "":
+			continue
+		for entry in load("res://scripts/manhattan_maze.gd").LANDMARKS:
+			var clean_name: String = entry[0].replace(" ", "").replace("'", "")
+			if word == entry[0] or word == clean_name:
+				landmark_found = true
 	_check("manhattan: a real landmark name appears among the rendered walls", landmark_found)
 	var manhattan_theme = load("res://scripts/city_themes.gd").get_theme("manhattan")
 	_check("manhattan: neon environment applied", main.world_env.environment.background_color.is_equal_approx(manhattan_theme.env_bg_color))
 	_check("manhattan: metro stations spawned", main.metro_stations.size() > 0, "got %d" % main.metro_stations.size())
+
+	# ---- Real skyscraper heights: not every building is the same height
+	# any more (collision shapes carry the real per-block height) ----
+	var wall_heights := {}
+	for cs in main.maze_view.walls_body.get_children():
+		if cs is CollisionShape3D and cs.shape is BoxShape3D:
+			wall_heights[cs.shape.size.y] = true
+	_check("manhattan: buildings have varied heights, not one uniform block", wall_heights.size() > 3, "got %d distinct heights" % wall_heights.size())
+	# Vector3 components are 32-bit floats internally, so a height read back
+	# off a CollisionShape3D loses a little precision vs. the 64-bit double
+	# in landmark_heights — compare with a small tolerance, not exact ==.
+	var esb_h: float = manhattan_theme.landmark_heights.get("EMPIRE STATE BUILDING", 0.0)
+	var esb_h_found := false
+	for h in wall_heights.keys():
+		if absf(h - esb_h) < 0.01:
+			esb_h_found = true
+	_check("manhattan: Empire State Building is the tallest thing standing", esb_h_found, "expected a wall block at height %f" % esb_h)
+
+	# ---- Pellets are sparse wayfinding trails to a metro, not a floor fill
+	# of every open cell (see CityTheme.pellets_follow_metro_trails) ----
+	var open_non_reserved: int = MazeGen.cells_in_room(main.maze, false).size()
+	_check("manhattan: pellets form a sparse trail, not one per open cell", main.maze_view.pellet_cells.size() < open_non_reserved, "pellets=%d open_cells=%d" % [main.maze_view.pellet_cells.size(), open_non_reserved])
+	_check("manhattan: there are still enough pellets to form a real trail", main.maze_view.pellet_cells.size() > 5, "got %d" % main.maze_view.pellet_cells.size())
 
 	var metro = main.metro_stations[0]
 	main.player.global_position = Vector3(metro.position.x, main.player.global_position.y, metro.position.z)

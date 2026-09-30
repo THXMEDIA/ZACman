@@ -70,6 +70,64 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL custom emission_energy option was not applied")
 
+	# --- build_vertical_stack: the "hochkant" skyscraper-name totem --------
+	var stack = wm.build_vertical_stack("MOMA", Color(1.0, 0.85, 0.25), 8.0)
+	checks += 1
+	if not (stack is Node3D):
+		failures += 1
+		print("FAIL build_vertical_stack() should return a Node3D")
+	checks += 1
+	if stack.get_child_count() != 4:
+		failures += 1
+		print("FAIL build_vertical_stack('MOMA') should have 4 letter children, got %d" % stack.get_child_count())
+	else:
+		var spelled := ""
+		for child in stack.get_children():
+			spelled += child.mesh.text
+		checks += 1
+		if spelled != "MOMA":
+			failures += 1
+			print("FAIL build_vertical_stack('MOMA') children should spell MOMA top-to-bottom, got '%s'" % spelled)
+		# Top letter should sit strictly above the bottom letter.
+		checks += 1
+		if stack.get_child(0).position.y <= stack.get_child(3).position.y:
+			failures += 1
+			print("FAIL build_vertical_stack should stack letters top-to-bottom (first child highest)")
+
+	# Spaces and apostrophes are stripped (landmark names carry both), and
+	# the whole stack's letters should span close to the requested height.
+	var stack2 = wm.build_vertical_stack("ST PATRICK'S CATHEDRAL", Color(1, 1, 1), 20.0)
+	checks += 1
+	if stack2.get_child_count() != "STPATRICKSCATHEDRAL".length():
+		failures += 1
+		print("FAIL build_vertical_stack should strip spaces/apostrophes before splitting into letters, got %d children" % stack2.get_child_count())
+	checks += 1
+	var top_y: float = stack2.get_child(0).position.y
+	var bottom_y: float = stack2.get_child(stack2.get_child_count() - 1).position.y
+	if absf((top_y - bottom_y) - 20.0 + (20.0 / stack2.get_child_count())) > 0.5:
+		failures += 1
+		print("FAIL build_vertical_stack letters should span close to target_height=20.0, top=%f bottom=%f" % [top_y, bottom_y])
+
+	# A taller target_height should scale each letter up (uniformly in X/Y,
+	# not in Z/depth — see the function's own comment on why).
+	var short_stack = wm.build_vertical_stack("A", Color(1, 1, 1), 2.0, {"depth": 0.3})
+	var tall_stack = wm.build_vertical_stack("A", Color(1, 1, 1), 20.0, {"depth": 0.3})
+	checks += 1
+	if tall_stack.get_child(0).scale.y <= short_stack.get_child(0).scale.y:
+		failures += 1
+		print("FAIL a taller target_height should scale letters up more")
+	checks += 1
+	if absf(tall_stack.get_child(0).scale.z - 1.0) > 0.0001:
+		failures += 1
+		print("FAIL build_vertical_stack should not scale a letter's depth (Z) with height, got scale.z=%f" % tall_stack.get_child(0).scale.z)
+
+	# An empty/degenerate call should return an empty root, not crash.
+	var empty_stack = wm.build_vertical_stack("", Color(1, 1, 1), 8.0)
+	checks += 1
+	if empty_stack.get_child_count() != 0:
+		failures += 1
+		print("FAIL build_vertical_stack('') should return an empty Node3D")
+
 	print("")
 	if failures == 0:
 		print("ALL %d WORD MESH CHECKS PASSED" % checks)

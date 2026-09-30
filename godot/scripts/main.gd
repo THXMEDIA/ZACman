@@ -260,7 +260,7 @@ func start_manhattan_level() -> void:
 	var pedestrian_cells := _pick_manhattan_pedestrian_cells()
 	var metro_cells := _pick_manhattan_metro_cells(pedestrian_cells)
 	var reserved_cells: Array = pedestrian_cells + metro_cells
-	maze_view.build(maze, start_cell, "manhattan", reserved_cells)
+	maze_view.build(maze, start_cell, "manhattan", reserved_cells, metro_cells)
 	_apply_theme_environment("manhattan")
 	fruit_spawned = false
 	word_mode_until = 0.0

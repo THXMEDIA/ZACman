@@ -76,6 +76,48 @@ static func manhattan() -> Resource:
 	t.landmark_depth_scale = 0.55
 	t.landmark_emission_energy = 2.4
 
+	# Real skyscrapers, actually skyscraper-sized: every ordinary block is
+	# either a regular "BUILDING" or (skyscraper_chance_pct odds) a much
+	# taller "SKYSCRAPER", each written hochkant (wall_vertical_text) — one
+	# letter per row, stacked floor to roof (see word_mesh.gd's
+	# build_vertical_stack) — instead of the old uniform MazeView.WALL_H box
+	# every block used before. Heights are real-world building heights
+	# (roof height, not antenna, where the two differ), scaled at a fixed
+	# 1 game unit = 5 real meters (SCALE = 0.2) so relative proportions
+	# between buildings stay right: Empire State Building really is ~1.7x
+	# the Chrysler Building here, same as in Midtown. Sources: public
+	# reference figures for these specific landmarks (Wikipedia et al.), not
+	# a live survey — flavor-accurate, not blueprint-accurate, consistent
+	# with this file's/manhattan_maze.gd's existing "flavor data" approach.
+	const METERS_TO_UNITS := 0.2
+	t.wall_word_tall = "SKYSCRAPER"
+	t.skyscraper_chance_pct = 22
+	t.wall_height_min = 30.0 * METERS_TO_UNITS # ~ a modest 6-10 story building
+	t.wall_height_max = 55.0 * METERS_TO_UNITS
+	t.wall_height_tall_min = 150.0 * METERS_TO_UNITS # a "real" skyscraper starts around here
+	t.wall_height_tall_max = 320.0 * METERS_TO_UNITS
+	t.wall_vertical_text = true
+	t.landmark_default_height = 80.0 * METERS_TO_UNITS
+	t.landmark_heights = {
+		"EMPIRE STATE BUILDING": 381.0 * METERS_TO_UNITS, # roof; 443m to the antenna tip
+		"CHRYSLER BUILDING": 319.0 * METERS_TO_UNITS,
+		"ROCKEFELLER CENTER": 259.0 * METERS_TO_UNITS, # 30 Rock
+		"TRUMP TOWER": 202.0 * METERS_TO_UNITS,
+		"THE PLAZA": 76.0 * METERS_TO_UNITS, # ~19-story hotel
+		"ST PATRICK'S CATHEDRAL": 100.0 * METERS_TO_UNITS, # spires
+		"TIMES SQUARE": 110.0 * METERS_TO_UNITS, # One Times Square, standing in for the district
+		"CARNEGIE HALL": 53.0 * METERS_TO_UNITS,
+		"MACY'S": 50.0 * METERS_TO_UNITS, # Herald Square flagship, ~9 floors
+		"PORT AUTHORITY": 40.0 * METERS_TO_UNITS,
+		"GRAND CENTRAL": 45.0 * METERS_TO_UNITS,
+		"RADIO CITY": 40.0 * METERS_TO_UNITS,
+		"MOMA": 40.0 * METERS_TO_UNITS,
+		"TIFFANY & CO": 40.0 * METERS_TO_UNITS, # 727 Fifth Ave flagship
+		"NY PUBLIC LIBRARY": 30.0 * METERS_TO_UNITS, # low Beaux-Arts building, deliberately short here
+		"JAVITS CENTER": 30.0 * METERS_TO_UNITS, # wide and low, not tall
+		"BRYANT PARK": 8.0 * METERS_TO_UNITS, # a park, not a building — kept low on purpose
+	}
+
 	t.floor_color = Color(0.015, 0.01, 0.03)
 	t.floor_roughness = 0.25
 	t.floor_metallic = 0.35
@@ -95,6 +137,7 @@ static func manhattan() -> Resource:
 
 	t.has_power_ups = false
 	t.permanently_word_built = true
+	t.pellets_follow_metro_trails = true
 	return t
 
 

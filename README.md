@@ -124,17 +124,43 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   festen Straßen/Avenues hin und her und Fußgänger stehen an zufälligen
   Kreuzungen; beide sind reine Hindernisse (schieben den Spieler weg),
   verursachen aber nie Schaden.
-- **Manhattan: echte Gebäudenamen & Neo-Noir-Cyberpunk-Look**
-  (`godot/scripts/manhattan_maze.gd`, `maze_view.gd`): 17 echte Midtown-
-  Wahrzeichen (Empire State Building, Times Square, Grand Central, Rockefeller
-  Center, ...) sind an ihrer realen Kreuzung im Straßenraster verankert und
-  ersetzen dort das generische `BUILDING`-Wortmodell durch ihren echten
-  Namen, mit pulsierendem Akzent-Licht. Alle übrigen Gebäudeblöcke tragen das
-  Wort `BUILDING` in einer von fünf zyklisch vergebenen Neonfarben. Boden,
+- **Manhattan: echte Gebäudenamen, echte Höhen, echte Wolkenkratzer**
+  (`godot/scripts/manhattan_maze.gd`, `maze_view.gd`, `word_mesh.gd`,
+  `city_themes.gd`): 17 echte Midtown-Wahrzeichen (Empire State Building,
+  Chrysler Building, Rockefeller Center, Times Square, Grand Central, ...)
+  sind an ihrer realen Kreuzung im Straßenraster verankert, ersetzen dort das
+  generische `BUILDING`-Wortmodell durch ihren echten Namen (Leerzeichen/
+  Apostrophe entfernt, z. B. `EMPIRESTATEBUILDING`) und stehen jeweils in
+  ihrer echten realen Höhe (Empire State Building 381 m Dachhöhe, Chrysler
+  Building 319 m, 30 Rockefeller Plaza 259 m, Trump Tower 202 m, ... bis
+  runter zu niedrigen Bauten wie der NY Public Library oder dem Bryant Park
+  — Quelle: öffentliche Referenzwerte, keine Live-Vermessung, siehe
+  `city_themes.gd::manhattan()`). Alle übrigen Gebäudeblöcke sind entweder
+  ein gewöhnliches `BUILDING` (6–11 Einheiten hoch) oder — mit echten
+  Wolkenkratzer-Odds — ein `SKYSCRAPER` (24–64 Einheiten, klar höher als
+  seine Nachbarn), deterministisch pro Zelle gewählt. Jeder Name ist
+  **hochkant** geschrieben: Buchstabe für Buchstabe von oben nach unten über
+  die volle Gebäudehöhe gestapelt (`word_mesh.gd::build_vertical_stack`,
+  dieselbe Technik wie schon bei der stehenden "MAN"-Figur in
+  `man_walking_dog.gd`), statt eines einzelnen liegenden Wortes. Ein
+  Wolkenkratzer sieht dadurch tatsächlich wie einer aus — deutlich höher,
+  mit seinem Namen die ganze Fassade hoch. (Einschränkung: die reale
+  *Grundfläche* der Gebäude ist nicht modelliert — jeder Block bleibt eine
+  2×2-Meter-Zelle im Straßenraster, wie schon zuvor; echte 3D-Modelle
+  einzelner Gebäude sind aus dieser Sandbox nicht ladbar, siehe unten.)
+  Alle übrigen generischen Blöcke zyklen weiter durch fünf Neonfarben. Boden,
   Decke und die Umgebungsbeleuchtung sind für Manhattan auf ein
   magenta-violettes Neo-Noir-Cyberpunk-Schema umgestellt
   (`main.gd::_apply_theme_environment`) und kehren beim Verlassen zur
   normalen kühlen Blau-Palette zurück.
+- **Punkte als Wegweiser zur Metro** (`maze_view.gd::_metro_trail_cells`):
+  in Manhattan liegen die einsammelbaren Punkte nicht mehr auf jeder offenen
+  Zelle, sondern nur noch entlang einer Handvoll kürzester Wege von
+  verteilten Startpunkten zur jeweils nächsten U-Bahn-Station (Multi-Source-
+  BFS von allen Metro-Zellen aus, zurückverfolgt von mehreren übers Level
+  verteilten Punkten). Die Punkte bilden dadurch sichtbare Pfade, die zu
+  einem Ausgang führen, statt das ganze Straßennetz gleichmäßig zu füllen —
+  über eine Metro-Station verlässt man das Level wie zuvor.
 - **CityTheme-System für zukünftige Explorer-Level** (`godot/scripts/
   city_theme.gd`, `city_themes.gd`): Manhattan und die normalen Matrix-Level
   sind keine hartkodierten `if/else`-Zweige mehr in `maze_view.gd`, sondern

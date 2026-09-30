@@ -47,8 +47,10 @@ var fruit_material: StandardMaterial3D
 ## (Pedestrian) will occupy — excluded from pellet placement up front so a
 ## pedestrian standing on a pellet can never permanently block it (taxis
 ## are moving obstacles and don't need this: they pass through, they don't
-## park on a pellet forever).
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = []) -> void:
+## park on a pellet forever). `metro_cells` (Manhattan only) are the metro-
+## station cells pellets should route toward — see
+## CityTheme.pellets_follow_metro_trails / _metro_trail_cells.
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = []) -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -71,7 +73,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_build_floor_ceiling()
 	_build_sky_clouds()
 	_build_tunnel_vistas()
-	_build_pellets(start_cell, reserved_cells)
+	_build_pellets(start_cell, reserved_cells, metro_cells)
 	# A permanently-word-built theme (Manhattan) starts in the word-built-
 	# world look; other themes start out looking normal and only switch when
 	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
@@ -115,6 +117,60 @@ func _make_materials() -> void:
 	fruit_material.emission_energy_multiplier = 1.2
 
 
+## Deterministic per-cell "is this block a SKYSCRAPER (vs. a regular
+## BUILDING)" pick — a hash of the cell coordinates, not randf(), so the
+## same maze always looks the same and the boxy multimesh, the word-mesh
+## skin and the collision shape all agree on the same cell without sharing
+## state. See CityTheme.wall_word_tall/skyscraper_chance_pct.
+func _is_skyscraper_cell(cell: Vector2i) -> bool:
+	if city_theme.wall_word_tall == "" or city_theme.skyscraper_chance_pct <= 0:
+		return false
+	return absi(cell.x * 73 + cell.y * 131) % 100 < city_theme.skyscraper_chance_pct
+
+
+## The generic (non-landmark) height for a block: WALL_H unless the theme
+## opts into height variation (CityTheme.wall_height_min > 0), in which case
+## it's a skyscraper- or building-range height, again picked deterministically
+## from the cell so every consumer (walls, word skin, collision) agrees.
+func _generic_wall_height(cell: Vector2i) -> float:
+	if _is_skyscraper_cell(cell):
+		var span: float = city_theme.wall_height_tall_max - city_theme.wall_height_tall_min
+		var frac: float = float(absi(cell.x * 17 + cell.y * 29) % 1000) / 1000.0
+		return city_theme.wall_height_tall_min + span * frac
+	elif city_theme.wall_height_min > 0.0:
+		var span2: float = city_theme.wall_height_max - city_theme.wall_height_min
+		var frac2: float = float(absi(cell.x * 11 + cell.y * 41) % 1000) / 1000.0
+		return city_theme.wall_height_min + span2 * frac2
+	return WALL_H
+
+
+## The actual height to build this block at — a real landmark's real-world
+## height (CityTheme.landmark_heights, see city_themes.gd's manhattan())
+## when landmark_name names one, otherwise _generic_wall_height's
+## BUILDING/SKYSCRAPER pick. Falls back to WALL_H whenever the theme hasn't
+## opted into height variation at all, exactly the old uniform-height look.
+func _wall_height_for_cell(cell: Vector2i, landmark_name: String) -> float:
+	if landmark_name != "":
+		return city_theme.landmark_heights.get(landmark_name, city_theme.landmark_default_height if city_theme.landmark_default_height > 0.0 else WALL_H)
+	return _generic_wall_height(cell)
+
+
+## Builds one block's word skin at the given height: a vertical letter
+## totem (word_mesh.gd's build_vertical_stack) when
+## CityTheme.wall_vertical_text is set (Manhattan's "hochkant" skyscraper
+## look), otherwise the original single horizontal word centered on the
+## block (every other theme, unchanged). The returned node's local Y origin
+## is already correct for its cell (0 for a totem's floor-up stack, height*
+## 0.5 for a centered horizontal word) — callers only need to set X/Z and
+## the facing rotation.
+func _build_wall_word(word: String, color: Color, height: float, font_size: int, depth: float, emission_energy: float) -> Node3D:
+	if city_theme.wall_vertical_text:
+		return WordMeshScript.build_vertical_stack(word, color, height, {"font_size": font_size, "depth": depth, "emission_energy": emission_energy})
+	var wm := WordMeshScript.build(word, color, {"font_size": font_size, "depth": depth, "emission_energy": emission_energy})
+	wm.position.y = height * 0.5
+	return wm
+
+
 func _build_walls() -> void:
 	var wall_cells := []
 	for r in maze.rows:
@@ -122,8 +178,22 @@ func _build_walls() -> void:
 			if maze.grid[r][c] == 1:
 				wall_cells.append(Vector2i(r, c))
 
+	# Landmark name + final height precomputed once per cell so the boxy
+	# multimesh, the word-mesh skin and the collision shape all agree.
+	var landmark_names := {}
+	var heights := {}
+	for cell in wall_cells:
+		var nm := ""
+		if city_theme.landmark_provider_script != null:
+			nm = city_theme.landmark_provider_script.landmark_at(cell.x, cell.y)
+		landmark_names[cell] = nm
+		heights[cell] = _wall_height_for_cell(cell, nm)
+
+	# Unit-height box mesh, scaled per-instance below — lets one shared
+	# MultiMesh still give every block its own real height (a MultiMesh
+	# can't vary its mesh, only each instance's transform).
 	var box_mesh := BoxMesh.new()
-	box_mesh.size = Vector3(CELL, WALL_H, CELL)
+	box_mesh.size = Vector3(CELL, 1.0, CELL)
 	box_mesh.material = wall_material
 
 	var mm := MultiMesh.new()
@@ -132,61 +202,75 @@ func _build_walls() -> void:
 	mm.instance_count = wall_cells.size()
 	for i in wall_cells.size():
 		var cell: Vector2i = wall_cells[i]
-		var xf := Transform3D(Basis(), Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL))
+		var h: float = heights[cell]
+		var basis := Basis().scaled(Vector3(1.0, h, 1.0))
+		var xf := Transform3D(basis, Vector3(cell.y * CELL, h * 0.5, cell.x * CELL))
 		mm.set_instance_transform(i, xf)
 
 	normal_wall_mmi = MultiMeshInstance3D.new()
 	normal_wall_mmi.multimesh = mm
 	add_child(normal_wall_mmi)
 
-	# The word-built-world skin: every wall cell doubles as a 3D letterform.
-	# Built alongside the normal boxy walls (not on demand) so toggling Word
-	# Mode mid-level is instant; hidden until set_word_mode() turns it on.
-	# Entirely data-driven off city_theme (see city_theme.gd/city_themes.gd):
-	# an ordinary block cycles through city_theme.wall_palette as
-	# city_theme.wall_word, and any block city_theme.landmark_provider_script
-	# actually names (e.g. manhattan_maze.gd's real Midtown buildings) gets
-	# that name, a brighter accent color, and its own pulsing light (animated
-	# in _process, see landmark_lights) instead.
+	# The word-built-world skin: every wall cell doubles as a 3D letterform,
+	# now at that cell's real height (see _wall_height_for_cell) instead of
+	# a uniform WALL_H — a theme that opts in (CityTheme.wall_vertical_text,
+	# e.g. Manhattan) reads it hochkant, one letter stacked per row up the
+	# block's full height, so a SKYSCRAPER or a landmark actually looks
+	# taller than an ordinary BUILDING next to it. Built alongside the
+	# normal boxy walls (not on demand) so toggling Word Mode mid-level is
+	# instant; hidden until set_word_mode() turns it on. Entirely data-
+	# driven off city_theme (see city_theme.gd/city_themes.gd): an ordinary
+	# block cycles through city_theme.wall_palette as city_theme.wall_word
+	# (or wall_word_tall, see _is_skyscraper_cell), and any block
+	# city_theme.landmark_provider_script actually names (e.g.
+	# manhattan_maze.gd's real Midtown buildings) gets that name, a
+	# brighter accent color, and its own pulsing light (animated in
+	# _process, see landmark_lights) instead.
 	word_wall_root = Node3D.new()
 	add_child(word_wall_root)
 	landmark_lights.clear()
 	for cell in wall_cells:
-		var landmark_name := ""
-		if city_theme.landmark_provider_script != null:
-			landmark_name = city_theme.landmark_provider_script.landmark_at(cell.x, cell.y)
+		var landmark_name: String = landmark_names[cell]
+		var h: float = heights[cell]
 		var rot_y := 0.0
 		if city_theme.wall_alternate_rotation and (cell.x + cell.y) % 2 != 0:
 			rot_y = PI / 2.0
 		if landmark_name != "":
 			var accent: Color = city_theme.landmark_accents[landmark_lights.size() % city_theme.landmark_accents.size()]
-			var wm := WordMeshScript.build(landmark_name, accent, {"font_size": city_theme.landmark_font_size, "depth": WALL_H * city_theme.landmark_depth_scale, "emission_energy": city_theme.landmark_emission_energy})
-			wm.position = Vector3(cell.y * CELL, WALL_H * city_theme.landmark_depth_scale, cell.x * CELL)
-			wm.rotation.y = rot_y
-			word_wall_root.add_child(wm)
+			var node := _build_wall_word(landmark_name, accent, h, city_theme.landmark_font_size, WALL_H * city_theme.landmark_depth_scale, city_theme.landmark_emission_energy)
+			node.position.x = cell.y * CELL
+			node.position.z = cell.x * CELL
+			node.rotation.y = rot_y
+			word_wall_root.add_child(node)
 			var light := OmniLight3D.new()
 			light.light_color = accent
-			light.omni_range = 3.4
+			light.omni_range = 3.4 + h * 0.06
 			light.light_energy = 1.2
-			wm.add_child(light)
+			light.position = Vector3(cell.y * CELL, h * 0.5, cell.x * CELL)
+			word_wall_root.add_child(light)
 			landmark_lights.append(light)
 		else:
 			var block_color: Color = city_theme.wall_palette[absi(cell.x * 31 + cell.y) % city_theme.wall_palette.size()]
-			var bw := WordMeshScript.build(city_theme.wall_word, block_color, {"font_size": city_theme.wall_font_size, "depth": WALL_H * city_theme.wall_depth_scale, "emission_energy": city_theme.wall_emission_energy})
-			bw.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
-			bw.rotation.y = rot_y
-			word_wall_root.add_child(bw)
+			var word: String = city_theme.wall_word
+			if city_theme.wall_word_tall != "" and _is_skyscraper_cell(cell):
+				word = city_theme.wall_word_tall
+			var node2 := _build_wall_word(word, block_color, h, city_theme.wall_font_size, WALL_H * city_theme.wall_depth_scale, city_theme.wall_emission_energy)
+			node2.position.x = cell.y * CELL
+			node2.position.z = cell.x * CELL
+			node2.rotation.y = rot_y
+			word_wall_root.add_child(node2)
 
 	walls_body = StaticBody3D.new()
 	walls_body.collision_layer = 2
 	walls_body.collision_mask = 0
 	add_child(walls_body)
 	for cell in wall_cells:
+		var h2: float = heights[cell]
 		var shape := BoxShape3D.new()
-		shape.size = Vector3(CELL, WALL_H, CELL)
+		shape.size = Vector3(CELL, h2, CELL)
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
-		cs.position = Vector3(cell.y * CELL, WALL_H * 0.5, cell.x * CELL)
+		cs.position = Vector3(cell.y * CELL, h2 * 0.5, cell.x * CELL)
 		walls_body.add_child(cs)
 
 
@@ -344,7 +428,94 @@ func _pick_power_cells(candidates: Array) -> Array:
 	return picked
 
 
-func _build_pellets(start_cell: Vector2i, reserved_cells: Array = []) -> void:
+## Greedy farthest-point sampling: picks `count` cells out of `cells` so
+## they're spread across different neighborhoods rather than clustering —
+## used to seed the metro-trail pellet paths below at varied starting
+## points across the map instead of all from one corner.
+func _spread_seed_cells(cells: Array, count: int) -> Array:
+	if cells.is_empty():
+		return []
+	var picked := [cells[0]]
+	while picked.size() < count and picked.size() < cells.size():
+		var best = null
+		var best_d := -1.0
+		for cell in cells:
+			if cell in picked:
+				continue
+			var d := INF
+			for p in picked:
+				var dd: float = (cell.x - p.x) * (cell.x - p.x) + (cell.y - p.y) * (cell.y - p.y)
+				if dd < d:
+					d = dd
+			if d > best_d:
+				best_d = d
+				best = cell
+		if best == null:
+			break
+		picked.append(best)
+	return picked
+
+
+## Pellets-as-wayfinding-signposts (CityTheme.pellets_follow_metro_trails,
+## Manhattan): a multi-source BFS rooted at every metro cell gives every
+## open cell a came_from pointer one step closer to its nearest metro
+## (the walking direction toward an exit). Rather than pelleting the whole
+## map (which a fully-connected street grid like Manhattan's would turn
+## right back into "every open cell", since almost every cell sits on some
+## shortest path to some metro), only a handful of spread-out seed cells'
+## walked-back paths actually get a pellet — so pellets read as a few
+## signposted routes converging on the exits, not a uniform floor fill.
+const TRAIL_SEED_COUNT := 9
+
+func _metro_trail_cells(candidates: Array, metro_cells: Array, start_cell: Vector2i) -> Array:
+	if metro_cells.is_empty():
+		return candidates
+
+	var came_from := {}
+	var visited := {}
+	var queue: Array = []
+	for m in metro_cells:
+		visited[m] = true
+		queue.append(m)
+	var qi := 0
+	while qi < queue.size():
+		var cur: Vector2i = queue[qi]
+		qi += 1
+		for n in MazeGen.neighbors_of(maze, cur.x, cur.y):
+			if not visited.has(n):
+				visited[n] = true
+				came_from[n] = cur
+				queue.append(n)
+
+	var candidate_set := {}
+	for cell in candidates:
+		candidate_set[cell] = true
+
+	var seeds := _spread_seed_cells(candidates, TRAIL_SEED_COUNT)
+	if candidate_set.has(start_cell) and not (start_cell in seeds):
+		seeds.append(start_cell)
+
+	var trail := {}
+	var guard_limit: int = maze.rows * maze.cols
+	for seed in seeds:
+		var cur: Vector2i = seed
+		var guard := 0
+		while came_from.has(cur) and guard < guard_limit:
+			if candidate_set.has(cur):
+				trail[cur] = true
+			cur = came_from[cur]
+			guard += 1
+		if candidate_set.has(cur):
+			trail[cur] = true
+
+	var out := []
+	for cell in candidates:
+		if trail.has(cell):
+			out.append(cell)
+	return out
+
+
+func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cells: Array = []) -> void:
 	var all_cells: Array = MazeGen.cells_in_room(maze, false)
 	var reserved_set := {}
 	for cell in reserved_cells:
@@ -362,10 +533,15 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = []) -> void:
 	var power_set := {}
 	for cell in power_cells:
 		power_set[cell] = true
-	pellet_cells = []
+	var pellet_candidates := []
 	for cell in candidates:
 		if not power_set.has(cell):
-			pellet_cells.append(cell)
+			pellet_candidates.append(cell)
+
+	if city_theme.pellets_follow_metro_trails and metro_cells.size() > 0:
+		pellet_cells = _metro_trail_cells(pellet_candidates, metro_cells, start_cell)
+	else:
+		pellet_cells = pellet_candidates
 
 	# Word Mode power-up: one per level that has power-ups at all, taken out
 	# of the regular pellet grid (not an extra pellet on top of it) so

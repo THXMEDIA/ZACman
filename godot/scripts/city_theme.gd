@@ -36,6 +36,33 @@ var wall_alternate_rotation := true
 ## color up close — it's the wall's actual material, not a distance blend.
 var wall_matrix_rain := false
 
+## ---- Per-building height / "real skyscraper" look ----
+## A second word an ordinary block can be built from instead of wall_word,
+## picked per-cell with skyscraper_chance_pct odds — e.g. Manhattan cycles
+## most blocks as "BUILDING" but a minority as "SKYSCRAPER", each sized
+## into the corresponding height range below, so skyscrapers actually read
+## as taller than their neighbors rather than every block being a uniform
+## MazeView.WALL_H box. "" (the default) disables the whole height-variation
+## system: every block stays MazeView.WALL_H, exactly the old behavior.
+var wall_word_tall := ""
+var skyscraper_chance_pct := 0 # 0-100
+var wall_height_min := 0.0 # 0.0 = disabled (falls back to MazeView.WALL_H)
+var wall_height_max := 0.0
+var wall_height_tall_min := 0.0
+var wall_height_tall_max := 0.0
+## Real-world building heights (converted to game units — see
+## manhattan_maze.gd/city_themes.gd for the actual figures and their
+## sources), keyed by the exact landmark name string as returned by
+## landmark_provider_script.landmark_at(). A landmark with no entry here
+## falls back to landmark_default_height.
+var landmark_heights: Dictionary = {}
+var landmark_default_height := 0.0 # 0.0 = disabled (falls back to MazeView.WALL_H)
+## When true, a wall's word is built as a vertical letter-by-letter totem
+## (see word_mesh.gd's build_vertical_stack) spanning the block's full
+## height — "hochkant", like a skyscraper's name read up its own face —
+## instead of one horizontal word centered on the block.
+var wall_vertical_text := false
+
 ## ---- Optional per-cell landmark override ----
 ## A script exposing a static `landmark_at(row: int, col: int) -> String`
 ## (see manhattan_maze.gd) that names specific wall blocks (e.g. real
@@ -82,3 +109,10 @@ var has_power_ups := true
 ## a future non-word-built theme (e.g. a shader-only NPR look) can be a
 ## permanent, power-up-free explorer without implying the letterform skin.
 var permanently_word_built := false
+## When true (Manhattan), MazeView.build()'s pellets aren't a uniform floor
+## fill of every open cell — they're only placed along a handful of walked-
+## back shortest paths from spread-out points to their nearest metro-
+## station cell, so they read as wayfinding signposts toward an exit rather
+## than "collect everything". Needs metro_cells passed into build(); see
+## MazeView._metro_trail_cells.
+var pellets_follow_metro_trails := false
