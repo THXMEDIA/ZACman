@@ -86,6 +86,13 @@ func _run_checks() -> void:
 	_check("begin_game: lives == 3", main.lives == 3, "got %d" % main.lives)
 	_check("begin_game: enemies spawned", main.enemies.size() >= 3, "got %d" % main.enemies.size())
 
+	# ---- GD-W10: the player must start facing an open corridor, not a wall
+	# in their face (see Main._facing_yaw_for_start) ----
+	var start_yaw: float = main.player.yaw
+	var start_dc: int = roundi(-sin(start_yaw))
+	var start_dr: int = roundi(-cos(start_yaw))
+	_check("level start: player faces an open neighbor cell, not a wall", MazeGen.is_open(main.maze, main.start_cell.x + start_dr, main.start_cell.y + start_dc), "start_cell=%s yaw=%f dr=%d dc=%d" % [main.start_cell, start_yaw, start_dr, start_dc])
+
 	# ---- Matrix wall shader: much more glyph variance, and the new
 	# darker-but-more-luminous color tuning ----
 	var wall_shader: Shader = main.maze_view.wall_material.shader
@@ -293,16 +300,22 @@ func _run_checks() -> void:
 	_check("manhattan: no power pellets either", main.maze_view.power_cells.size() == 0, "got %d" % main.maze_view.power_cells.size())
 	_check("manhattan: player warped to start_cell", main.player.cell() == main.start_cell, "got %s want %s" % [main.player.cell(), main.start_cell])
 
+	# GD-W1/UX-K4 redesign (per user decision "reiner Explorer, Metro beendet
+	# Level"): pellets are no longer a completion requirement at all — only
+	# touching a metro station ends (and scores) the run. Collect a couple of
+	# pellets first just to confirm they still score points along the way,
+	# then walk onto a metro station to trigger completion.
 	var manhattan_pellets: Array = main.maze_view.pellet_cells
-	for cell in manhattan_pellets:
+	for i in mini(3, manhattan_pellets.size()):
+		var cell = manhattan_pellets[i]
 		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
 		await get_tree().process_frame
-	for i in main.maze_view.power_cells.size():
-		var node3 = main.maze_view.power_nodes[i]
-		main.player.global_position = Vector3(node3.position.x, main.player.global_position.y, node3.position.z)
-		await get_tree().process_frame
-	_check("manhattan: all pickups consumed", main.maze_view.remaining_pickups() <= 0, "remaining=%d" % main.maze_view.remaining_pickups())
-	_check("manhattan: clearing it returns to the start screen (not next_level)", main.running == false)
+	_check("manhattan: pellets collected along the way still score points", main.score > 0, "score=%d" % main.score)
+	_check("manhattan: not completed yet (pellets alone don't end it)", main.playing_manhattan == true)
+	var metro_station = main.metro_stations[0]
+	main.player.global_position = Vector3(metro_station.position.x, main.player.global_position.y, metro_station.position.z)
+	await get_tree().process_frame
+	_check("manhattan: touching a metro station ends the run (not next_level)", main.running == false)
 	await get_tree().create_timer(2.4).timeout
 	_check("manhattan: playing_manhattan flag cleared after completion", main.playing_manhattan == false)
 	_check("manhattan: explorer next-run panel shown after completion", main.hud.explorer_next_panel.visible == true)
@@ -343,6 +356,37 @@ func _run_checks() -> void:
 	_check("twitch commands are ignored while paused", main.frightened_until == frightened_before_pause)
 	main.paused = false
 
+	# ---- GD-W6/UX-W7/Code-W3: pause freezes every effect timer (the "now"
+	# clock itself stops advancing), but the speedrun time still "costs"
+	# the paused duration — it's charged back in separately at completion
+	# (per the user's own decision, "Pause kostet Zeit"). Reuses the still-
+	# running game from the twitch-command checks above rather than calling
+	# begin_game() again, which would reset twitch_assisted and break the
+	# "marks this run as assisted" check right after this block.
+	var now_before_pause: float = main.now
+	main.paused = true
+	await get_tree().create_timer(0.3).timeout
+	_check("pause: the game clock (now) freezes while paused", main.now == now_before_pause, "before=%f after=%f" % [now_before_pause, main.now])
+	_check("pause: paused wall-clock time is tracked", main.level_paused_elapsed > 0.1, "got %f" % main.level_paused_elapsed)
+	var paused_elapsed_tracked: float = main.level_paused_elapsed
+	main.paused = false
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var expected_timer_text := Speedrun.format_time((main.now - main.level_start_time) + main.level_paused_elapsed)
+	_check("pause: the paused duration is charged to the displayed/recorded time", main.hud.timer_label.text == expected_timer_text, "got=%s want=%s now=%f level_start=%f paused_elapsed=%f" % [main.hud.timer_label.text, expected_timer_text, main.now, main.level_start_time, main.level_paused_elapsed])
+
+	# ---- GD-K3/Code-W7: a run any handled Twitch command touched is flagged
+	# and never written to Speedrun.best_times or the Leaderboard, so a
+	# viewer can't trivialize or falsify a stored time ----
+	_check("twitch !power/!fruit mark this run as assisted", main.twitch_assisted == true)
+	var best_before_assisted_clear: float = Speedrun.best_for(main.level_index)
+	var board_count_before: int = Leaderboard.get_top("normal-%d" % main.level_index, main.condition_id, 50).size()
+	main.level_complete_sequence()
+	_check("twitch-assisted clear: best time NOT recorded", Speedrun.best_for(main.level_index) == best_before_assisted_clear, "before=%s after=%s" % [best_before_assisted_clear, Speedrun.best_for(main.level_index)])
+	_check("twitch-assisted clear: leaderboard NOT updated", Leaderboard.get_top("normal-%d" % main.level_index, main.condition_id, 50).size() == board_count_before)
+	_check("twitch-assisted clear: banner marks it ungewertet", main.hud.levelclear_sub.text.find("nicht gewertet") != -1, main.hud.levelclear_sub.text)
+	await get_tree().create_timer(2.4).timeout # let the banner/level-advance sequence finish before the next scenario
+
 	# ---- Word Mode power-up: reskins walls/ghosts as letterforms and lets
 	# the player walk through walls for its duration, then reverts ----
 	main.begin_game()
@@ -371,6 +415,24 @@ func _run_checks() -> void:
 			any_still_skinned = true
 	_check("word mode: reverts after expiry (enemies)", not any_still_skinned)
 
+	# ---- Code-W1 follow-up: Word Mode and the Fear & Loathing pickup can be
+	# picked up while overlapping (one ends mid-flight of the other) — this
+	# is exactly the "two effects touch collision/active_condition at once"
+	# case _refresh_player_modifiers() exists to get right instead of one
+	# effect's on/off silently clobbering the other's state ----
+	main._activate_word_mode()
+	main._activate_fear_powerup()
+	await get_tree().process_frame
+	_check("overlap: word+fear both active, noclip still on (word mode)", main.player.collision_mask == 0)
+	main.word_mode_until = main.now - 0.01 # word mode expires first
+	await get_tree().process_frame
+	_check("overlap: word mode expiry while fear still active restores normal collision (fear never needed noclip)", main.player.collision_mask == 2)
+	_check("overlap: active_condition is still the fear condition, not cleared by word mode ending", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+	main.fear_mode_until = main.now - 0.01 # now let fear expire too
+	await get_tree().process_frame
+	_check("overlap: after both expire, active_condition is null (no whole-run condition was selected)", main.player.active_condition == null)
+	_check("overlap: after both expire, collision stays normal", main.player.collision_mask == 2)
+
 	# ---- Fear & Loathing power-up: scrambles input, turns the wall shader
 	# psychedelic, and flips collision randomly for its duration, then
 	# reverts everything (including whatever whole-run condition was active
@@ -386,13 +448,34 @@ func _run_checks() -> void:
 	_check("fear powerup: player.active_condition becomes fear_and_loathing", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
 	_check("fear powerup: wall shader gets the psychedelic uniform", main.maze_view.wall_material.get_shader_parameter("psychedelic_amount") == 1.0)
 
-	main._fear_next_noclip_toggle_at = main.now - 0.01 # force a toggle without waiting out the real interval
+	# UX-K1/GD-W2 redesign (per user decision "Beides kombinieren"): the old
+	# random wall-collision toggle and involuntary self-movement are gone.
+	# Collision stays normal the whole time the pickup is active, and the
+	# real payoff is now every ghost moving at FEAR_GHOST_SLOWDOWN speed
+	# instead (see Main._activate_fear_powerup / Enemy.update's speed_mult).
 	await get_tree().process_frame
-	# The flip itself is random (50/50), so check the deterministic part: the
-	# toggle actually ran and scheduled its next one in the future, and left
-	# collision_mask at a valid value (0 = noclip or 2 = normal walls).
-	_check("fear powerup: collision toggle schedules its next flip", main._fear_next_noclip_toggle_at > main.now)
-	_check("fear powerup: collision_mask stays a valid value after a random flip", main.player.collision_mask == 0 or main.player.collision_mask == 2)
+	_check("fear powerup: no longer randomly toggles collision (stays normal walls)", main.player.collision_mask == 2)
+	await get_tree().process_frame
+	_check("fear powerup: collision_mask still normal a frame later (no random flip)", main.player.collision_mask == 2)
+	_check("fear powerup: ghost slowdown constant is a real payoff (< 1.0)", main.FEAR_GHOST_SLOWDOWN < 1.0)
+	_check("fear powerup: standing still produces exactly zero input perturbation", main.player.active_condition.modify_input(Vector2.ZERO, 0.016) == Vector2.ZERO)
+
+	# Code-review follow-up: FEAR_GHOST_SLOWDOWN is only a real payoff if
+	# Enemy.update() actually applies it — directly compare one frame's
+	# chase-mode progress at speed_mult=1.0 vs. FEAR_GHOST_SLOWDOWN on an
+	# otherwise-identical enemy instance.
+	if main.enemies.size() > 0:
+		var e_normal = main.enemies[0].duplicate()
+		var e_slow = main.enemies[0].duplicate()
+		e_normal.mode = "chase"
+		e_slow.mode = "chase"
+		e_normal.t = 0.0
+		e_slow.t = 0.0
+		e_normal.update(0.5, main.maze, main.player.cell(), false, main.now, main.maze.cols * main.CELL, 1.0)
+		e_slow.update(0.5, main.maze, main.player.cell(), false, main.now, main.maze.cols * main.CELL, main.FEAR_GHOST_SLOWDOWN)
+		_check("fear powerup: Enemy.update() actually applies the slowdown to chase-mode progress", e_slow.t < e_normal.t, "normal_t=%f slow_t=%f" % [e_normal.t, e_slow.t])
+		e_normal.queue_free()
+		e_slow.queue_free()
 
 	main.fear_mode_until = main.now - 0.01 # force expiry without waiting out the real duration
 	await get_tree().process_frame
@@ -517,16 +600,21 @@ func _run_checks() -> void:
 	_check("manhattan: pellets form a sparse trail, not one per open cell", main.maze_view.pellet_cells.size() < open_non_reserved, "pellets=%d open_cells=%d" % [main.maze_view.pellet_cells.size(), open_non_reserved])
 	_check("manhattan: there are still enough pellets to form a real trail", main.maze_view.pellet_cells.size() > 5, "got %d" % main.maze_view.pellet_cells.size())
 
+	# GD-W1/UX-K4 redesign: the old _enter_metro ("mistake exit", unscored,
+	# back to the normal speedrun) is gone — every metro entry now goes
+	# through manhattan_complete_sequence (scores the run, shows the
+	# post-run next-choice panel), the same completion path exercised above.
 	var metro = main.metro_stations[0]
 	main.player.global_position = Vector3(metro.position.x, main.player.global_position.y, metro.position.z)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	# _enter_metro shows a brief banner before actually returning control
-	# (see main.gd) — give its await get_tree().create_timer(1.4) time to
-	# finish rather than checking mid-transition.
-	await get_tree().create_timer(1.6).timeout
+	# manhattan_complete_sequence shows a brief banner before actually
+	# returning control (see main.gd) — give its await
+	# get_tree().create_timer(2.2) time to finish rather than checking
+	# mid-transition.
+	await get_tree().create_timer(2.4).timeout
 	_check("manhattan: entering a metro station ends the Manhattan run", main.playing_manhattan == false)
-	_check("manhattan: entering a metro station returns to the normal speedrun", main.running == true and main.level_index == 0)
+	_check("manhattan: entering a metro station shows the explorer next-run panel", main.hud.explorer_next_panel.visible == true)
 	var normal_theme = load("res://scripts/city_themes.gd").get_theme("normal")
 	_check("manhattan: normal environment restored after metro exit", main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
 
@@ -540,10 +628,20 @@ func _run_checks() -> void:
 	_check("conditions: matrix_ghost turns on player noclip", main.player.collision_mask == 0)
 	_check("conditions: matrix_ghost wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "matrix_ghost")
 
+	# ---- GD-K2/Code-K1: noclip softlock fix. While noclip is on (matrix_ghost
+	# above), walk the player somewhere a normal player could never be — well
+	# outside the maze bounds — then switch away from matrix_ghost (noclip
+	# off). Main._refresh_player_modifiers must call _ensure_player_in_open_cell
+	# and relocate the player into a real open cell instead of leaving them
+	# stuck outside the maze/embedded in a wall with collision suddenly on ----
+	main.player.global_position = Vector3(main.player.global_position.x, main.player.global_position.y, -999.0)
 	main.set_condition("fear_and_loathing")
 	await get_tree().process_frame
 	_check("conditions: switching condition reverts the previous one (word mode off)", main.maze_view.word_mode_active == false)
 	_check("conditions: switching condition reverts the previous one (noclip off)", main.player.collision_mask == 2)
+	var relocated_cell: Vector2i = main.player.cell()
+	_check("noclip softlock fix: player relocated into the maze bounds", relocated_cell.x >= 0 and relocated_cell.x < main.maze.rows)
+	_check("noclip softlock fix: player relocated into an open cell, not a wall", MazeGen.is_open(main.maze, relocated_cell.x, relocated_cell.y), "cell=%s" % relocated_cell)
 	_check("conditions: fear_and_loathing wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
 
 	main.set_condition("")

@@ -606,16 +606,24 @@ func _draw_minimap() -> void:
 				continue
 			var pw: Vector2i = minimap_maze_view.power_cells[i]
 			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, Color(1.0, 0.365, 0.635))
+	# Review findings GD-K4/UX-K2/Code-W11: the player's real facing
+	# direction is (-sin(yaw), -cos(yaw)) (see player_controller.gd's
+	# _physics_process), but the arrow was rotated by `p.rotated(yaw)` —
+	# the wrong sign, so turning left visibly swung the arrow right (north/
+	# south happened to still look right; east/west were swapped). Fixed to
+	# `p.rotated(-yaw)`. Player and enemy markers were also missing the
+	# +0.5-cell offset the pellets/power-ups above already use, putting
+	# them half a cell off from where they actually are.
 	for e in minimap_enemies:
 		var col: Color = Color(0.35, 0.82, 1.0) if minimap_frightened else e.palette_color
-		minimap.draw_circle(Vector2((e.position.x / 2.0) * sx, (e.position.z / 2.0) * sy), 2.4, col)
+		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
 	if minimap_player != null:
-		var pr := minimap_player.global_position.x / 2.0
-		var pc := minimap_player.global_position.z / 2.0
+		var pr := minimap_player.global_position.x / 2.0 + 0.5
+		var pc := minimap_player.global_position.z / 2.0 + 0.5
 		var yaw: float = minimap_player.yaw if minimap_player.has_method("cell") else 0.0
 		var pts := PackedVector2Array([Vector2(0, -4.2), Vector2(3, 3.6), Vector2(-3, 3.6)])
 		var rotated := PackedVector2Array()
 		for p in pts:
-			var rp := p.rotated(yaw)
+			var rp := p.rotated(-yaw)
 			rotated.append(Vector2(pr * sx, pc * sy) + rp)
 		minimap.draw_colored_polygon(rotated, ACCENT)

@@ -34,6 +34,23 @@ func _initialize() -> void:
 			failures += 1
 			print("FAIL format_time(%s) = %s, expected %s" % [c[0], got, c[1]])
 
+	# --- target_for() must sit above the hard lower bound (GD-K1) -----
+	# Hard lower bounds the review worked out from each level's mandatory
+	# pickup count, pickup spacing (4m), pickup radius and PLAYER_SPEED
+	# (4.4 m/s) — see speedrun.gd's TARGET_TIMES comment. A target below
+	# this is mathematically unreachable regardless of player skill.
+	var hard_lower_bounds := [58.0, 80.0, 98.0, 101.0]
+	for i in hard_lower_bounds.size():
+		checks += 1
+		var target: float = speedrun_script.new().target_for(i)
+		if target <= hard_lower_bounds[i]:
+			failures += 1
+			print("FAIL target_for(%d) = %f is at or below the hard lower bound %f" % [i, target, hard_lower_bounds[i]])
+	checks += 1
+	if speedrun_script.new().target_for(99) <= hard_lower_bounds[hard_lower_bounds.size() - 1]:
+		failures += 1
+		print("FAIL DEFAULT_TARGET (level 5+) is at or below the level-4 hard lower bound")
+
 	# --- record_level_time on a fresh instance ------------------------
 	var sr = speedrun_script.new()
 
@@ -47,25 +64,25 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL best_for(0) should be -1.0 before any run")
 
-	# First run on level 0, slower than target (55.0) -> no bonus, is new best.
-	var r1: Dictionary = sr.record_level_time(0, 80.0)
+	# First run on level 0, slower than target (87.0) -> no bonus, is new best.
+	var r1: Dictionary = sr.record_level_time(0, 95.0)
 	checks += 1
 	if not r1.is_new_best or r1.beat_target or r1.newly_unlocked_bonus:
 		failures += 1
 		print("FAIL first slow run: unexpected result %s" % [r1])
 
 	# Second run, slower than the first -> not a new best, still no bonus.
-	var r2: Dictionary = sr.record_level_time(0, 90.0)
+	var r2: Dictionary = sr.record_level_time(0, 100.0)
 	checks += 1
 	if r2.is_new_best or r2.beat_target:
 		failures += 1
 		print("FAIL slower second run: unexpected result %s" % [r2])
 	checks += 1
-	if sr.best_for(0) != 80.0:
+	if sr.best_for(0) != 95.0:
 		failures += 1
-		print("FAIL best_for(0) should stay 80.0, got %s" % sr.best_for(0))
+		print("FAIL best_for(0) should stay 95.0, got %s" % sr.best_for(0))
 
-	# Third run beats the level-0 target (55.0) and is a new best -> unlocks bonus.
+	# Third run beats the level-0 target (87.0) and is a new best -> unlocks bonus.
 	var r3: Dictionary = sr.record_level_time(0, 40.0)
 	checks += 1
 	if not r3.is_new_best or not r3.beat_target or not r3.newly_unlocked_bonus:
@@ -77,7 +94,7 @@ func _initialize() -> void:
 		print("FAIL bonus should be unlocked after beating target")
 
 	# Unlocking again on a later beat-target run must not re-report "newly" unlocked.
-	var r4: Dictionary = sr.record_level_time(1, 30.0) # well under level-1 target (70.0)
+	var r4: Dictionary = sr.record_level_time(1, 30.0) # well under level-1 target (120.0)
 	checks += 1
 	if r4.newly_unlocked_bonus:
 		failures += 1

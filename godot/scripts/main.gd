@@ -8,8 +8,14 @@ const CELL := 2.0
 const FRIGHTENED_DURATION := 7.0
 const WORD_MODE_DURATION := 12.0
 const FEAR_MODE_DURATION := 10.0
-const FEAR_NOCLIP_FLIP_MIN := 0.4
-const FEAR_NOCLIP_FLIP_MAX := 1.1
+## While the Fear & Loathing pickup is active, every ghost moves at this
+## fraction of its normal speed — the "echter Gegenwert" (real payoff) the
+## combined review decision (GD-W7 risk/reward vs. UX-K1 defang) asked for
+## alongside removing the item's random wall-collision toggle and
+## involuntary self-movement (see conditions/fear_and_loathing.gd and
+## _activate_fear_powerup below): the player rides out scrambled, noisy
+## controls, but gets noticeably slower ghosts in return.
+const FEAR_GHOST_SLOWDOWN := 0.7
 ## Ghost hit-trigger distance (center-to-center; ghosts have no physical
 ## collider of their own, so this is the only thing standing between a
 ## ghost and the player in a corridor). The old 0.62 left just enough
@@ -117,6 +123,19 @@ var start_cell := Vector2i(1, 1)
 var fruit_spawned := false
 var now := 0.0
 var level_start_time := 0.0
+## GD-W6/UX-W7/Code-W3: pause used to be inconsistent — `now` (the single
+## clock everything from frightened_until to word_mode_until/fear_mode_until
+## is measured against) kept advancing every frame even while paused, since
+## the old `if not (running and not paused): return` guard sat AFTER `now +=
+## delta`. That silently burned through power-up/condition time windows
+## during a pause, even though nothing else in the frame was actually
+## processed. Per the user's own decision ("Pause kostet Zeit"): `now` now
+## genuinely freezes while paused (so every effect timer freezes with it —
+## no more silent time loss), and the wall-clock time spent paused is
+## tracked here separately and folded into the speedrun/leaderboard elapsed
+## time at level/run completion instead, so pausing is still not a free way
+## to stop a speedrun's clock.
+var level_paused_elapsed := 0.0
 var playing_manhattan := false
 var word_mode_until := 0.0
 
@@ -127,9 +146,15 @@ var word_mode_until := 0.0
 ## the player's wall collision on and off — see _activate_fear_powerup.
 var fear_mode_until := 0.0
 var _fear_condition_instance = null
-var _fear_saved_active_condition = null
-var _fear_prev_noclip := false
-var _fear_next_noclip_toggle_at := 0.0
+
+## True once an "assisted" input happened during the run currently being
+## timed — a Twitch chat command (GD-K3/Code-W7). Reset at the start of
+## each level/run; when true, that level's/run's time is not written to
+## Speedrun.best_times or Leaderboard (see level_complete_sequence /
+## manhattan_complete_sequence) so chat-assisted runs can't pollute or
+## falsify real speedrun records. debug_mode (Testbuild) below disqualifies
+## the same way, for the same reason.
+var twitch_assisted := false
 
 ## Testbuild mode (see hud.gd's TESTBUILD button / _on_test_build_pressed
 ## below): plays a normal Matrix level exactly like start_pressed does, just
@@ -263,10 +288,18 @@ func start_level(index: int) -> void:
 	word_mode_until = 0.0
 	fear_mode_until = 0.0
 	_fear_condition_instance = null
-	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
-	player.set_noclip(false)
-
-	player.warp_to(start_cell, PI)
+	twitch_assisted = false
+	frightened_until = 0.0 # Code-W4: a power-pellet window must never survive into the next level/attempt
+	combo_count = 0
+	level_paused_elapsed = 0.0
+	# Code-review follow-up: warp the player to the fresh start_cell BEFORE
+	# deriving noclip/active_condition, not after — _refresh_player_modifiers
+	# can relocate the player via _ensure_player_in_open_cell() if collision
+	# is on, and running that against the PREVIOUS level's position/maze
+	# risked an unnecessary extra teleport right before warp_to overwrote it
+	# anyway.
+	player.warp_to(start_cell, _facing_yaw_for_start(start_cell))
+	_refresh_player_modifiers() # derives noclip/active_condition fresh instead of hardcoding collision on (Code-W1/Code-W2)
 	invuln_until = now + 1.2
 
 	for e in enemies:
@@ -340,10 +373,14 @@ func start_manhattan_level() -> void:
 	word_mode_until = 0.0
 	fear_mode_until = 0.0
 	_fear_condition_instance = null
-	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
-	player.set_noclip(false)
-
-	player.warp_to(start_cell, PI)
+	twitch_assisted = false
+	frightened_until = 0.0
+	combo_count = 0
+	level_paused_elapsed = 0.0
+	# Code-review follow-up — see start_level()'s matching comment: warp
+	# before deriving noclip/active_condition, not after.
+	player.warp_to(start_cell, _facing_yaw_for_start(start_cell))
+	_refresh_player_modifiers()
 	invuln_until = now + 1.2
 
 	for e in enemies:
@@ -358,6 +395,127 @@ func start_manhattan_level() -> void:
 	hud.set_lives(lives)
 	hud.set_best_time(-1.0)
 	level_start_time = now
+
+
+## ---------------- start facing / noclip-end safety ----------------
+
+## Review finding GD-W10: the start cell sits in the bottom-most room row,
+## and the old fixed `warp_to(start_cell, PI)` faced the camera straight at
+## the (1-unit-away) outer wall there, every single run — "jedes Matrix-
+## Level beginnt mit Blick auf die Außenwand". Picks the start cell's open
+## neighbor with the longest straight corridor behind it instead, so the
+## player always spawns looking down a real passage.
+func _facing_yaw_for_start(cell: Vector2i) -> float:
+	# yaw convention matches player_controller.gd's _physics_process
+	# (dir_x = -sin(yaw), dir_z = -cos(yaw)): yaw=0 faces -Z/north (row-1),
+	# PI faces +Z/south (row+1), -PI/2 faces +X/east (col+1), PI/2 faces
+	# -X/west (col-1).
+	var dirs := [
+		{"dr": -1, "dc": 0, "yaw": 0.0},
+		{"dr": 1, "dc": 0, "yaw": PI},
+		{"dr": 0, "dc": 1, "yaw": -PI / 2.0},
+		{"dr": 0, "dc": -1, "yaw": PI / 2.0},
+	]
+	var best_yaw := PI # fallback: old default, only used if the start cell is somehow fully enclosed
+	var best_len := -1
+	for d in dirs:
+		if not MazeGen.is_open(maze, cell.x + d.dr, cell.y + d.dc):
+			continue
+		var length := 0
+		var rr: int = cell.x
+		var cc: int = cell.y
+		# Code-review follow-up: MazeGen.is_open() does NOT wrap the column
+		# index — it CLAMPS any out-of-range column to the nearest edge
+		# column (0 or cols-1) and only returns false for an out-of-range
+		# row. An east/west scan that just kept calling is_open() past the
+		# grid edge would therefore keep re-reading that single edge column
+		# forever if it happens to be open (which it reliably is on the
+		# tunnel row — e.g. Manhattan's start sits exactly on it), making
+		# the scan hit the old hard step cap on every such start instead of
+		# measuring a real corridor. Stop explicitly at the grid boundary
+		# instead of trusting is_open()'s clamp to signal "no further cell".
+		var max_steps: int = maze.rows + maze.cols # still kept as a final safety net
+		while length < max_steps:
+			var nr: int = rr + d.dr
+			var nc: int = cc + d.dc
+			if nr < 0 or nr >= maze.rows or nc < 0 or nc >= maze.cols:
+				break
+			if not MazeGen.is_open(maze, nr, nc):
+				break
+			length += 1
+			rr = nr
+			cc = nc
+		if length > best_len:
+			best_len = length
+			best_yaw = d.yaw
+	return best_yaw
+
+
+## Single source of truth for the player's noclip/active-condition state,
+## replacing the old save-the-previous-value-and-restore-it approach (review
+## finding Code-W1) that left noclip or active_condition stuck wrong
+## whenever Word Mode and the whole-run Matrix Ghost condition (or, before
+## its redesign, the Fear & Loathing pickup) overlapped or ended out of
+## order. Called after anything that could change any of these inputs:
+## level/run start, Word Mode activation/deactivation, Fear pickup
+## activation/deactivation, and set_condition(). Turning collision back on
+## (noclip -> false) also validates the player isn't left outside the maze
+## or embedded in a wall (GD-K2/Code-K1 — see _ensure_player_in_open_cell).
+func _refresh_player_modifiers() -> void:
+	var word_active: bool = word_mode_until > 0.0 and now < word_mode_until
+	var condition_noclip: bool = current_condition != null and current_condition.id == "matrix_ghost"
+	var noclip: bool = word_active or condition_noclip
+	player.set_noclip(noclip)
+	if not noclip:
+		_ensure_player_in_open_cell()
+	var fear_active: bool = fear_mode_until > 0.0 and now < fear_mode_until
+	player.active_condition = _fear_condition_instance if fear_active else current_condition
+
+
+## Part of the GD-K2/Code-K1 noclip-softlock fix: whenever collision is
+## switched back on, make sure the player is actually standing in an open
+## cell first. Without this, ending Word Mode (or any future noclip source)
+## while outside the maze or inside a wall left the player stuck forever —
+## solid walls all around, no way to die, nothing to do but restart the
+## whole run from level 1.
+func _ensure_player_in_open_cell() -> void:
+	if maze == null:
+		return
+	var c: Vector2i = player.cell()
+	if c.x >= 0 and c.x < maze.rows and MazeGen.is_open(maze, c.x, c.y):
+		return
+	player.global_position = _nearest_open_cell_world(c)
+
+
+## Expanding ring search (Chebyshev distance) for the nearest open cell to
+## `from_cell`, which may itself be out of bounds or a wall. Deliberately a
+## plain spatial search, not a graph BFS over MazeGen's open-cell graph:
+## MazeGen.bfs refuses to even start from a non-open cell, which is exactly
+## the case this exists to handle.
+func _nearest_open_cell_world(from_cell: Vector2i) -> Vector3:
+	var clamped_r: int = clampi(from_cell.x, 0, maze.rows - 1)
+	var max_radius: int = maxi(maze.rows, maze.cols)
+	for radius in range(max_radius + 1):
+		for dr in range(-radius, radius + 1):
+			for dc in range(-radius, radius + 1):
+				if maxi(absi(dr), absi(dc)) != radius:
+					continue
+				var rr := clamped_r + dr
+				# Code-review follow-up (Code-W2 in this round's report):
+				# MazeGen.is_open() CLAMPS an out-of-range column to the
+				# nearest edge rather than wrapping it, while the column the
+				# tunnel row actually wraps to is this modulo value — wrap
+				# cc here, before the open check, so the cell that's tested
+				# and the cell that's returned are always the same one
+				# (previously a column beyond a single wrap could pass the
+				# check against the clamped edge column but return a
+				# different, unverified wrapped column).
+				var cc: int = ((from_cell.y + dc) % maze.cols + maze.cols) % maze.cols
+				if rr < 0 or rr >= maze.rows:
+					continue
+				if MazeGen.is_open(maze, rr, cc):
+					return Vector3(cc * CELL, player.global_position.y, rr * CELL)
+	return Vector3(start_cell.y * CELL, player.global_position.y, start_cell.x * CELL) # degenerate fallback — should be unreachable
 
 
 func _clear_manhattan_obstacles() -> void:
@@ -483,8 +641,7 @@ func _spawn_manhattan_obstacles() -> void:
 
 
 ## Glowing "SUBWAY" signs at the reserved metro cells; entering one ends
-## the Manhattan run and drops the player back into the normal speedrun
-## progression (see _check_metro_entry / _enter_metro).
+## and scores the Manhattan run (see _check_metro_entry).
 func _spawn_metro_stations(metro_cells: Array) -> void:
 	for cell in metro_cells:
 		var station := Node3D.new()
@@ -502,30 +659,22 @@ func _check_manhattan_obstacles() -> void:
 
 
 ## Proximity check: stepping close enough to a metro station's sign ends
-## the Manhattan bonus run early and drops the player back into the normal
-## speedrun progression (a fresh run from level 1 — "kehrt man zurück ins
-## normale Speedrun Level").
+## AND scores the Manhattan run. Per the user's own decision (resolving the
+## review's GD-W1/UX-K4 conflict — Game-Designer wanted the metro gated
+## behind collecting every pellet, UX wanted a confirmation prompt):
+## Manhattan is a pure explorer level with no collection requirement at
+## all — pellets are only worth points along the way, never a condition for
+## finishing — and the metro is simply always the way out, scoring the run
+## the moment it's touched (see manhattan_complete_sequence). This also
+## naturally resolves GD-W1's complaint that the pellet trails already lead
+## to the metro stations: that's fine now, since touching one is exactly
+## how the run is meant to end, not a trap to avoid.
 func _check_metro_entry() -> void:
 	for m in metro_stations:
 		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
 		if d < MANHATTAN_METRO_RADIUS:
-			_enter_metro()
+			manhattan_complete_sequence()
 			return
-
-
-func _enter_metro() -> void:
-	running = false
-	Sfx.set_siren(false, false)
-	Sfx.level_clear()
-	if score > high_score:
-		high_score = score
-		_save_highscore(high_score)
-	hud.show_levelclear(true, "SUBWAY — zurück zum Speedrun!")
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-	await get_tree().create_timer(1.4).timeout
-	hud.show_levelclear(false)
-	playing_manhattan = false
-	begin_game()
 
 
 ## Soft-blocks the player out to `radius` from an obstacle — an "obstacle
@@ -590,7 +739,9 @@ func manhattan_complete_sequence() -> void:
 	if score > high_score:
 		high_score = score
 		_save_highscore(high_score)
-	var elapsed := now - level_start_time
+	# GD-W6/UX-W7/Code-W3 ("Pause kostet Zeit"): now is frozen while paused,
+	# so wall-clock pause time is added back in here rather than being lost.
+	var elapsed := (now - level_start_time) + level_paused_elapsed
 	hud.show_levelclear(true, "Manhattan bezwungen! Punkte " + str(score))
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	await get_tree().create_timer(2.2).timeout
@@ -606,10 +757,17 @@ func manhattan_complete_sequence() -> void:
 	# 4 next-run combinations (same/other city × same/other condition) so
 	# every completed Explorer run naturally invites another, differently-
 	# flavored one instead of dropping straight back to the main menu.
-	var submit_result := Leaderboard.submit_time(explorer_city_id, condition_id, elapsed)
-	var top_entries := Leaderboard.get_top(explorer_city_id, condition_id, 5)
+	# GD-K3/Code-W7: a run a Twitch chat command touched is never written to
+	# the board — a viewer could otherwise trivialize or reset any run.
 	var city_name: String = CityThemesScript.get_theme(explorer_city_id).display_name
-	hud.show_explorer_next(_explorer_next_choices(), top_entries, submit_result, elapsed, "%s GESCHAFFT!" % city_name.to_upper())
+	var title := "%s GESCHAFFT!" % city_name.to_upper()
+	var submit_result := {"rank": -1, "is_new_best": false}
+	if not twitch_assisted and not debug_mode:
+		submit_result = Leaderboard.submit_time(explorer_city_id, condition_id, elapsed)
+	else:
+		title += " (nicht gewertet — Twitch/Debug aktiv)"
+	var top_entries := Leaderboard.get_top(explorer_city_id, condition_id, 5)
+	hud.show_explorer_next(_explorer_next_choices(), top_entries, submit_result, elapsed, title)
 
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	player.input_enabled = false
@@ -685,8 +843,14 @@ func _on_twitch_connection_changed(is_connected: bool) -> void:
 func _on_twitch_command(_user: String, command: String, _args: String) -> void:
 	if not (running and not paused):
 		return
+	# GD-K3/Code-W7: any chat command that actually did something marks the
+	# run currently being timed as assisted — see level_complete_sequence /
+	# manhattan_complete_sequence, which then skip writing the time to
+	# Speedrun.best_times / Leaderboard so a viewer's (or the streamer's own
+	# phone's) !power can't trivialize or falsify a recorded run.
 	match command:
 		"power":
+			twitch_assisted = true
 			frightened_until = now + FRIGHTENED_DURATION
 			combo_count = 0
 			Sfx.power()
@@ -696,12 +860,15 @@ func _on_twitch_command(_user: String, command: String, _args: String) -> void:
 					enemy.mode = "frightened"
 		"fruit":
 			if not fruit_spawned:
+				twitch_assisted = true
 				fruit_spawned = true
 				maze_view.spawn_fruit(now)
 
 
 func next_level() -> void:
-	invuln_until = now + 0.5
+	# The old `invuln_until = now + 0.5` here was always immediately
+	# overwritten by start_level()'s own `invuln_until = now + 1.2` a few
+	# lines later — dead code (review finding Code-W4).
 	start_level(level_index + 1)
 
 
@@ -742,18 +909,27 @@ func level_complete_sequence() -> void:
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
 
-	var elapsed := now - level_start_time
-	var result := Speedrun.record_level_time(level_index, elapsed)
-	Leaderboard.submit_time("normal-%d" % level_index, condition_id, elapsed)
+	# GD-W6/UX-W7/Code-W3 ("Pause kostet Zeit"): now is frozen while paused,
+	# so wall-clock pause time is added back in here rather than being lost.
+	var elapsed := (now - level_start_time) + level_paused_elapsed
 	var subtitle := "Zeit " + Speedrun.format_time(elapsed)
-	if result.newly_unlocked_bonus:
-		subtitle += "  ·  BONUSLEVEL FREIGESCHALTET!"
-		Sfx.eat_enemy()
-		hud.set_bonus_unlocked(true)
-	elif result.is_new_best:
-		subtitle += "  ·  neue Bestzeit!"
-	elif result.beat_target:
-		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
+	# GD-K3/Code-W7: a Twitch-chat-assisted or Testbuild/debug run is never
+	# written to Speedrun.best_times or the Leaderboard — see
+	# _on_twitch_command / _on_test_build_pressed — so neither can silently
+	# falsify a stored speedrun time or the bonus-level unlock.
+	if twitch_assisted or debug_mode:
+		subtitle += "  ·  nicht gewertet (Twitch/Debug aktiv)"
+	else:
+		var result := Speedrun.record_level_time(level_index, elapsed)
+		Leaderboard.submit_time("normal-%d" % level_index, condition_id, elapsed)
+		if result.newly_unlocked_bonus:
+			subtitle += "  ·  BONUSLEVEL FREIGESCHALTET!"
+			Sfx.eat_enemy()
+			hud.set_bonus_unlocked(true)
+		elif result.is_new_best:
+			subtitle += "  ·  neue Bestzeit!"
+		elif result.beat_target:
+			subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
 	hud.set_best_time(Speedrun.best_for(level_index))
 
 	hud.show_levelclear(true, subtitle)
@@ -819,21 +995,34 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if paused:
+		# Freeze the game clock itself (see the level_paused_elapsed comment
+		# above), but still account for the wall-clock time spent paused so
+		# it can be charged to the speedrun time once the level/run ends.
+		if running:
+			level_paused_elapsed += delta
+		return
 	now += delta
-	if not (running and not paused):
+	if not running:
 		return
 
 	player.wrap_tunnel(maze.cols * CELL)
+	# GD-K2/Code-K1: Z has no wrap, so without a bound a noclipping player
+	# (Word Mode / Matrix Ghost) could walk straight out through the north/
+	# south outer wall into the void. See player_controller.gd's clamp_z.
+	player.clamp_z(-CELL * 0.5, (maze.rows - 1) * CELL + CELL * 0.5)
 
 	var frightened_active := now < frightened_until
 	var player_cell: Vector2i = player.cell()
 	var world_width: float = maze.cols * CELL
+	var fear_active := fear_mode_until > 0.0 and now < fear_mode_until
+	var enemy_speed_mult := FEAR_GHOST_SLOWDOWN if fear_active else 1.0
 
 	if debug_mode:
 		hud.update_debug_overlay(Engine.get_frames_per_second(), player.global_position, player_cell)
 
 	for enemy in enemies:
-		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
+		enemy.update(delta, maze, player_cell, frightened_active, now, world_width, enemy_speed_mult)
 		_check_enemy_collision(enemy, frightened_active)
 
 	if playing_manhattan:
@@ -857,17 +1046,16 @@ func _process(delta: float) -> void:
 	if word_mode_until > 0.0 and now >= word_mode_until:
 		_deactivate_word_mode()
 
-	if fear_mode_until > 0.0:
-		if now >= fear_mode_until:
-			_deactivate_fear_powerup()
-		elif now >= _fear_next_noclip_toggle_at:
-			player.set_noclip(randf() > 0.5)
-			_fear_next_noclip_toggle_at = now + randf_range(FEAR_NOCLIP_FLIP_MIN, FEAR_NOCLIP_FLIP_MAX)
+	# The random wall-collision toggle that used to live here (flipping
+	# noclip on/off every ~0.4-1.1s while Fear mode was active) is gone —
+	# see _activate_fear_powerup's header comment for why.
+	if fear_mode_until > 0.0 and now >= fear_mode_until:
+		_deactivate_fear_powerup()
 
 	if current_condition != null:
 		current_condition.on_process(delta, self)
 
-	hud.set_timer(now - level_start_time)
+	hud.set_timer((now - level_start_time) + level_paused_elapsed) # stays in sync with the elapsed time actually recorded at completion ("Pause kostet Zeit")
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
 	if now >= frightened_until and Sfx.siren_state() == "frightened":
 		Sfx.set_siren(true, false)
@@ -934,11 +1122,13 @@ func _check_pickups() -> void:
 		fruit_spawned = true
 		maze_view.spawn_fruit(now)
 
-	if maze_view.remaining_pickups() <= 0 and running:
-		if playing_manhattan:
-			manhattan_complete_sequence()
-		else:
-			level_complete_sequence()
+	# Manhattan is a pure explorer level (per the user's own decision
+	# resolving GD-W1/UX-K4 — see _check_metro_entry): collecting every
+	# pellet is no longer a completion condition there, only the metro
+	# stations end and score a run. Normal Speedrun levels are unaffected —
+	# clearing every pellet still ends the level exactly as before.
+	if not playing_manhattan and maze_view.remaining_pickups() <= 0 and running:
+		level_complete_sequence()
 
 
 ## ---------------- Word Mode power-up (normal levels only) ----------------
@@ -950,49 +1140,58 @@ func _check_pickups() -> void:
 func _activate_word_mode() -> void:
 	word_mode_until = now + WORD_MODE_DURATION
 	maze_view.set_word_mode(true)
-	player.set_noclip(true)
 	for enemy in enemies:
 		enemy.set_word_skin(true)
+	_refresh_player_modifiers()
 	Sfx.power()
 
 
 func _deactivate_word_mode() -> void:
 	word_mode_until = 0.0
 	maze_view.set_word_mode(false)
-	player.set_noclip(false)
 	for enemy in enemies:
 		enemy.set_word_skin(false)
+	_refresh_player_modifiers()
 
 
 ## ---------------- Fear & Loathing power-up (normal levels only) ----------------
 ## A rarer, temporary sibling to the Word Mode pickup above: for
-## FEAR_MODE_DURATION seconds, the player's steering gets the same
-## noisy/periodically-inverted treatment as the whole-run Fear & Loathing
+## FEAR_MODE_DURATION seconds, the player's steering gets the same noisy/
+## periodically-inverted treatment as the whole-run Fear & Loathing
 ## Kondition (scripts/conditions/fear_and_loathing.gd, reused directly
-## rather than duplicated), the matrix_rain wall shader dissolves into a
-## psychedelic color-cycling wobble (see set_psychedelic), and wall
-## collision randomly flips on and off every FEAR_NOCLIP_FLIP_MIN..MAX
-## seconds (_process below) — an "LSD trip" the player has to ride out
-## rather than a clean buff. Whatever whole-run condition (if any) was
-## already active is swapped back in unchanged once this ends.
+## rather than duplicated) and the matrix_rain wall shader dissolves into a
+## psychedelic color-cycling wobble (see set_psychedelic) — an "LSD trip"
+## the player has to ride out. Redesigned per the user's own decision
+## (combining UX-K1's "defang it" and GD-W7's "keep it risky but give a
+## real payoff"):
+##   - The random wall-collision toggle this used to do every ~0.4-1.1s
+##     (via _fear_next_noclip_toggle_at in _process) is gone entirely — it
+##     never gave the player any way to reliably predict or avoid dying
+##     mid-corridor, which isn't a risk/reward trade, just noise. Wall
+##     collision now simply stays whatever it already was, same as any
+##     other moment — see _refresh_player_modifiers.
+##   - fear_and_loathing.gd's modify_input no longer adds movement when the
+##     player isn't pressing anything (see that file), so the "can't stand
+##     still" complaint is gone too.
+##   - In exchange, every ghost moves at FEAR_GHOST_SLOWDOWN while this is
+##     active (see _process) — the actual "echter Gegenwert" (real payoff):
+##     scrambled controls, but ghosts you can out-maneuver more easily.
+## Whatever whole-run condition (if any) was already active is restored
+## once this ends (see _refresh_player_modifiers).
 func _activate_fear_powerup() -> void:
 	fear_mode_until = now + FEAR_MODE_DURATION
-	_fear_saved_active_condition = player.active_condition
 	_fear_condition_instance = ConditionsScript.get_condition("fear_and_loathing")
 	_fear_condition_instance.on_start(self)
-	player.active_condition = _fear_condition_instance
-	_fear_prev_noclip = player.collision_mask == 0
-	_fear_next_noclip_toggle_at = now + randf_range(FEAR_NOCLIP_FLIP_MIN, FEAR_NOCLIP_FLIP_MAX)
 	maze_view.set_psychedelic(true)
+	_refresh_player_modifiers()
 	Sfx.power()
 
 
 func _deactivate_fear_powerup() -> void:
 	fear_mode_until = 0.0
-	player.active_condition = _fear_saved_active_condition
 	_fear_condition_instance = null
-	player.set_noclip(_fear_prev_noclip)
 	maze_view.set_psychedelic(false)
+	_refresh_player_modifiers()
 
 
 ## ---------------- Konditionen (whole-run modifiers) ----------------
@@ -1005,9 +1204,9 @@ func set_condition(id: String) -> void:
 		current_condition.on_end(self)
 	condition_id = id
 	current_condition = ConditionsScript.get_condition(id)
-	player.active_condition = current_condition
 	if current_condition != null:
 		current_condition.on_start(self)
+	_refresh_player_modifiers() # derives noclip (e.g. matrix_ghost) and active_condition centrally — see Code-W2
 
 
 ## ---------------- high score persistence ----------------

@@ -8,11 +8,26 @@ extends Node
 const SAVE_PATH := "user://kugelschlucker_speedrun.json"
 
 ## Zielzeiten (Sekunden) pro Level-Index, um das Bonuslevel freizuschalten.
-## Grosszuegig genug fuer einen soliden, aber nicht perfekten Lauf; kann vom
-## Spieler durch Uebung unterboten werden. Level-Groesse/-Ghost-Anzahl wächst
-## mit main.gd::LEVELS, die Zielzeiten wachsen entsprechend mit.
-const TARGET_TIMES := [55.0, 70.0, 85.0, 100.0]
-const DEFAULT_TARGET := 110.0
+## Review-Fund GD-K1 (docs/review/berichte/2026-10-01.md): die alten Werte
+## (55/70/85/100) lagen UNTER der harten rechnerischen Untergrenze, die sich
+## allein aus Pflicht-Pickup-Anzahl, Pickup-Abstand (4 m, da Pellets nur auf
+## Raumzellen im 2-Zellen-Raster liegen), Pickup-Radius und Spielertempo
+## (PLAYER_SPEED 4.4 m/s) ergibt — die Zielzeiten waren damit beweisbar
+## unerreichbar, selbst mit perfekter Route und Noclip. Der Review hat die
+## harte Untergrenze je Level konkret durchgerechnet (58/80/98/101 s) und
+## schlägt vor, die Zielzeit als harte Untergrenze × Faktor zu setzen
+## (Startwert 1.5, da eine echte Route immer Rückwege/Sackgassen hat und
+## kein Spieler die theoretische Luftlinie läuft). Ohne eigene Playtests
+## wird dieser Startfaktor direkt übernommen statt neu geschätzt:
+##   Level 1: 58 * 1.5 = 87.0   Level 2: 80 * 1.5 = 120.0
+##   Level 3: 98 * 1.5 = 147.0  Level 4: 101 * 1.5 = 151.5
+## Level-Groesse/-Ghost-Anzahl wächst mit main.gd::LEVELS, die Zielzeiten
+## wachsen entsprechend mit. Bereits gespeicherte Bestzeiten/der bereits
+## freigeschaltete Bonus bleiben unberührt (bonus_unlocked wird nie wieder
+## zurückgesetzt) — nur künftige Erstfreischaltungen prüfen gegen die neuen,
+## tatsächlich erreichbaren Werte.
+const TARGET_TIMES := [87.0, 120.0, 147.0, 151.5]
+const DEFAULT_TARGET := 151.5
 
 var best_times: Dictionary = {} # level_index (int, as String key for JSON) -> float seconds
 var bonus_unlocked := false

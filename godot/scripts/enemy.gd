@@ -83,8 +83,11 @@ func place_in_house(cell: Vector2i) -> void:
 
 ## Advances this enemy by `delta`. `maze` is a MazeGen.Maze, `player_cell`
 ## is Vector2i(row, col), `frightened_active` is whether a power pellet
-## window is open, `now` is the game clock in seconds.
-func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, now: float, world_width: float) -> void:
+## window is open, `now` is the game clock in seconds. `speed_mult` is an
+## extra multiplier on top of base_speed/mode — used by Main to slow every
+## ghost down while the Fear & Loathing pickup is active, the payoff half
+## of that item's redesigned risk/reward (see Main._activate_fear_powerup).
+func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, now: float, world_width: float, speed_mult: float = 1.0) -> void:
 	if mode == "house":
 		if now >= release_at:
 			mode = "chase"
@@ -116,6 +119,12 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, 
 		use_speed = base_speed * 0.55
 	elif mode == "eaten":
 		use_speed = base_speed * 2.2
+	# Code-review follow-up: the Fear & Loathing slowdown is a payoff for
+	# the player (ghosts are slower to react/chase), not a penalty on an
+	# already-eaten ghost hurrying back to the house — exclude "eaten" so
+	# it doesn't unintentionally extend how long a ghost stays out of play.
+	if mode != "eaten":
+		use_speed *= speed_mult
 
 	t += (delta * use_speed) / CELL
 	if t >= 1.0:

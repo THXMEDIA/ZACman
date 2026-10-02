@@ -10,15 +10,21 @@ func _init() -> void:
 	display_name = "Matrix Ghost"
 
 
+## Noclip itself is intentionally NOT set here (see review finding Code-W2):
+## this used to call main.player.set_noclip(true) directly, but
+## start_manhattan_level() — called right after set_condition() in
+## Main._start_explorer_run — unconditionally reset collision back on a few
+## lines later, silently undoing it. Main._refresh_player_modifiers() now
+## derives noclip from current_condition.id == "matrix_ghost" every time
+## anything relevant changes, including at the end of level/run setup, so
+## it can no longer be clobbered by setup order.
 func on_start(main) -> void:
 	main.maze_view.set_word_mode(true)
-	main.player.set_noclip(true)
 	for enemy in main.enemies:
 		enemy.set_word_skin(true)
 
 
 func on_end(main) -> void:
 	main.maze_view.set_word_mode(false)
-	main.player.set_noclip(false)
 	for enemy in main.enemies:
 		enemy.set_word_skin(false)

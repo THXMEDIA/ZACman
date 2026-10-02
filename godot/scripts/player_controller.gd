@@ -23,9 +23,20 @@ func _ready() -> void:
 	collision_layer = 1
 	collision_mask = 2
 
+	# Order matters here (confirmed in-engine, see review finding Code-N8):
+	# Godot's CapsuleShape3D enforces height >= 2*radius by silently
+	# clamping whichever is set SECOND. Setting radius (0.34) first and
+	# height (0.4) second — the old order — clamped the radius down to
+	# height/2 = 0.2 without any warning, so the player's real collision
+	# footprint was less than 2/3 of the documented PLAYER_RADIUS the rest
+	# of the codebase's corridor-width math assumes. Setting height first
+	# lets radius keep its real, intended value; height then auto-adjusts
+	# up to 2*radius (0.68) instead, which is harmless since the capsule
+	# lies flat (see cs.rotation.x below) — what matters is the horizontal
+	# footprint, not this vertical extent.
 	var shape := CapsuleShape3D.new()
-	shape.radius = PLAYER_RADIUS
 	shape.height = 0.4
+	shape.radius = PLAYER_RADIUS
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	cs.rotation.x = PI / 2.0
@@ -129,3 +140,16 @@ func wrap_tunnel(world_width: float) -> void:
 		global_position.x += world_width
 	elif global_position.x > world_width - CELL * 0.5:
 		global_position.x -= world_width
+
+
+## North/south bound, called unconditionally by Main every frame (same
+## pattern as wrap_tunnel above). Review finding GD-K2/Code-K1: unlike X,
+## which always wraps via wrap_tunnel regardless of collision state, Z had
+## no bound at all — while noclip was active (Word Mode, Matrix Ghost) a
+## player could walk straight out through the one-cell-thick north/south
+## outer wall into the void, with no way back in and no way to die, stuck
+## until the level restarted. Harmless when wall collision is already on
+## (the wall stops the player well inside these bounds anyway), essential
+## when it's off.
+func clamp_z(min_z: float, max_z: float) -> void:
+	global_position.z = clampf(global_position.z, min_z, max_z)

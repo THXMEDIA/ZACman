@@ -28,6 +28,18 @@ func _initialize() -> void:
 				failures += 1
 				print("FAIL tunnel row not open at edges: level=%d seed=%d" % [level_index, seed_value])
 
+			# Regression test for review findings GD-W4/Code-W9: the left and
+			# right halves must connect through the maze's own geometry (the
+			# mid-column breach, for sizes where the center column is even
+			# and would otherwise always be a wall), not only through the
+			# single wrap-tunnel row — connectivity_check_no_wrap ignores
+			# that wrap connection entirely.
+			checks += 1
+			var check_no_wrap = maze_gen.connectivity_check_no_wrap(maze)
+			if not check_no_wrap.ok:
+				failures += 1
+				print("FAIL halves only connected via wrap tunnel (no non-wrap path): level=%d size=%dx%d seed=%d unreachable=%d/%d" % [level_index, size[0], size[1], seed_value, check_no_wrap.unreachable, check_no_wrap.total])
+
 	maze_gen.free()
 	print("")
 	if failures == 0:
