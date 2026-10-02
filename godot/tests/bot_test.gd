@@ -218,6 +218,23 @@ func _run_checks() -> void:
 	await get_tree().process_frame
 	_check("can't squeeze past a ghost sideways anymore", main.lives == lives_before_squeeze - 1, "before=%d after=%d" % [lives_before_squeeze, main.lives])
 
+	# ---- ghost speed growth is capped, not unbounded (regression test for
+	# review finding GD-N1 — see Main.GHOST_SPEED_CAP) ----
+	main.start_level(3) # the last explicitly-tuned LEVELS entry: speed here must be untouched by the cap
+	await get_tree().process_frame
+	var fastest_at_level4: float = 0.0
+	for e in main.enemies:
+		fastest_at_level4 = maxf(fastest_at_level4, e.base_speed)
+	_check("ghost speed cap doesn't affect the tuned early levels", is_equal_approx(fastest_at_level4, 2.95), "fastest=%f" % fastest_at_level4)
+
+	main.start_level(40) # far past LEVELS.size() — the old formula would put this around 2.75+0.35+37*0.15 ≈ 8.65 m/s
+	await get_tree().process_frame
+	var fastest_at_level41: float = 0.0
+	for e in main.enemies:
+		fastest_at_level41 = maxf(fastest_at_level41, e.base_speed)
+	_check("ghost speed never exceeds GHOST_SPEED_CAP, however high the level", fastest_at_level41 <= main.GHOST_SPEED_CAP + 0.001, "fastest=%f cap=%f" % [fastest_at_level41, main.GHOST_SPEED_CAP])
+	_check("GHOST_SPEED_CAP stays below the player's own speed", main.GHOST_SPEED_CAP < main.player.PLAYER_SPEED, "cap=%f player_speed=%f" % [main.GHOST_SPEED_CAP, main.player.PLAYER_SPEED])
+
 	# ---- losing the last life ends the game ----
 	main.begin_game()
 	await get_tree().process_frame

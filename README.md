@@ -419,6 +419,31 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     als der Fußgänger-Verdrängungsradius. `test_city_themes.gd` prüft die
     neuen `wall_footprint_scale`-Grenzen beider Themes.
 
+- **Geister-Geschwindigkeit gedeckelt** (`godot/scripts/main.gd`,
+  `godot/tests/bot_test.gd`): Jenseits des letzten fest abgestimmten
+  `LEVELS`-Eintrags wuchs das Geistertempo bisher pro weiterem Level
+  unbegrenzt um `extra * 0.15` weiter — der nächtliche Review-Bericht
+  (`docs/review/berichte/2026-10-01.md`, Fund GD-N1) hat das konkret
+  durchgerechnet: Der schnellste Geist erreicht bei Level 13 bereits
+  4,45 m/s, mehr als `PlayerController.PLAYER_SPEED` (4,4 m/s) — ab
+  Level 15 sind alle Geister schneller als der Spieler. In Kombination mit
+  dem neuen harten Nicht-Ausweichen (`ENEMY_HIT_RADIUS`) gäbe es ab dann
+  keine Möglichkeit mehr, einem Geist überhaupt zu entkommen. Neue
+  Konstante `GHOST_SPEED_CAP := 3.96` (≈90 % der Spielergeschwindigkeit,
+  der vom Review selbst vorgeschlagene Wert) deckelt jede
+  Geister-Geschwindigkeit nach oben; die ersten vier abgestimmten Level
+  bleiben davon unberührt (ihr Tempo liegt ohnehin deutlich darunter).
+  Bewusst **nicht** umgesetzt: eine weitere Schwierigkeitssteigerung
+  jenseits des Deckels (z. B. kürzere `FRIGHTENED_DURATION` pro Level, wie
+  vom Review vorgeschlagen) — das ist eine separate Balancing-Entscheidung,
+  die erst mit dir abgestimmt werden sollte, bevor sie umgesetzt wird.
+  - Getestet: `bot_test.gd` prüft, dass Level 4 (der letzte abgestimmte
+    `LEVELS`-Eintrag) weiterhin exakt das alte, ungedeckelte Tempo liefert,
+    dass ein weit in der Zukunft liegendes Level (40) trotz der
+    ungedeckelten alten Formel (~8,65 m/s) nie über `GHOST_SPEED_CAP`
+    hinauskommt, und dass der Deckel selbst unterhalb der
+    Spielergeschwindigkeit liegt.
+
 ## Steam-Veröffentlichung
 
 Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md): Godot-Export-Setup,

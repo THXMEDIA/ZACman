@@ -30,6 +30,25 @@ const LEVELS := [
 	{"rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed_base": 40000},
 ]
 
+## Past the last defined LEVELS entry, start_level() keeps raising ghost
+## speed by `extra * 0.15` per level forever (see start_level's `extra`) —
+## flagged by review finding GD-N1 (docs/review/berichte/2026-10-01.md):
+## worked out from the actual formula, the fastest ghost hits 4.45 m/s at
+## level 13, already past PlayerController.PLAYER_SPEED (4.4), and every
+## ghost outruns the player from level 15 on — with the new no-sidestep
+## ENEMY_HIT_RADIUS there's then no way to out-walk one at all. Capped at
+## ~90% of PLAYER_SPEED, matching the review's own suggested figure
+## (worked back from PLAYER_SPEED=4.4 in player_controller.gd — kept as a
+## literal here rather than cross-referencing that script's const, to
+## avoid coupling an unrelated file's load order to this one). A ghost can
+## still be faster than this while frightened/eaten (see enemy.gd's
+## per-mode speed multipliers, which apply on top of this cap). Further
+## difficulty scaling past the cap (e.g. shorter FRIGHTENED_DURATION per
+## level, per the review's own suggestion) is intentionally not done here
+## — flagged to the user as a separate balancing decision, not bundled
+## into this fix.
+const GHOST_SPEED_CAP := 3.96
+
 ## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
 ## explore level. Traffic and pedestrians are its only obstacles: harmless,
 ## just something to walk around (Main._check_manhattan_obstacles). Both
@@ -265,7 +284,7 @@ func start_level(index: int) -> void:
 		enemy.set_script(load("res://scripts/enemy.gd"))
 		enemy_root.add_child(enemy)
 		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
-		enemy.setup(pal.color, pal.glow, cfg.ghost_speed + i * 0.05 + extra * 0.15)
+		enemy.setup(pal.color, pal.glow, minf(cfg.ghost_speed + i * 0.05 + extra * 0.15, GHOST_SPEED_CAP))
 		var cell: Vector2i = house_cells[i % house_cells.size()]
 		enemy.place_in_house(cell)
 		enemy.release_at = now + 1.5 + i * 1.4
