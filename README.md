@@ -246,13 +246,17 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   einfärbender Kopf (Totenkopf-Kugel, zwei überdimensionierte Augen, ein
   Ring rotierender Farbkugeln — eine eigene, nicht von einem realen
   Schauspieler oder einer bestimmten Filmfigur abgeleitete Gestalt) und für
-  `FEAR_MODE_DURATION` (10 s) drei Dinge gleichzeitig: die Steuerung wird
+  `FEAR_MODE_DURATION` (10 s) zwei Dinge gleichzeitig: die Steuerung wird
   wie bei der gleichnamigen Kondition (`fear_and_loathing.gd`, direkt
-  wiederverwendet statt dupliziert) laufend verrauscht/invertiert, der
-  Matrix-Regen-Shader löst sich über einen neuen `psychedelic_amount`-
+  wiederverwendet statt dupliziert) laufend verrauscht/invertiert (nur
+  bei tatsächlicher Eingabe — wer stillsteht, steht wirklich still), und
+  der Matrix-Regen-Shader löst sich über einen neuen `psychedelic_amount`-
   Uniform in eine wabernde Regenbogen-Halluzination auf
-  (`MazeView.set_psychedelic`), und die Wandkollision wird alle 0.4–1.1 s
-  zufällig an/aus geschaltet (`Main._fear_next_noclip_toggle_at`). Ein
+  (`MazeView.set_psychedelic`). Die anfängliche zufällige Wandkollisions-
+  Umschaltung ist nach dem Review-Durchgang vom 2026-10-02 entfallen (siehe
+  unten, UX-K1/GD-W2) — als Ersatz bremsen jetzt alle Geister für die
+  Dauer des Effekts auf `FEAR_GHOST_SLOWDOWN` (70 %) ab, ein echter,
+  planbarer Vorteil statt eines reinen Zufallsrisikos ohne Gegenwert. Ein
   vorher aktiv gewähltes Kondition (z. B. Matrix Ghost) wird beim Ende des
   Effekts unverändert wiederhergestellt.
 - **Leaderboard** (`godot/scripts/leaderboard.gd`, Autoload `Leaderboard`):
@@ -366,6 +370,211 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     `Sfx` isoliert auf und prüft, dass beide Musik-Loops als nicht-leere,
     nahtlos schleifende PCM-Buffer gerendert werden und dass
     `play_*_music()`/`stop_all()`/`music_state()` korrekt zusammenspielen.
+
+- **Speedrun: kein Ausweichen mehr, höhere/engere Wände, dunkleres Matrix-Grün
+  — Explorer: breitere Straßen, echte Fahrspuren + Fußweg**
+  (`godot/scripts/main.gd`, `godot/scripts/maze_view.gd`,
+  `godot/scripts/city_themes.gd`, `godot/scripts/taxi.gd`,
+  `godot/shaders/matrix_rain.gdshader`, `godot/tests/bot_test.gd`,
+  `godot/tests/test_city_themes.gd`):
+  - **Kein seitliches Ausweichen an Geistern** (Speedrun): Die
+    Gegner-Kollision war rein distanzbasiert mit einem `ENEMY_HIT_RADIUS`
+    von `0.62` — bei `PLAYER_RADIUS = 0.34` blieben in einem 2 m breiten
+    Korridor nur 4 cm Lücke zum Vorbeiquetschen. `ENEMY_HIT_RADIUS` ist
+    jetzt `0.85`: breiter als die halbe Korridorbreite, ein Geist blockiert
+    den Korridor also tatsächlich vollständig.
+  - **Höhere, etwas engere Korridore** (Speedrun): `MazeView.WALL_H` von
+    `3.8` auf `4.4` angehoben (nur das "normal"-Theme nutzt diesen Wert
+    direkt — Manhattan hat ein eigenes Höhensystem). Zusätzlich bekommt das
+    "normal"-Theme jetzt `CityTheme.wall_footprint_scale = 1.12`: Die
+    Wände greifen leicht über ihre eigene Zellenfläche hinaus in den
+    Korridor hinein (ein 2 m breiter Korridor wird dadurch ~1,76 m), sowohl
+    visuell als auch in der echten `StaticBody3D`-Kollision.
+  - **Dunkleres Matrix-Grün, an die Ästhetik des Films angelehnt**
+    (`matrix_rain.gdshader`): `glyph_color`/`bg_color` auf ein tieferes,
+    gesättigteres Grün vor nahezu Schwarz gezogen, `EMISSION` von `2.2x`
+    auf `2.6x` angehoben — ein Stil-Abgleich mit der bekannten, oft
+    beschriebenen Bildsprache des Films (monochromes Grün, harter
+    Kontrast, fast schwarzer Hintergrund) rein nach Beschreibung/Augenmaß,
+    nicht anhand eines tatsächlichen Filmstills. Da die insgesamt höheren,
+    engeren, helleren Wände das Vektions-Risiko (Scheinbewegungsgefühl
+    durch eine durchgängig nach unten laufende Textur) erhöhen, wurde
+    `floor_fade_frac` (der statische, nicht scrollende Streifen am
+    Wandfuß) leicht von `0.16` auf `0.19` angehoben.
+  - **Explorer: breitere Straßen, echte Fahrspuren + Fußweg**: Manhattans
+    Gebäude rücken weiter von ihrer Zellenkante ab
+    (`CityTheme.wall_footprint_scale` `0.55` → `0.48` → `0.40`), wodurch
+    die Straßencanyons spürbar breiter werden. Taxis und Fußgänger teilten
+    sich vorher eine einzige Mittellinie — jetzt bekommt der Verkehr zwei
+    versetzte Fahrspuren (`MANHATTAN_VEHICLE_LANE_OFFSET`, eine je
+    Richtung, siehe `taxi.gd::_apply_lane()` — korrekt auch nach einem
+    Richtungswechsel am Straßenende, vorher blieb ein Taxi nach dem Wenden
+    fälschlich in seiner alten Spur) und Fußgänger einen eigenen Gehweg
+    nah an der Häuserfront (`MANHATTAN_SIDEWALK_OFFSET`).
+  - **Review-Fund behoben (kritisch)**: Die erste Fassung ließ zwischen
+    Gehweg und Hauswand weniger Platz als den weichen Verdrängungsradius
+    um einen Fußgänger selbst — der Spieler hätte faktisch nie neben einem
+    Fußgänger vorbeigehen können, was dem expliziten Auftrag
+    ("hier darf man neben Passanten... vorbei") widersprach. Behoben durch
+    einen eigenen, kleineren `MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS` (`0.35`
+    statt der von Fahrzeugen geteilten `0.55`) zusammen mit den oben
+    genannten `wall_footprint_scale`/`MANHATTAN_SIDEWALK_OFFSET`-Werten.
+  - Review-Prozess: Wie in `CLAUDE.md` vorgeschrieben liefen nach der
+    Implementierung die drei Review-Subagenten (`game-designer`,
+    `ux-reviewer`, `code-reviewer`) parallel gegen die geänderten Dateien.
+    Gefunden und behoben: der oben genannte Gehweg-Bug (game-designer,
+    unabhängig bestätigt durch code-reviewer) und der Taxi-Spurwechsel-Bug
+    (unabhängig von game-designer und code-reviewer gefunden). Als
+    Designfrage zurückgestellt (nicht eigenmächtig umgesetzt, siehe
+    `CLAUDE.md`s "größere Designänderungen vorher mit dem Nutzer
+    abstimmen"): die unbegrenzt mit dem Level wachsende Geister-
+    Geschwindigkeit wird durch das neue harte Nicht-Ausweichen spürbarer
+    und wurde vom ux-reviewer erneut als Balancing-Thema aufgeworfen.
+  - Getestet: `bot_test.gd` prüft den neuen `ENEMY_HIT_RADIUS` (kann nicht
+    mehr seitlich an einem gepinnten Gegner vorbeigeschlüpft werden), die
+    neuen Shader-Konstanten, `wall_footprint_scale` in beiden Themes, dass
+    Taxis/Fußgänger tatsächlich auf versetzten Spuren/Gehwegen fahren statt
+    auf der nackten Mittellinie, dass ein Taxi nach dem Wenden die Spur
+    wechselt, und dass die Gehweg-Hauswand-Lücke rechnerisch größer bleibt
+    als der Fußgänger-Verdrängungsradius. `test_city_themes.gd` prüft die
+    neuen `wall_footprint_scale`-Grenzen beider Themes.
+
+- **Geister-Geschwindigkeit gedeckelt** (`godot/scripts/main.gd`,
+  `godot/tests/bot_test.gd`): Jenseits des letzten fest abgestimmten
+  `LEVELS`-Eintrags wuchs das Geistertempo bisher pro weiterem Level
+  unbegrenzt um `extra * 0.15` weiter — der nächtliche Review-Bericht
+  (`docs/review/berichte/2026-10-01.md`, Fund GD-N1) hat das konkret
+  durchgerechnet: Der schnellste Geist erreicht bei Level 13 bereits
+  4,45 m/s, mehr als `PlayerController.PLAYER_SPEED` (4,4 m/s) — ab
+  Level 15 sind alle Geister schneller als der Spieler. In Kombination mit
+  dem neuen harten Nicht-Ausweichen (`ENEMY_HIT_RADIUS`) gäbe es ab dann
+  keine Möglichkeit mehr, einem Geist überhaupt zu entkommen. Neue
+  Konstante `GHOST_SPEED_CAP := 3.96` (≈90 % der Spielergeschwindigkeit,
+  der vom Review selbst vorgeschlagene Wert) deckelt jede
+  Geister-Geschwindigkeit nach oben; die ersten vier abgestimmten Level
+  bleiben davon unberührt (ihr Tempo liegt ohnehin deutlich darunter).
+  Bewusst **nicht** umgesetzt: eine weitere Schwierigkeitssteigerung
+  jenseits des Deckels (z. B. kürzere `FRIGHTENED_DURATION` pro Level, wie
+  vom Review vorgeschlagen) — das ist eine separate Balancing-Entscheidung,
+  die erst mit dir abgestimmt werden sollte, bevor sie umgesetzt wird.
+  - Getestet: `bot_test.gd` prüft, dass Level 4 (der letzte abgestimmte
+    `LEVELS`-Eintrag) weiterhin exakt das alte, ungedeckelte Tempo liefert,
+    dass ein weit in der Zukunft liegendes Level (40) trotz der
+    ungedeckelten alten Formel (~8,65 m/s) nie über `GHOST_SPEED_CAP`
+    hinauskommt, und dass der Deckel selbst unterhalb der
+    Spielergeschwindigkeit liegt.
+
+- **Review-Runde 2026-10-02: Kritisches + 4 Designentscheidungen umgesetzt**
+  (`godot/scripts/main.gd`, `maze_gen.gd`, `speedrun.gd`, `hud.gd`,
+  `player_controller.gd`, `conditions/matrix_ghost.gd`,
+  `conditions/fear_and_loathing.gd`, `enemy.gd`, `godot/tests/*`): nach dem
+  nächtlichen Review-Bericht (`docs/review/berichte/2026-10-01.md`, alle
+  drei Rollen) waren längst nicht alle Befunde umgesetzt — u. a. startete
+  man im Speedrun-Level noch mit Blick zur Wand (GD-W10). Diese Runde hat
+  die 5 kritischen Befunde sowie die 4 Design-Entscheidungen behoben, die
+  der Nutzer dafür einzeln getroffen hat; "Wichtig"/"Nice-to-have" bleibt
+  für eine spätere Runde zurückgestellt.
+  - **Kritisch — Zielzeiten unerreichbar (GD-K1)**: die alten Zielzeiten
+    (55/70/85/100 s) lagen unter der vom Review selbst errechneten
+    harten Untergrenze. Neue Zielzeiten `[87, 120, 147, 151.5]` (errechnete
+    Untergrenze × 1,5, wie vom Review vorgeschlagen); bereits freigeschaltete
+    Boni/gespeicherte Bestzeiten bleiben unangetastet.
+  - **Kritisch — Noclip-Softlock (GD-K2/Code-K1)**: schaltete sich Noclip
+    (Word Mode/Matrix Ghost) ab, während der Spieler außerhalb des
+    Labyrinths oder in einer Wand steckte, blieb er dort gefangen. Neues
+    zentrales `Main._refresh_player_modifiers()` leitet Noclip/aktive
+    Kondition jetzt aus genau einer Quelle ab und ruft bei jeder
+    Abschaltung `_ensure_player_in_open_cell()` auf, das den Spieler nötigenfalls
+    zur nächsten offenen Zelle versetzt. Zusätzlich begrenzt
+    `PlayerController.clamp_z()` (analog zum bestehenden `wrap_tunnel()`)
+    jeden Frame die Nord/Süd-Position, damit ein Noclip-Spieler gar nicht
+    erst durch die unbegrenzte Außenwand läuft.
+  - **Kritisch — Bestzeiten manipulierbar (GD-K3/Code-W7)**: ein neues
+    `Main.twitch_assisted`-Flag (gesetzt von jedem wirksamen Twitch-Befehl,
+    zurückgesetzt bei jedem Level-/Run-Start) sorgt zusammen mit dem
+    bestehenden `debug_mode`-Flag dafür, dass ein unterstützter oder
+    Testbuild-Lauf nie in `Speedrun.best_times`/die Bestenliste geschrieben
+    wird — die Banner-Meldung zeigt stattdessen "nicht gewertet".
+  - **Kritisch — Minimap-Pfeil gespiegelt (GD-K4/UX-K2/Code-W11)**: falsches
+    Vorzeichen bei der Blickrichtungs-Rotation (`p.rotated(yaw)` statt
+    `p.rotated(-yaw)`) plus fehlender Zellen-Mittelpunkt-Offset für
+    Spieler-/Gegner-Marker auf der Minimap behoben.
+  - **Kritisch — CapsuleShape3D-Radius-Clamp (Code-N8, in-engine bestätigt)**:
+    Godot klemmt beim Collider-Aufbau automatisch dasjenige von
+    `radius`/`height`, das als zweites gesetzt wird — die bisherige
+    Reihenfolge (`radius` vor `height`) hatte den echten Kollisionsradius
+    stillschweigend von 0.34 auf 0.2 geschrumpft. Reihenfolge getauscht
+    (`height` zuerst).
+  - **Designentscheidung — Metro-Stationen** ("reiner Explorer, Metro
+    beendet Level", löst den GD-W1-vs-UX-K4-Konflikt): Punkte sind in
+    Manhattan keine Abschlussbedingung mehr, geben aber weiterhin Punkte;
+    einzig das Berühren einer U-Bahn-Station beendet den Lauf und trägt ihn
+    in die Bestenliste ein.
+  - **Designentscheidung — Fear & Loathing** ("Beides kombinieren", löst den
+    UX-K1-vs-GD-W7-Konflikt): die zufällige Wandkollisions-Umschaltung und
+    die unfreiwillige Eigenbewegung im Stillstand sind entfernt; als realer
+    Gegenwert bremsen jetzt alle Geister während des Effekts auf 70 % ab
+    (`Enemy.update`s neuer `speed_mult`-Parameter).
+  - **Designentscheidung — Labyrinth-Mittelspalte/Schleifenanteil** (GD-W4/
+    Code-W9, "Ja, umsetzen"): bei geradem `mid` war die Mittelspalte
+    strukturell immer eine Wand, wodurch beide Labyrinthhälften nur über
+    den einen Wrap-Tunnel verbunden waren. Jetzt werden deterministisch
+    2–3 echte Durchbrüche durch die Mittelspalte erzwungen (seed-basiert,
+    außerhalb des Geisterhauses); zusätzlich ist der Schleifenanteil von
+    0.16 auf 0.4 angehoben. Ein neuer Konnektivitätstest
+    (`connectivity_check_no_wrap`) prüft Erreichbarkeit explizit ohne den
+    Wrap-Tunnel mitzuzählen.
+  - **Designentscheidung — Pause & Timer** (GD-W6/UX-W7/Code-W3, "Pause
+    kostet Zeit"): `now` — die Uhr, gegen die jeder Effekt-Timer
+    (Frightened/Word-Mode/Fear) gemessen wird — lief bisher auch während
+    einer Pause unbemerkt weiter und ließ Effekte so lautlos Zeit verlieren.
+    `now` friert jetzt während einer Pause wirklich ein; die während der
+    Pause verstrichene Realzeit wird separat in `level_paused_elapsed`
+    mitgezählt und der Speedrun-/Bestenlisten-Zeit beim Levelabschluss
+    wieder zugeschlagen — Pausieren bleibt also kein kostenloser Weg, die
+    Uhr anzuhalten.
+  - **Levelstart: Blick zum ersten offenen Nachbarn** (GD-W10, das
+    Beispiel, das diese Review-Runde ausgelöst hat): statt einer fest
+    einprogrammierten Blickrichtung wählt `Main._facing_yaw_for_start()`
+    jetzt von den vier Himmelsrichtungen diejenige mit dem längsten offenen
+    Korridor dahinter (mit hartem Schrittlimit `rows+cols` gegen eine
+    Endlosschleife bei vollständig offenen Zeilen/Spalten).
+  - Getestet: `tests/test_maze.gd` (240 Checks, inkl. neuer
+    No-Wrap-Konnektivität), `tests/test_speedrun.gd` (21 Checks, inkl. der
+    neuen Zielzeiten-Untergrenzen), `tests/test_conditions.gd` (15 Checks,
+    angepasst an das neue Matrix-Ghost-Noclip-Design) und
+    `tests/bot_test.gd` (130 Checks) — neu u. a.: Levelstart ohne
+    Wand-vor-der-Nase, Noclip-Softlock-Erholung, Twitch-Assisted-Lauf wird
+    nicht gewertet, Fear-&-Loathing-Stillstand ohne Eigenbewegung plus
+    tatsächlich angewandte Geister-Verlangsamung, Metro-only-Abschluss
+    (Punkte allein reichen nicht), Pause friert den Effekt-Timer ein und
+    zählt trotzdem zur Speedrun-Zeit, sowie ein Word-Mode/Fear-&-Loathing-
+    Überlappungstest (Code-W1: ein Effekt endet, während ein zweiter noch
+    aktiv ist — Kollision/`active_condition` müssen danach weiterhin
+    korrekt sein).
+  - **Gegen-Review (alle drei Rollen erneut, nach dieser Runde)**: ergab
+    keine neuen kritischen Befunde. Direkt nachgebessert (Code-Review):
+    `_facing_yaw_for_start()` nutzte `MazeGen.is_open()`s Rand-Clamping
+    fälschlich wie ein Wrap-Verhalten, wodurch die Korridor-Längenmessung
+    auf der Tunnelzeile (u. a. Manhattans Startzelle) unsinnige Werte lieferte;
+    scannt jetzt stattdessen explizit bis zum echten Gitterrand.
+    `_nearest_open_cell_world()` prüfte eine geklemmte, gab aber eine
+    gewrappte Spalte zurück — beide Werte sind jetzt identisch. Reihenfolge
+    von `warp_to()`/`_refresh_player_modifiers()` beim Levelstart getauscht
+    (erst versetzen, dann Noclip/Kondition ableiten). `Enemy.update()`
+    wendet `speed_mult` nicht mehr auf bereits gefressene, zum Haus
+    zurückkehrende Geister an (unbeabsichtigter Zusatzvorteil). Als
+    Design-/Balancing-Fragen für eine spätere Runde zurückgestellt (nicht
+    eigenmächtig entschieden): ob die neuen Zielzeiten nach der
+    Labyrinth-Generator-Änderung noch zur beabsichtigten Schwierigkeit
+    passen, ob der reine Metro-Abschluss in Manhattan zusätzliches
+    Feedback (z. B. sichtbare Punktzahl im Ergebnis-Panel) braucht, ob die
+    Geister-Verlangsamung bei Fear & Loathing ein eigenes HUD-Feedback
+    bekommen sollte, eine Versionierung der Labyrinth-Geometrie für
+    Bestzeiten/Bestenlisten (ändert sich die Generator-Logik, vergleichen
+    alte und neue Bestzeiten sonst unbemerkt unterschiedliche Layouts), und
+    ob die "Pause kostet Zeit"-Regel im Pause-Menü selbst sichtbar gemacht
+    werden sollte.
 
 ## Steam-Veröffentlichung
 

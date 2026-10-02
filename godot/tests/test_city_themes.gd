@@ -45,9 +45,17 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal theme should keep the old uniform-height, horizontal-word, fill-every-cell behavior")
 	checks += 1
-	if not normal.ceil_enabled or normal.wall_footprint_scale != 1.0:
+	if not normal.ceil_enabled:
 		failures += 1
-		print("FAIL normal theme should keep its physical ceiling and full-cell-edge-to-edge buildings")
+		print("FAIL normal theme should keep its physical ceiling")
+	checks += 1
+	# Corridors deliberately a bit tighter than one bare CELL now (per user
+	# request) — walls are slightly bigger than their own cell footprint
+	# instead of the old exact edge-to-edge fit (see city_themes.gd's
+	# normal()/CityTheme.wall_footprint_scale).
+	if normal.wall_footprint_scale <= 1.0:
+		failures += 1
+		print("FAIL normal theme's walls should now be slightly bigger than their own cell (narrower corridors), got %f" % normal.wall_footprint_scale)
 
 	# --- manhattan: BUILDING blocks, real landmark provider, no power-ups ---
 	var manhattan = CityThemes.get_theme("manhattan")

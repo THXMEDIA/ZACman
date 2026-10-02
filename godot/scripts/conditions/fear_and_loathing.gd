@@ -33,11 +33,14 @@ func modify_input(v: Vector2, delta: float) -> Vector2:
 		_inverted = not _inverted
 		_next_flip_at = _clock + randf_range(FLIP_MIN_INTERVAL, FLIP_MAX_INTERVAL)
 
-	# No steering, no effect: the noise used to push the player around with
-	# no key pressed (involuntary motion — a motion-sickness trigger).
-	if v.length() < 0.01:
+	# Review findings UX-K1/GD-W2 (combined per the user's own decision: keep
+	# the noise/inversion risk, but remove involuntary self-movement): the
+	# sin/cos noise terms used to add to v even at v == (0,0), so the player
+	# visibly drifted while not touching any input and could never just
+	# stand still to wait something out. Now the noise only perturbs actual
+	# input — standing still (v == zero) is always exactly still.
+	if v.length() < 0.001:
 		return v
-
 	var noisy := Vector2(
 		v.x + sin(_clock * 11.3) * NOISE_AMOUNT,
 		v.y + cos(_clock * 9.7) * NOISE_AMOUNT

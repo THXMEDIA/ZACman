@@ -97,6 +97,13 @@ func _run_checks() -> void:
 	_check("begin_game: lives == 3", main.lives == 3, "got %d" % main.lives)
 	_check("begin_game: enemies spawned", main.enemies.size() >= 3, "got %d" % main.enemies.size())
 
+	# ---- GD-W10: the player must start facing an open corridor, not a wall
+	# in their face (see Main._facing_yaw_for_start) ----
+	var start_yaw: float = main.player.yaw
+	var start_dc: int = roundi(-sin(start_yaw))
+	var start_dr: int = roundi(-cos(start_yaw))
+	_check("level start: player faces an open neighbor cell, not a wall", MazeGen.is_open(main.maze, main.start_cell.x + start_dr, main.start_cell.y + start_dc), "start_cell=%s yaw=%f dr=%d dc=%d" % [main.start_cell, start_yaw, start_dr, start_dc])
+
 	# ---- Matrix wall shader: much more glyph variance, and the new
 	# darker-but-more-luminous color tuning ----
 	var wall_shader: Shader = main.maze_view.wall_material.shader
@@ -106,9 +113,11 @@ func _run_checks() -> void:
 	# just return the "no override" nil rather than the shader's own default;
 	# check the darker/more-saturated defaults straight in the shader source
 	# instead.
-	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.001, 0.012, 0.004)") != -1)
-	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.08, 0.95, 0.22)") != -1)
-	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.2") != -1)
+	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.0004, 0.006, 0.002)") != -1)
+	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.05, 0.92, 0.18)") != -1)
+	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.6") != -1)
+	_check("matrix wall: corridors narrowed via a bigger-than-CELL wall footprint", main.maze_view.city_theme.wall_footprint_scale > 1.0)
+	_check("matrix wall: taller than the previous WALL_H", main.maze_view.WALL_H > 3.8)
 
 	# ---- Background music: an original synthesized "arcade" loop starts a
 	# normal run (see Sfx.play_arcade_music / audio_synth.gd) ----
@@ -208,6 +217,45 @@ func _run_checks() -> void:
 	await get_tree().process_frame
 	_check("collision costs a life", main.lives == lives_before - 1, "before=%d after=%d" % [lives_before, main.lives])
 
+	# ---- can no longer squeeze past a ghost sideways in a corridor (per
+	# user request — see Main.ENEMY_HIT_RADIUS) ----
+	main.begin_game()
+	await get_tree().process_frame
+	var squeeze_cell: Vector2i = main.player.cell()
+	var en_squeeze = main.enemies[0]
+	en_squeeze.mode = "chase"
+	main.frightened_until = 0.0
+	main.invuln_until = main.now + 999.0 # hold off collision while enemy/player get positioned
+	_pin_enemy_at(en_squeeze, squeeze_cell)
+	await get_tree().process_frame # let enemy.update() actually move it onto the pinned cell
+	# 0.7 off to one side would have been outside the old 0.62 hit radius
+	# (i.e. the old "squeeze past" gap) but is well inside the new one.
+	main.player.global_position = Vector3(en_squeeze.position.x + 0.7, main.player.global_position.y, en_squeeze.position.z)
+	var lives_before_squeeze: int = main.lives
+	main.invuln_until = 0.0
+	await get_tree().process_frame
+	_check("can't squeeze past a ghost sideways anymore", main.lives == lives_before_squeeze - 1, "before=%d after=%d" % [lives_before_squeeze, main.lives])
+
+	# ---- ghost speed growth is capped, not unbounded (regression test for
+	# review finding GD-N1 — see Main.GHOST_SPEED_CAP) ----
+	var LevelsForSpeedTest = load("res://scripts/levels.gd")
+	main.level_index = LevelsForSpeedTest.POOL.size() - 1 # extra == 0: speed here must be untouched by the cap
+	main.start_level(LevelsForSpeedTest.by_id("klassik-4")) # the fastest-tuned level (ghost_speed 2.75, 5 ghosts)
+	await get_tree().process_frame
+	var fastest_at_level4: float = 0.0
+	for e in main.enemies:
+		fastest_at_level4 = maxf(fastest_at_level4, e.base_speed)
+	_check("ghost speed cap doesn't affect the tuned early levels", is_equal_approx(fastest_at_level4, 2.95), "fastest=%f" % fastest_at_level4)
+
+	main.level_index = 40 # far past the pool — the old formula would put this around 2.75+0.35+37*0.15 ≈ 8.65 m/s
+	main.start_level(LevelsForSpeedTest.by_id("klassik-1"))
+	await get_tree().process_frame
+	var fastest_at_level41: float = 0.0
+	for e in main.enemies:
+		fastest_at_level41 = maxf(fastest_at_level41, e.base_speed)
+	_check("ghost speed never exceeds GHOST_SPEED_CAP, however high the level", fastest_at_level41 <= main.GHOST_SPEED_CAP + 0.001, "fastest=%f cap=%f" % [fastest_at_level41, main.GHOST_SPEED_CAP])
+	_check("GHOST_SPEED_CAP stays below the player's own speed", main.GHOST_SPEED_CAP < main.player.PLAYER_SPEED, "cap=%f player_speed=%f" % [main.GHOST_SPEED_CAP, main.player.PLAYER_SPEED])
+
 	# ---- losing the last life ends the game ----
 	main.begin_game()
 	await get_tree().process_frame
@@ -239,7 +287,12 @@ func _run_checks() -> void:
 	_check("next level has fresh pellets", main.maze_view.remaining_pickups() > 0)
 
 	# ---- speedrun: a fast clear beats the level-0 target and unlocks the bonus ----
+	# Leaderboard.reset_all() too, not just Speedrun's: begin_game() above (no
+	# forced id) draws a random level, which could by chance already have
+	# been klassik-1 and left an entry on its board, contaminating the
+	# exact-size-1 check below.
 	Speedrun.reset_all()
+	Leaderboard.reset_all()
 	main.begin_game("klassik-1")
 	await get_tree().process_frame
 	main.level_start_real = main.real_now - 5.0 # pretend 5s elapsed, well under every target
@@ -316,6 +369,43 @@ func _run_checks() -> void:
 	_check("twitch commands are ignored while paused", main.frightened_until == frightened_before_pause)
 	main.paused = false
 
+	# ---- GD-W6/UX-W7/Code-W3: pause freezes every effect timer (the "now"
+	# clock itself stops advancing), but the speedrun time still "costs"
+	# the paused duration — it's charged back in separately at completion
+	# (per the user's own decision, "Pause kostet Zeit"). `real_now` is the
+	# always-advancing speedrun clock (never frozen, even by pause); `now`
+	# is the effect clock that pause freezes — see Main's real_now doc
+	# comment. Reuses the still-running game from the twitch-command checks
+	# above rather than calling begin_game() again, which would reset
+	# twitch_assisted and break the "marks this run as assisted" check
+	# right after this block.
+	var now_before_pause: float = main.now
+	var real_now_before_pause: float = main.real_now
+	main.paused = true
+	await get_tree().create_timer(0.3).timeout
+	_check("pause: the game clock (now) freezes while paused", main.now == now_before_pause, "before=%f after=%f" % [now_before_pause, main.now])
+	_check("pause: the speedrun clock (real_now) keeps advancing while paused", main.real_now > real_now_before_pause + 0.1, "got %f" % main.real_now)
+	main.paused = false
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var expected_timer_text := Speedrun.format_time(main.real_now - main.level_start_real)
+	_check("pause: the paused duration is charged to the displayed/recorded time", main.hud.timer_label.text == expected_timer_text, "got=%s want=%s real_now=%f level_start_real=%f" % [main.hud.timer_label.text, expected_timer_text, main.real_now, main.level_start_real])
+
+	# ---- GD-K3/Code-W7: a run any handled Twitch command touched is flagged
+	# and recorded on its own "chat" leaderboard/best-time board, never mixed
+	# into the solo one, so a viewer can't trivialize or falsify a clean
+	# (solo) time ----
+	_check("twitch !power/!fruit mark this run as chat-assisted", main.level_chat_assisted == true and main.run_mode() == "chat")
+	var cleared_level_id: String = main.level_id
+	var solo_best_before: float = Speedrun.best_for(cleared_level_id, main.condition_id, "solo")
+	var solo_board_count_before: int = Leaderboard.get_top(cleared_level_id, main.condition_id, 50, "solo").size()
+	main.level_complete_sequence()
+	_check("chat-assisted clear: solo best time NOT touched", Speedrun.best_for(cleared_level_id, main.condition_id, "solo") == solo_best_before, "before=%s after=%s" % [solo_best_before, Speedrun.best_for(cleared_level_id, main.condition_id, "solo")])
+	_check("chat-assisted clear: solo leaderboard NOT updated", Leaderboard.get_top(cleared_level_id, main.condition_id, 50, "solo").size() == solo_board_count_before)
+	_check("chat-assisted clear: recorded on its own chat board instead", Speedrun.best_for(cleared_level_id, main.condition_id, "chat") >= 0.0)
+	_check("chat-assisted clear: banner names the chat board", main.hud.levelclear_sub.text.find(load("res://scripts/levels.gd").MODE_LABELS["chat"]) != -1, main.hud.levelclear_sub.text)
+	await get_tree().create_timer(2.4).timeout # let the banner/level-advance sequence finish before the next scenario
+
 	# ---- Word Mode power-up: reskins walls/ghosts as letterforms and lets
 	# the player walk through walls for its duration, then reverts ----
 	main.begin_game()
@@ -343,6 +433,24 @@ func _run_checks() -> void:
 		if e.word_skin_active:
 			any_still_skinned = true
 	_check("word mode: reverts after expiry (enemies)", not any_still_skinned)
+
+	# ---- Code-W1 follow-up: Word Mode and the Fear & Loathing pickup can be
+	# picked up while overlapping (one ends mid-flight of the other). Noclip
+	# is derived from the sources that want it (see Main._noclip_wanted), so
+	# this proves overlapping effects can't leave it stuck on or clobber the
+	# other's active_condition ----
+	main._activate_word_mode()
+	main._activate_fear_powerup()
+	await get_tree().process_frame
+	_check("overlap: word+fear both active, noclip still on (word mode)", main.player.collision_mask == 0)
+	main.word_mode_until = main.now - 0.01 # word mode expires first
+	await get_tree().process_frame
+	_check("overlap: word mode expiry while fear still active restores normal collision (fear never needed noclip)", main.player.collision_mask == 2)
+	_check("overlap: active_condition is still the fear condition, not cleared by word mode ending", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+	main.fear_mode_until = main.now - 0.01 # now let fear expire too
+	await get_tree().process_frame
+	_check("overlap: after both expire, active_condition is null (no whole-run condition was selected)", main.player.active_condition == null)
+	_check("overlap: after both expire, collision stays normal", main.player.collision_mask == 2)
 
 	# ---- Fear & Loathing power-up: a risk/reward item. Only from the 2nd
 	# level of a run on, only in dead ends; scrambled steering + psychedelic
@@ -527,14 +635,55 @@ func _run_checks() -> void:
 	_check("manhattan: no word power-up node exists", main.maze_view.word_powerup_nodes.is_empty())
 	_check("manhattan: taxis spawned", main.taxis.size() > 0, "got %d" % main.taxis.size())
 	_check("manhattan: pedestrians spawned", main.pedestrians.size() > 0, "got %d" % main.pedestrians.size())
+	# Per user request, traffic and pedestrians no longer share one bare
+	# street centerline: taxis drive an offset lane, pedestrians walk an
+	# offset sidewalk strip (see Main.MANHATTAN_VEHICLE_LANE_OFFSET/
+	# MANHATTAN_SIDEWALK_OFFSET). A centerline position is always an exact
+	# multiple of CELL (2.0), so fixed_coord mod CELL is the offset applied
+	# — either the constant itself (offset added on the positive side) or
+	# CELL minus it (added on the negative side, which fposmod wraps back
+	# into [0, CELL)) — checked against the real constants directly rather
+	# than a magic-threshold fractional-part test. (This can't just take
+	# the smaller of the two distances to a CELL multiple: once an offset
+	# exceeds half of CELL — true for MANHATTAN_SIDEWALK_OFFSET — the
+	# nearest multiple is genuinely the neighboring street, not the
+	# originating one, so both the offset and CELL-offset are legitimate
+	# readings and both must be accepted.)
+	var taxi_frac: float = fposmod(main.taxis[0].fixed_coord, main.CELL)
+	_check("manhattan: taxis drive an offset lane, not the bare centerline", is_equal_approx(taxi_frac, main.MANHATTAN_VEHICLE_LANE_OFFSET) or is_equal_approx(taxi_frac, main.CELL - main.MANHATTAN_VEHICLE_LANE_OFFSET), "frac=%f expected=%f" % [taxi_frac, main.MANHATTAN_VEHICLE_LANE_OFFSET])
+	var ped_frac: float = fposmod(main.pedestrians[0]._fixed_coord, main.CELL)
+	_check("manhattan: pedestrians walk an offset sidewalk, not the bare centerline", is_equal_approx(ped_frac, main.MANHATTAN_SIDEWALK_OFFSET) or is_equal_approx(ped_frac, main.CELL - main.MANHATTAN_SIDEWALK_OFFSET), "frac=%f expected=%f" % [ped_frac, main.MANHATTAN_SIDEWALK_OFFSET])
+
+	# ---- regression test: a taxi that reaches the end of its street and
+	# reverses must switch to the lane matching its NEW direction, not keep
+	# driving in the lane assigned at spawn (the lane-flip bug caught
+	# independently by the game-designer and code-reviewer review passes) ----
+	var taxi_lf = main.taxis[0]
+	taxi_lf.dir = 1.0
+	taxi_lf._apply_lane()
+	var fixed_at_positive_dir: float = taxi_lf.fixed_coord
+	taxi_lf.pos_along = taxi_lf.max_coord + 1.0 # force it past the end of its street
+	taxi_lf.update(0.0)
+	_check("manhattan: taxi reverses direction at the end of its street", taxi_lf.dir < 0.0, "dir=%f" % taxi_lf.dir)
+	_check("manhattan: taxi switches lanes after reversing, not stuck in its old lane", not is_equal_approx(taxi_lf.fixed_coord, fixed_at_positive_dir), "fixed=%f (was %f)" % [taxi_lf.fixed_coord, fixed_at_positive_dir])
+	_check("manhattan: taxi's new lane matches its new direction", is_equal_approx(taxi_lf.fixed_coord, taxi_lf.base_coord - taxi_lf.lane_offset), "fixed=%f base=%f lane_offset=%f" % [taxi_lf.fixed_coord, taxi_lf.base_coord, taxi_lf.lane_offset])
+
 	var lives_before_obstacle: int = main.lives
 	var ped = main.pedestrians[0]
 	main.player.global_position = Vector3(ped.position.x + 0.05, main.player.global_position.y, ped.position.z)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var d_to_ped := Vector2(main.player.global_position.x - ped.position.x, main.player.global_position.z - ped.position.z).length()
-	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
+	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
 	_check("manhattan: obstacles cost no life", main.lives == lives_before_obstacle)
+
+	# ---- the sidewalk must leave real room to pass a pedestrian without
+	# being shoved into the building face — the bug the critical review
+	# finding was about (wall_footprint_scale 0.48 + sidewalk offset 1.15
+	# left less clearance to the wall than the push-out radius itself) ----
+	var building_face_offset: float = main.CELL - main.CELL * main.maze_view.city_theme.wall_footprint_scale * 0.5
+	var sidewalk_to_wall_clearance: float = building_face_offset - main.MANHATTAN_SIDEWALK_OFFSET
+	_check("manhattan: sidewalk clearance to the building face exceeds the pedestrian push radius", sidewalk_to_wall_clearance > main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS, "clearance=%f radius=%f" % [sidewalk_to_wall_clearance, main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS])
 
 	# ---- Manhattan's Neo-Noir Cyberpunk dressing: real landmark names in
 	# the walls, a neon environment tint, and metro stations that return the
@@ -594,16 +743,19 @@ func _run_checks() -> void:
 	_check("manhattan: pellets form a sparse trail, not one per open cell", main.maze_view.pellet_cells.size() < open_non_reserved, "pellets=%d open_cells=%d" % [main.maze_view.pellet_cells.size(), open_non_reserved])
 	_check("manhattan: there are still enough pellets to form a real trail", main.maze_view.pellet_cells.size() > 5, "got %d" % main.maze_view.pellet_cells.size())
 
+	# Manhattan is an untimed hub: stepping close enough to a metro station's
+	# sign is the only exit, and it starts a normal (scored, timed) speedrun
+	# on a random level of the pool — see _check_metro_entry/_enter_metro.
 	var metro = main.metro_stations[0]
 	main.player.global_position = Vector3(metro.position.x, main.player.global_position.y, metro.position.z)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	# _enter_metro shows a brief banner before actually returning control
-	# (see main.gd) — give its await get_tree().create_timer(1.4) time to
-	# finish rather than checking mid-transition.
+	# _enter_metro shows a brief "SUBWAY" banner (create_timer(1.4)) before
+	# calling begin_game() — give it time to finish rather than checking
+	# mid-transition.
 	await get_tree().create_timer(1.6).timeout
 	_check("manhattan: entering a metro station ends the Manhattan run", main.playing_manhattan == false)
-	_check("manhattan: entering a metro station returns to the normal speedrun", main.running == true and main.level_index == 0)
+	_check("manhattan: entering a metro station starts a normal speedrun level", main.running == true and main.level_id != "")
 	var normal_theme = load("res://scripts/city_themes.gd").get_theme("normal")
 	_check("manhattan: normal environment restored after metro exit", main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
 
@@ -617,10 +769,20 @@ func _run_checks() -> void:
 	_check("conditions: matrix_ghost turns on player noclip", main.player.collision_mask == 0)
 	_check("conditions: matrix_ghost wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "matrix_ghost")
 
+	# ---- GD-K2/Code-K1: noclip softlock fix. While noclip is on (matrix_ghost
+	# above), walk the player somewhere a normal player could never be — well
+	# outside the maze bounds — then switch away from matrix_ghost (noclip
+	# off). Main._refresh_noclip must call _rescue_player_from_wall and
+	# relocate the player into a real open cell instead of leaving them
+	# stuck outside the maze/embedded in a wall with collision suddenly on ----
+	main.player.global_position = Vector3(main.player.global_position.x, main.player.global_position.y, -999.0)
 	main.set_condition("fear_and_loathing")
 	await get_tree().process_frame
 	_check("conditions: switching condition reverts the previous one (word mode off)", main.maze_view.word_mode_active == false)
 	_check("conditions: switching condition reverts the previous one (noclip off)", main.player.collision_mask == 2)
+	var relocated_cell: Vector2i = main.player.cell()
+	_check("noclip softlock fix: player relocated into the maze bounds", relocated_cell.x >= 0 and relocated_cell.x < main.maze.rows)
+	_check("noclip softlock fix: player relocated into an open cell, not a wall", MazeGen.is_open(main.maze, relocated_cell.x, relocated_cell.y), "cell=%s" % relocated_cell)
 	_check("conditions: fear_and_loathing wires itself onto the player", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
 
 	main.set_condition("")

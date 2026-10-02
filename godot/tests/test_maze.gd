@@ -28,6 +28,17 @@ func _initialize() -> void:
 				failures += 1
 				print("FAIL tunnel row not open at edges: level=%d seed=%d" % [level_index, seed_value])
 
+			# Review findings GD-W4/Code-W9 ("beide Hälften hängen nur am
+			# Tunnel") are addressed per-level, not in the base algorithm's
+			# defaults: Levels.POOL gives most levels a raised loop_prob
+			# (see test_levels.gd's reference-route/lower-bound checks) and
+			# dedicated levels ("offen", "durchbruch") that deliberately
+			# compare more loops vs. explicit mid-column breakthroughs — see
+			# test_levels.gd for the connectivity assertions specific to
+			# those. A default generate_maze() call (no opts, as used here)
+			# is intentionally still allowed to connect only via the wrap
+			# tunnel when its mid column is even.
+
 	maze_gen.free()
 	print("")
 	if failures == 0:

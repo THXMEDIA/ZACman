@@ -135,7 +135,7 @@ func generate_maze(rows: int, cols: int, seed_value: int, opts: Dictionary = {})
 		for cc in room_cols_left:
 			if inside_house.call(rr, cc):
 				continue
-			if cc + 2 <= mid and not inside_house.call(rr, cc + 2) and rng.next_float() < 0.16:
+			if cc + 2 <= mid and not inside_house.call(rr, cc + 2) and rng.next_float() < loop_prob:
 				grid[rr][cc + 1] = 0
 			var r2: int = rr + 2
 			if room_rows.has(r2) and not inside_house.call(r2, cc) and rng.next_float() < loop_prob:
@@ -239,6 +239,62 @@ func connectivity_check(maze: Maze) -> Dictionary:
 		return {"total": 0, "unreachable": 0, "ok": true}
 	var start: Vector2i = rooms[0]
 	var dist := bfs(maze, start.x, start.y)
+	var unreachable := 0
+	for cell in rooms:
+		if dist[cell.x][cell.y] == -1:
+			unreachable += 1
+	return {"total": rooms.size(), "unreachable": unreachable, "ok": unreachable == 0}
+
+
+## Same as neighbors_of/bfs/connectivity_check above, but the column-wrap
+## tunnel neighbor is never counted as a connection — used to prove the
+## maze's left and right halves are connected by the maze's own geometry
+## (see the mid-column breach carved above) and not merely by the single
+## wrap-tunnel row, which `connectivity_check` would otherwise credit as a
+## real path (see review findings GD-W4/Code-W9).
+func neighbors_of_no_wrap(maze: Maze, r: int, c: int) -> Array:
+	var out := []
+	var candidates := []
+	if c > 0:
+		candidates.append(Vector2i(r, c - 1))
+	if c < maze.cols - 1:
+		candidates.append(Vector2i(r, c + 1))
+	candidates.append(Vector2i(r - 1, c))
+	candidates.append(Vector2i(r + 1, c))
+	for cand in candidates:
+		if is_open(maze, cand.x, cand.y):
+			out.append(cand)
+	return out
+
+
+func bfs_no_wrap(maze: Maze, start_r: int, start_c: int) -> Array:
+	var dist := []
+	for r in range(maze.rows):
+		var row := []
+		row.resize(maze.cols)
+		row.fill(-1)
+		dist.append(row)
+	if not is_open(maze, start_r, start_c):
+		return dist
+	dist[start_r][start_c] = 0
+	var queue := [Vector2i(start_r, start_c)]
+	var qi := 0
+	while qi < queue.size():
+		var cur: Vector2i = queue[qi]
+		qi += 1
+		for n in neighbors_of_no_wrap(maze, cur.x, cur.y):
+			if dist[n.x][n.y] == -1:
+				dist[n.x][n.y] = dist[cur.x][cur.y] + 1
+				queue.append(n)
+	return dist
+
+
+func connectivity_check_no_wrap(maze: Maze) -> Dictionary:
+	var rooms := cells_in_room(maze, true)
+	if rooms.is_empty():
+		return {"total": 0, "unreachable": 0, "ok": true}
+	var start: Vector2i = rooms[0]
+	var dist := bfs_no_wrap(maze, start.x, start.y)
 	var unreachable := 0
 	for cell in rooms:
 		if dist[cell.x][cell.y] == -1:

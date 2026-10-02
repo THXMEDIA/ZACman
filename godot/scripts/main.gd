@@ -10,7 +10,44 @@ const WORD_MODE_DURATION := 12.0
 const FEAR_MODE_DURATION := 10.0
 const FEAR_SCORE_MULTIPLIER := 2 # the Fear pickup's reward: double points while it runs
 const FEAR_FIRST_LEVEL := 1 # levels already cleared in the run before Fear pickups appear (i.e. from the 2nd level on)
+## Ghost hit-trigger distance (center-to-center; ghosts have no physical
+## collider of their own, so this is the only thing standing between a
+## ghost and the player in a corridor). The old 0.62 left just enough
+## clearance in a one-wide corridor (MazeView.CELL/wall_footprint_scale) for
+## the player to hug one wall and slip past a ghost sitting in the corridor
+## instead of colliding with it (see review finding GD-N4). Raised well
+## past the corridor's own width so that's no longer possible at all, per
+## user request ("kein Ausweichen mit Gegner möglich machen, nicht seitlich
+## vorbei können") — a ghost in the way now has to be eaten (frightened),
+## evaded by backing off into a side passage, or run into.
+const ENEMY_HIT_RADIUS := 0.85
 const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
+
+const LEVELS := [
+	{"rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed_base": 10000},
+	{"rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed_base": 20000},
+	{"rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed_base": 30000},
+	{"rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed_base": 40000},
+]
+
+## Past the last defined LEVELS entry, start_level() keeps raising ghost
+## speed by `extra * 0.15` per level forever (see start_level's `extra`) —
+## flagged by review finding GD-N1 (docs/review/berichte/2026-10-01.md):
+## worked out from the actual formula, the fastest ghost hits 4.45 m/s at
+## level 13, already past PlayerController.PLAYER_SPEED (4.4), and every
+## ghost outruns the player from level 15 on — with the new no-sidestep
+## ENEMY_HIT_RADIUS there's then no way to out-walk one at all. Capped at
+## ~90% of PLAYER_SPEED, matching the review's own suggested figure
+## (worked back from PLAYER_SPEED=4.4 in player_controller.gd — kept as a
+## literal here rather than cross-referencing that script's const, to
+## avoid coupling an unrelated file's load order to this one). A ghost can
+## still be faster than this while frightened/eaten (see enemy.gd's
+## per-mode speed multipliers, which apply on top of this cap). Further
+## difficulty scaling past the cap (e.g. shorter FRIGHTENED_DURATION per
+## level, per the review's own suggestion) is intentionally not done here
+## — flagged to the user as a separate balancing decision, not bundled
+## into this fix.
+const GHOST_SPEED_CAP := 3.96
 
 ## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
 ## explore level. Traffic and pedestrians are its only obstacles: harmless,
@@ -22,6 +59,27 @@ const MANHATTAN_TAXI_ROW_COUNT := 5
 const MANHATTAN_TAXI_COL_COUNT := 4
 const MANHATTAN_PEDESTRIAN_COUNT := 16
 const MANHATTAN_OBSTACLE_RADIUS := 0.55
+## Pedestrians get their own, smaller push-out radius. With the shared
+## 0.55 radius, the push zone around a sidewalk pedestrian reached past the
+## sidewalk strip into the building face itself, leaving no actual gap for
+## the player to walk through next to them — directly contradicting the
+## "neben Passanten... vorbei" request. 0.35 keeps a soft bump against
+## pedestrians while leaving real room to pass on the building side.
+const MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS := 0.35
+## Streets used to put taxis AND pedestrians on the exact same centerline
+## (per user request: "mehrspurig für Verkehr und daneben Fußweg" — traffic
+## needs real lanes, and pedestrians need a sidewalk clear of them, not one
+## shared line down the middle of the street). MANHATTAN_VEHICLE_LANE_OFFSET
+## splits traffic into two lanes either side of the centerline (one per
+## direction — see Taxi.setup); MANHATTAN_SIDEWALK_OFFSET puts pedestrians
+## on a strip further out, near the building edge, clear of both lanes. Both
+## stay well inside the canyon between two building faces (see CityTheme.
+## wall_footprint_scale in city_themes.gd's manhattan()) — with that scale
+## at 0.40, the building face sits 1.6 world units off the street
+## centerline, so a 1.1 sidewalk offset leaves ~0.5 clearance to the wall,
+## comfortably more than MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS (0.35).
+const MANHATTAN_VEHICLE_LANE_OFFSET := 0.45
+const MANHATTAN_SIDEWALK_OFFSET := 1.1
 const MANHATTAN_METRO_COUNT := 4
 const MANHATTAN_METRO_RADIUS := 0.75
 const MANHATTAN_LIMO_COLOR := Color(0.82, 0.86, 0.95) # chrome/silver
@@ -205,9 +263,15 @@ func start_level(level: Dictionary) -> void:
 	fear_mode_until = 0.0
 	_fear_condition_instance = null
 	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
+	frightened_until = 0.0 # Code-W4: a power-pellet window must never survive into the next level/attempt
+	combo_count = 0
+	# Warp to the fresh start_cell BEFORE refreshing noclip, not after —
+	# _refresh_noclip() can relocate the player via _rescue_player_from_wall()
+	# if collision just turned on, and running that against the PREVIOUS
+	# level's position/maze risked an unnecessary extra teleport right
+	# before warp_to overwrote it anyway.
+	player.warp_to(start_cell, _facing_yaw_for_start(start_cell)) # GD-W10: look down the longest open corridor instead of a fixed direction
 	_refresh_noclip()
-
-	player.warp_to(start_cell, PI)
 	invuln_until = now + 1.2
 
 	for e in enemies:
@@ -226,7 +290,7 @@ func start_level(level: Dictionary) -> void:
 		enemy.set_script(load("res://scripts/enemy.gd"))
 		enemy_root.add_child(enemy)
 		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
-		enemy.setup(pal.color, pal.glow, level.ghost_speed + i * 0.05 + extra * 0.15)
+		enemy.setup(pal.color, pal.glow, minf(level.ghost_speed + i * 0.05 + extra * 0.15, GHOST_SPEED_CAP)) # GD-N1: capped so ghosts never outrun the player past the tuned levels
 		var cell: Vector2i = house_cells[i % house_cells.size()]
 		enemy.place_in_house(cell)
 		enemy.release_at = now + 1.5 + i * 1.4
@@ -292,9 +356,11 @@ func start_manhattan_level() -> void:
 	fear_mode_until = 0.0
 	_fear_condition_instance = null
 	player.active_condition = current_condition
+	frightened_until = 0.0
+	combo_count = 0
+	# Warp before refreshing noclip, not after — see start_level()'s matching comment.
+	player.warp_to(start_cell, _facing_yaw_for_start(start_cell)) # GD-W10
 	_refresh_noclip()
-
-	player.warp_to(start_cell, PI)
 	invuln_until = now + 1.2
 
 	for e in enemies:
@@ -306,6 +372,60 @@ func start_manhattan_level() -> void:
 
 	hud.set_level("MANHATTAN")
 	hud.set_explorer_hud(true) # no timer / score / lives / best time here
+
+
+## ---------------- start facing / noclip-end safety ----------------
+
+## Review finding GD-W10: the start cell sits in the bottom-most room row,
+## and the old fixed `warp_to(start_cell, PI)` faced the camera straight at
+## the (1-unit-away) outer wall there, every single run — "jedes Matrix-
+## Level beginnt mit Blick auf die Außenwand". Picks the start cell's open
+## neighbor with the longest straight corridor behind it instead, so the
+## player always spawns looking down a real passage.
+func _facing_yaw_for_start(cell: Vector2i) -> float:
+	# yaw convention matches player_controller.gd's _physics_process
+	# (dir_x = -sin(yaw), dir_z = -cos(yaw)): yaw=0 faces -Z/north (row-1),
+	# PI faces +Z/south (row+1), -PI/2 faces +X/east (col+1), PI/2 faces
+	# -X/west (col-1).
+	var dirs := [
+		{"dr": -1, "dc": 0, "yaw": 0.0},
+		{"dr": 1, "dc": 0, "yaw": PI},
+		{"dr": 0, "dc": 1, "yaw": -PI / 2.0},
+		{"dr": 0, "dc": -1, "yaw": PI / 2.0},
+	]
+	var best_yaw := PI # fallback: old default, only used if the start cell is somehow fully enclosed
+	var best_len := -1
+	for d in dirs:
+		if not MazeGen.is_open(maze, cell.x + d.dr, cell.y + d.dc):
+			continue
+		var length := 0
+		var rr: int = cell.x
+		var cc: int = cell.y
+		# Code-review follow-up: MazeGen.is_open() does NOT wrap the column
+		# index — it CLAMPS any out-of-range column to the nearest edge
+		# column (0 or cols-1) and only returns false for an out-of-range
+		# row. An east/west scan that just kept calling is_open() past the
+		# grid edge would therefore keep re-reading that single edge column
+		# forever if it happens to be open (which it reliably is on the
+		# tunnel row — e.g. Manhattan's start sits exactly on it), making
+		# the scan hit the old hard step cap on every such start instead of
+		# measuring a real corridor. Stop explicitly at the grid boundary
+		# instead of trusting is_open()'s clamp to signal "no further cell".
+		var max_steps: int = maze.rows + maze.cols # still kept as a final safety net
+		while length < max_steps:
+			var nr: int = rr + d.dr
+			var nc: int = cc + d.dc
+			if nr < 0 or nr >= maze.rows or nc < 0 or nc >= maze.cols:
+				break
+			if not MazeGen.is_open(maze, nr, nc):
+				break
+			length += 1
+			rr = nr
+			cc = nc
+		if length > best_len:
+			best_len = length
+			best_yaw = d.yaw
+	return best_yaw
 
 
 func _clear_manhattan_obstacles() -> void:
@@ -397,7 +517,7 @@ func _spawn_manhattan_obstacles() -> void:
 		obstacle_root.add_child(taxi)
 		var v := _pick_weighted_vehicle(vehicle_pool)
 		var speed: float = v["speed_min"] + randf() * (v["speed_max"] - v["speed_min"])
-		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, speed, v["word"], v["color"], v["font_size"])
+		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, speed, v["word"], v["color"], v["font_size"], MANHATTAN_VEHICLE_LANE_OFFSET)
 		taxis.append(taxi)
 	for i in mini(MANHATTAN_TAXI_COL_COUNT, col_choices.size()):
 		var taxi2 := Node3D.new()
@@ -405,7 +525,7 @@ func _spawn_manhattan_obstacles() -> void:
 		obstacle_root.add_child(taxi2)
 		var v2 := _pick_weighted_vehicle(vehicle_pool)
 		var speed2: float = v2["speed_min"] + randf() * (v2["speed_max"] - v2["speed_min"])
-		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, speed2, v2["word"], v2["color"], v2["font_size"])
+		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, speed2, v2["word"], v2["color"], v2["font_size"], MANHATTAN_VEHICLE_LANE_OFFSET)
 		taxis.append(taxi2)
 
 	var pedestrian_scripts := [
@@ -420,18 +540,18 @@ func _spawn_manhattan_obstacles() -> void:
 		ped.set_script(load(script_path))
 		obstacle_root.add_child(ped)
 		var speed := 0.8 + randf() * 0.7
+		var side := 1.0 if randf() > 0.5 else -1.0 # which building edge's sidewalk, so both sides of a street get walked
 		if row_choices.is_empty() or (not col_choices.is_empty() and randf() > 0.5):
 			var col: int = col_choices[randi() % col_choices.size()]
-			ped.setup(Vector3(col * CELL, 0.4, min_z), "col", min_z, max_z, speed)
+			ped.setup(Vector3(col * CELL + side * MANHATTAN_SIDEWALK_OFFSET, 0.4, min_z), "col", min_z, max_z, speed)
 		else:
 			var row: int = row_choices[randi() % row_choices.size()]
-			ped.setup(Vector3(min_x, 0.4, row * CELL), "row", min_x, max_x, speed)
+			ped.setup(Vector3(min_x, 0.4, row * CELL + side * MANHATTAN_SIDEWALK_OFFSET), "row", min_x, max_x, speed)
 		pedestrians.append(ped)
 
 
 ## Glowing "SUBWAY" signs at the reserved metro cells; entering one ends
-## the Manhattan run and drops the player back into the normal speedrun
-## progression (see _check_metro_entry / _enter_metro).
+## and scores the Manhattan run (see _check_metro_entry).
 func _spawn_metro_stations(metro_cells: Array) -> void:
 	for cell in metro_cells:
 		var station := Node3D.new()
@@ -443,13 +563,13 @@ func _spawn_metro_stations(metro_cells: Array) -> void:
 
 func _check_manhattan_obstacles() -> void:
 	for t in taxis:
-		_push_player_away_from(t.position)
+		_push_player_away_from(t.position, MANHATTAN_OBSTACLE_RADIUS)
 	for p in pedestrians:
-		_push_player_away_from(p.position)
+		_push_player_away_from(p.position, MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
-## exit: it starts a speedrun on a random level of the pool.
+## exit: it starts a speedrun on a random level of the pool (see _enter_metro).
 func _check_metro_entry() -> void:
 	for m in metro_stations:
 		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
@@ -470,17 +590,20 @@ func _enter_metro() -> void:
 	begin_game()
 
 
-## Soft-blocks the player out to MANHATTAN_OBSTACLE_RADIUS from an obstacle
-## — an "obstacle you can't walk through" without needing a real physics
-## body on a continuously-moving node. Never touches lives/score: Manhattan
-## obstacles are harmless by design (see this file's Manhattan header).
-func _push_player_away_from(obstacle_pos: Vector3) -> void:
+## Soft-blocks the player out to `radius` from an obstacle — an "obstacle
+## you can't walk through" without needing a real physics body on a
+## continuously-moving node. Never touches lives/score: Manhattan obstacles
+## are harmless by design (see this file's Manhattan header). Taxis and
+## pedestrians pass their own radius (MANHATTAN_OBSTACLE_RADIUS /
+## MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS) so the pedestrian push zone can be
+## smaller, leaving real sidewalk room to pass next to them.
+func _push_player_away_from(obstacle_pos: Vector3, radius: float) -> void:
 	var away := Vector2(player.global_position.x - obstacle_pos.x, player.global_position.z - obstacle_pos.z)
 	var d := away.length()
 	if d <= 0.0001:
-		player.global_position.x += MANHATTAN_OBSTACLE_RADIUS
-	elif d < MANHATTAN_OBSTACLE_RADIUS:
-		var push := away.normalized() * (MANHATTAN_OBSTACLE_RADIUS - d)
+		player.global_position.x += radius
+	elif d < radius:
+		var push := away.normalized() * (radius - d)
 		player.global_position.x += push.x
 		player.global_position.z += push.y
 
@@ -551,6 +674,11 @@ func _on_twitch_connection_changed(is_connected: bool) -> void:
 func _on_twitch_command(_user: String, command: String, _args: String) -> void:
 	if not (running and not paused) or playing_manhattan:
 		return
+	# GD-K3/Code-W7: any chat command that actually did something marks the
+	# run currently being timed as assisted — see level_complete_sequence /
+	# manhattan_complete_sequence, which then skip writing the time to
+	# Speedrun.best_times / Leaderboard so a viewer's (or the streamer's own
+	# phone's) !power can't trivialize or falsify a recorded run.
 	match command:
 		"power":
 			_mark_chat_assisted()
@@ -583,7 +711,9 @@ func run_mode() -> String:
 
 
 func next_level() -> void:
-	invuln_until = now + 0.5
+	# invuln_until is set by start_level() itself a few lines in (review
+	# finding Code-W4: an earlier `invuln_until = now + 0.5` here was dead
+	# code, always immediately overwritten).
 	level_index += 1
 	start_level(LevelsScript.draw_next(played_ids, level_id, level_rng))
 
@@ -713,7 +843,7 @@ func _process(delta: float) -> void:
 	now += delta
 
 	player.wrap_tunnel(maze.cols * CELL)
-	_keep_noclip_player_in_maze()
+	_keep_noclip_player_in_maze() # GD-K2/Code-K1: a noclipping player must not be able to walk out through the unbounded north/south outer wall
 
 	var frightened_active := now < frightened_until
 	var player_cell: Vector2i = player.cell()
@@ -773,7 +903,7 @@ func _check_enemy_collision(enemy, frightened_active: bool) -> void:
 	if now <= invuln_until:
 		return
 	var d := Vector2(enemy.position.x - player.global_position.x, enemy.position.z - player.global_position.z).length()
-	if d < 0.62:
+	if d < ENEMY_HIT_RADIUS:
 		if frightened_active:
 			enemy.mode = "eaten"
 			enemy.eaten_until = now + 2.2
@@ -834,7 +964,12 @@ func _check_pickups() -> void:
 		fruit_spawned = true
 		maze_view.spawn_fruit(now)
 
-	if maze_view.remaining_pickups() <= 0 and running:
+	# Manhattan is an untimed hub with no completion condition at all (see
+	# start_manhattan_level's header comment) — only a metro station ends a
+	# visit there (_check_metro_entry/_enter_metro). Collecting every pellet
+	# must never trigger level_complete_sequence(), which assumes a normal
+	# Levels.POOL level (current_level/level_id would be empty/invalid).
+	if not playing_manhattan and maze_view.remaining_pickups() <= 0 and running:
 		level_complete_sequence()
 
 

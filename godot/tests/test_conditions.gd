@@ -71,10 +71,21 @@ func _initialize() -> void:
 	if not fake_main.maze_view.word_mode_active:
 		failures += 1
 		print("FAIL matrix_ghost.on_start should turn on maze_view word mode")
+	# Noclip is deliberately NOT asserted here (and matrix_ghost.gd no longer
+	# touches player.set_noclip at all — see review finding Code-W2): the
+	# old on_start/on_end calls to main.player.set_noclip() got silently
+	# clobbered whenever start_manhattan_level() ran right after
+	# set_condition(), since that unconditionally reset collision back on a
+	# few lines later. Noclip is now derived centrally by
+	# Main._refresh_player_modifiers() (from current_condition.id ==
+	# "matrix_ghost"), called at every point that could affect it — a real
+	# Main instance, not this fake, so that path is covered end-to-end by
+	# bot_test.gd's "matrix ghost condition actually sets noclip through the
+	# real start path" check instead of here.
 	checks += 1
-	if not fake_main.player.noclip_active:
+	if fake_main.player.noclip_active:
 		failures += 1
-		print("FAIL matrix_ghost.on_start should turn on player noclip")
+		print("FAIL matrix_ghost.on_start should no longer touch player noclip directly (see Code-W2)")
 	checks += 1
 	var all_reskinned := true
 	for e in fake_main.enemies:
@@ -86,9 +97,9 @@ func _initialize() -> void:
 
 	ghost.on_end(fake_main)
 	checks += 1
-	if fake_main.maze_view.word_mode_active or fake_main.player.noclip_active:
+	if fake_main.maze_view.word_mode_active:
 		failures += 1
-		print("FAIL matrix_ghost.on_end should revert maze_view word mode and player noclip")
+		print("FAIL matrix_ghost.on_end should revert maze_view word mode")
 	checks += 1
 	var any_still_reskinned := false
 	for e in fake_main.enemies:

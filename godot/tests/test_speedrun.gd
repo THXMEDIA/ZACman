@@ -34,6 +34,11 @@ func _initialize() -> void:
 			failures += 1
 			print("FAIL format_time(%s) = %s, expected %s" % [c[0], got, c[1]])
 
+	# target_for()'s hard-lower-bound guarantee (GD-K1) is verified against
+	# the actual per-level target_s / reference route in test_levels.gd,
+	# which rebuilds each level's real maze — a stronger check than
+	# hardcoded numbers here could be.
+
 	# --- record_level_time on a fresh instance ------------------------
 	var sr = speedrun_script.new()
 
@@ -47,7 +52,7 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL best_for(klassik-1) should be -1.0 before any run")
 
-	# First run on klassik-1, slower than target (115.0) -> no bonus, is new best.
+	# First run on klassik-1, slower than target -> no bonus, is new best.
 	var r1: Dictionary = sr.record_level_time("klassik-1", 200.0)
 	checks += 1
 	if not r1.is_new_best or r1.beat_target or r1.newly_unlocked_bonus:
