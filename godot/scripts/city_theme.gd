@@ -71,6 +71,12 @@ var wall_vertical_text := false
 ## (still one solid block centered in its cell, so nothing can be cut
 ## through diagonally), just visibly and physically wider streets.
 var wall_footprint_scale := 1.0
+## When true (with wall_vertical_text), each block's hochkant lettering is
+## squeezed to fit inside that block's footprint (CELL * wall_footprint_scale)
+## in width and depth — so the letters never hang out over the street and the
+## street looks as wide as it physically is. Off by default (other themes
+## unchanged).
+var wall_word_fit_footprint := false
 
 ## ---- Optional per-cell landmark override ----
 ## A script exposing a static `landmark_at(row: int, col: int) -> String`

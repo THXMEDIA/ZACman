@@ -121,6 +121,24 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL build_vertical_stack should not scale a letter's depth (Z) with height, got scale.z=%f" % tall_stack.get_child(0).scale.z)
 
+	# max_width/max_depth keep a tall building's letters inside its footprint.
+	var fit_stack = wm.build_vertical_stack("SKYSCRAPER", Color(1, 1, 1), 64.0, {"depth": 2.6, "max_width": 0.8, "max_depth": 0.8})
+	var widest := 0.0
+	var deepest := 0.0
+	for c in fit_stack.get_children():
+		var bb: AABB = c.mesh.get_aabb()
+		widest = maxf(widest, bb.size.x * c.scale.x)
+		deepest = maxf(deepest, bb.size.z * c.scale.z)
+	checks += 1
+	if widest > 0.8 + 0.001 or deepest > 0.8 + 0.001:
+		failures += 1
+		print("FAIL build_vertical_stack max_width/max_depth should cap letters at 0.8, got width=%f depth=%f" % [widest, deepest])
+	var fit_top: float = fit_stack.get_child(0).position.y
+	checks += 1
+	if fit_top < 60.0:
+		failures += 1
+		print("FAIL build_vertical_stack with max_width should still span the full height, top letter at %f" % fit_top)
+
 	# An empty/degenerate call should return an empty root, not crash.
 	var empty_stack = wm.build_vertical_stack("", Color(1, 1, 1), 8.0)
 	checks += 1

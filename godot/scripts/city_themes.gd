@@ -109,6 +109,12 @@ static func manhattan() -> Resource:
 	# face than the pedestrian push-out radius — i.e. no actual room to
 	# pass — so this went down to 0.40 alongside those two constants.
 	t.wall_footprint_scale = 0.40
+	# The real culprit behind "Manhattan ist zu eng" (QA screenshot
+	# 2026-10-02): the hochkant letters scaled with building height, so a
+	# skyscraper's letters were several units wide/deep and hung far out over
+	# the 3.2-wide street, even though collision was only 0.8 wide. Fit the
+	# lettering to the footprint so the street looks as wide as it is.
+	t.wall_word_fit_footprint = true
 
 	# No physical ceiling plane (see CityTheme.ceil_enabled) — real-height
 	# skyscrapers need open sky above them, not a flat roof at the old

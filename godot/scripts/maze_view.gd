@@ -195,7 +195,12 @@ func _wall_height_for_cell(cell: Vector2i, landmark_name: String) -> float:
 ## the facing rotation.
 func _build_wall_word(word: String, color: Color, height: float, font_size: int, depth: float, emission_energy: float) -> Node3D:
 	if city_theme.wall_vertical_text:
-		return WordMeshScript.build_vertical_stack(word, color, height, {"font_size": font_size, "depth": depth, "emission_energy": emission_energy})
+		var opts := {"font_size": font_size, "depth": depth, "emission_energy": emission_energy}
+		if city_theme.wall_word_fit_footprint:
+			var fit: float = CELL * city_theme.wall_footprint_scale
+			opts["max_width"] = fit
+			opts["max_depth"] = fit
+		return WordMeshScript.build_vertical_stack(word, color, height, opts)
 	var wm := WordMeshScript.build(word, color, {"font_size": font_size, "depth": depth, "emission_energy": emission_energy})
 	wm.position.y = height * 0.5
 	return wm
