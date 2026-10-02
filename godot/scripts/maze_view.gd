@@ -76,7 +76,7 @@ var fruit_material: StandardMaterial3D
 ## park on a pellet forever). `metro_cells` (Manhattan only) are the metro-
 ## station cells pellets should route toward — see
 ## CityTheme.pellets_follow_metro_trails / _metro_trail_cells.
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = []) -> void:
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false) -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -103,7 +103,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_build_floor_ceiling()
 	_build_sky_clouds()
 	_build_tunnel_vistas()
-	_build_pellets(start_cell, reserved_cells, metro_cells)
+	_build_pellets(start_cell, reserved_cells, metro_cells, fear_enabled)
 	# A permanently-word-built theme (Manhattan) starts in the word-built-
 	# world look; other themes start out looking normal and only switch when
 	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
@@ -627,7 +627,7 @@ func _metro_trail_cells(candidates: Array, metro_cells: Array, start_cell: Vecto
 	return out
 
 
-func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cells: Array = []) -> void:
+func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false) -> void:
 	var all_cells: Array = MazeGen.cells_in_room(maze, false)
 	var reserved_set := {}
 	for cell in reserved_cells:
@@ -665,13 +665,18 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		for cell in word_powerup_cells:
 			pellet_cells.erase(cell)
 
-	# Fear & Loathing pickup: a second, rarer special pickup type, taken out
-	# of the pellet grid the same way as the WORD pickups above and spread
-	# apart from both the start and the WORD pickups so the two types don't
-	# end up bunched together.
-	if city_theme.has_power_ups and pellet_cells.size() > 0:
+	# Fear & Loathing pickup: a risk/reward item, only when the caller allows
+	# it (from the 2nd level of a run on) and only in dead ends — it lies
+	# off the main routes, so nobody runs into it by accident. Taken out of
+	# the pellet grid like the WORD pickups and spread away from them. A
+	# level with fewer dead ends than FEAR_POWERUP_COUNT gets fewer (or none).
+	if fear_enabled and city_theme.has_power_ups and pellet_cells.size() > 0:
+		var dead_ends := []
+		for cell in pellet_cells:
+			if MazeGen.neighbors_of(maze, cell.x, cell.y).size() == 1:
+				dead_ends.append(cell)
 		var fear_anchor: Vector2i = word_powerup_cells[0] if word_powerup_cells.size() > 0 else start_cell
-		fear_powerup_cells = _pick_multiple_farthest(pellet_cells, FEAR_POWERUP_COUNT, fear_anchor)
+		fear_powerup_cells = _pick_multiple_farthest(dead_ends, FEAR_POWERUP_COUNT, fear_anchor)
 		for cell in fear_powerup_cells:
 			pellet_cells.erase(cell)
 

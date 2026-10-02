@@ -37,6 +37,9 @@ var _eat_1: AudioStreamWAV
 var _eat_2: AudioStreamWAV
 var _eat_3: AudioStreamWAV
 var _death: AudioStreamWAV
+var _fear_start_a: AudioStreamWAV
+var _fear_start_b: AudioStreamWAV
+var _fear_end: AudioStreamWAV
 var _fruit_1: AudioStreamWAV
 var _fruit_2: AudioStreamWAV
 var _clear_notes: Array[AudioStreamWAV] = []
@@ -50,6 +53,12 @@ func _ready() -> void:
 	_eat_2 = _tone(520.0, 0.12, "square", 0.55)
 	_eat_3 = _tone(880.0, 0.16, "square", 0.55)
 	_death = _sweep(420.0, 40.0, 1.15, "sawtooth", 0.55)
+	# Fear & Loathing pickup: a falling square sweep plus a low tritone drone
+	# — deliberately unlike the bright rising Word/Power sounds, so the risk
+	# item is audible as one. The end cue is a short rising chirp.
+	_fear_start_a = _sweep(700.0, 170.0, 0.55, "square", 0.45)
+	_fear_start_b = _tone(122.0, 0.7, "sawtooth", 0.4)
+	_fear_end = _sweep(180.0, 560.0, 0.3, "triangle", 0.45)
 	_fruit_1 = _tone(700.0, 0.08, "sine", 0.45)
 	_fruit_2 = _tone(1000.0, 0.1, "sine", 0.45)
 	for f in [523.0, 659.0, 784.0, 1047.0]:
@@ -102,6 +111,15 @@ func munch() -> void:
 
 func power() -> void:
 	_play(_power)
+
+
+func fear_start() -> void:
+	_play(_fear_start_a)
+	_play(_fear_start_b, 0.05)
+
+
+func fear_end() -> void:
+	_play(_fear_end)
 
 
 func eat_enemy() -> void:

@@ -26,8 +26,22 @@ class Maze:
 	var door_col: int
 	var start_cell: Vector2i = Vector2i(-1, -1)
 
-func generate_maze(rows: int, cols: int, seed_value: int) -> Maze:
+const DEFAULT_LOOP_PROB := 0.16
+
+## `opts` (all optional, defaults reproduce the original mazes exactly):
+##   loop_prob (float)    chance per room edge to knock out an extra wall
+##                        after the spanning tree — higher = fewer dead ends.
+##   breakthroughs (int)  with an even mirror column (`mid`), the middle
+##                        column stays closed and both halves only meet at
+##                        the wrap tunnel; this opens that many doors in it
+##                        (spread over the room rows). No effect when `mid`
+##                        is odd (already a room column). Drawn from the rng
+##                        after everything else, so it never shifts a
+##                        level's base layout.
+func generate_maze(rows: int, cols: int, seed_value: int, opts: Dictionary = {}) -> Maze:
 	assert(rows % 2 == 1 and cols % 2 == 1, "rows/cols must be odd")
+	var loop_prob: float = opts.get("loop_prob", DEFAULT_LOOP_PROB)
+	var breakthroughs: int = opts.get("breakthroughs", 0)
 	var rng := LcgRng.new(seed_value)
 	var maze := Maze.new()
 	maze.rows = rows
@@ -124,12 +138,27 @@ func generate_maze(rows: int, cols: int, seed_value: int) -> Maze:
 			if cc + 2 <= mid and not inside_house.call(rr, cc + 2) and rng.next_float() < 0.16:
 				grid[rr][cc + 1] = 0
 			var r2: int = rr + 2
-			if room_rows.has(r2) and not inside_house.call(r2, cc) and rng.next_float() < 0.16:
+			if room_rows.has(r2) and not inside_house.call(r2, cc) and rng.next_float() < loop_prob:
 				grid[rr + 1][cc] = 0
 
 	for rr in range(rows):
 		for cc in range(mid + 1):
 			grid[rr][cols - 1 - cc] = grid[rr][cc]
+
+	if breakthroughs > 0 and mid % 2 == 0:
+		var rows_free := []
+		for rr in room_rows:
+			if rr < house.r0 or rr > house.r1:
+				rows_free.append(rr)
+		var n := mini(breakthroughs, rows_free.size())
+		var used := {}
+		for i in n:
+			var idx := int((i + 0.5) * rows_free.size() / float(n))
+			idx = clampi(idx + int(rng.next_float() * 3.0) - 1, 0, rows_free.size() - 1)
+			while used.has(idx):
+				idx = (idx + 1) % rows_free.size()
+			used[idx] = true
+			grid[rows_free[idx]][mid] = 0
 
 	var tunnel_row: int = room_rows[int(room_rows.size() / 2)]
 	grid[tunnel_row][0] = 0

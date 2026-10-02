@@ -7,14 +7,12 @@ extends Node
 
 const SAVE_PATH := "user://kugelschlucker_speedrun.json"
 
-## Zielzeiten (Sekunden) pro Level-Index, um das Bonuslevel freizuschalten.
-## Grosszuegig genug fuer einen soliden, aber nicht perfekten Lauf; kann vom
-## Spieler durch Uebung unterboten werden. Level-Groesse/-Ghost-Anzahl wächst
-## mit main.gd::LEVELS, die Zielzeiten wachsen entsprechend mit.
-const TARGET_TIMES := [55.0, 70.0, 85.0, 100.0]
-const DEFAULT_TARGET := 110.0
+const LevelsScript := preload("res://scripts/levels.gd")
 
-var best_times: Dictionary = {} # level_index (int, as String key for JSON) -> float seconds
+## Best times per (level, condition, mode) — key from Levels.board_key(),
+## e.g. "klassik-2|none" (solo, no condition), "offen|matrix_ghost",
+## "durchbruch|none|chat". Target times live in Levels.POOL[].target_s.
+var best_times: Dictionary = {}
 var bonus_unlocked := false
 
 var _loaded := false
@@ -24,36 +22,35 @@ func _ready() -> void:
 	_load()
 
 
-func target_for(level_index: int) -> float:
-	if level_index < TARGET_TIMES.size():
-		return TARGET_TIMES[level_index]
-	return DEFAULT_TARGET
+func target_for(level_id: String) -> float:
+	return LevelsScript.by_id(level_id).target_s
 
 
-func best_for(level_index: int) -> float:
+func best_for(level_id: String, condition_id: String = "", mode: String = "solo") -> float:
 	_load()
-	var key := str(level_index)
+	var key := LevelsScript.board_key(level_id, condition_id, mode)
 	if best_times.has(key):
 		return best_times[key]
 	return -1.0
 
 
 ## Called by Main when a level's pellets are all eaten. Returns a Dictionary
-## with is_new_best, previous_best (-1.0 if none), beat_target, target,
-## newly_unlocked_bonus (true only on the frame the unlock happens) so the
-## caller (Main/HUD) can show the right banner text without re-deriving it.
-func record_level_time(level_index: int, elapsed_seconds: float) -> Dictionary:
+## with is_new_best (for this level/condition/mode), previous_best (-1.0 if
+## none), beat_target, target, newly_unlocked_bonus (true only on the frame
+## the badge is earned) so the caller can show the right banner text.
+## Only a clean run (no condition, mode "solo") can earn the badge.
+func record_level_time(level_id: String, elapsed_seconds: float, condition_id: String = "", mode: String = "solo") -> Dictionary:
 	_load()
-	var key := str(level_index)
-	var previous_best := best_for(level_index)
+	var key := LevelsScript.board_key(level_id, condition_id, mode)
+	var previous_best := best_for(level_id, condition_id, mode)
 	var is_new_best := previous_best < 0.0 or elapsed_seconds < previous_best
 	if is_new_best:
 		best_times[key] = elapsed_seconds
 
-	var target := target_for(level_index)
+	var target := target_for(level_id)
 	var beat_target := elapsed_seconds <= target
 	var newly_unlocked := false
-	if beat_target and not bonus_unlocked:
+	if beat_target and condition_id == "" and mode == "solo" and not bonus_unlocked:
 		bonus_unlocked = true
 		newly_unlocked = true
 
@@ -113,7 +110,7 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	if parsed.has("best_times") and typeof(parsed.best_times) == TYPE_DICTIONARY:
-		best_times = parsed.best_times
+		best_times = _migrate_keys(parsed.best_times)
 	if parsed.has("bonus_unlocked"):
 		bonus_unlocked = bool(parsed.bonus_unlocked)
 
@@ -125,3 +122,19 @@ func _save() -> void:
 	var payload := {"best_times": best_times, "bonus_unlocked": bonus_unlocked}
 	f.store_string(JSON.stringify(payload))
 	f.close()
+
+
+## Saves from before the level pool keyed best times by level index ("0".."3")
+## and knew neither conditions nor modes; those were plain solo runs of what
+## are now klassik-1..4.
+static func _migrate_keys(old: Dictionary) -> Dictionary:
+	var out := {}
+	for key in old.keys():
+		var k: String = str(key)
+		if k.is_valid_int():
+			var idx := k.to_int()
+			if idx >= 0 and idx < 4:
+				out[LevelsScript.board_key("klassik-%d" % (idx + 1), "")] = old[key]
+		else:
+			out[k] = old[key]
+	return out

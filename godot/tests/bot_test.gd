@@ -62,21 +62,32 @@ func _run_checks() -> void:
 	# _build_start_panel / set_bonus_unlocked) ----
 	_check("start screen: Explorer-level button visible without unlocking anything", main.hud.manhattan_btn.visible == true)
 
-	# ---- Testbuild button: normal Matrix level + DEBUG chip in the HUD ----
-	_check("debug overlay: hidden before Testbuild is chosen", main.hud.debug_label.get_parent().get_parent().visible == false)
-	_check("debug_mode: off before Testbuild is chosen", main.debug_mode == false)
-	main._on_test_build_pressed()
-	await get_tree().process_frame
-	_check("debug_mode: on after Testbuild pressed", main.debug_mode == true)
-	_check("debug overlay: visible after Testbuild is chosen", main.hud.debug_label.get_parent().get_parent().visible == true)
-	_check("debug overlay: running a normal Matrix level (maze built)", main.maze != null)
-	main._process(0.016)
-	_check("debug overlay: text populated after a frame", main.hud.debug_label.text != "--" and main.hud.debug_label.text != "")
-	# switching back to a normal start turns the overlay off again
-	main._on_start_pressed()
-	await get_tree().process_frame
-	_check("debug_mode: off again after a normal Matrix-level start", main.debug_mode == false)
-	_check("debug overlay: hidden again after a normal Matrix-level start", main.hud.debug_label.get_parent().get_parent().visible == false)
+	# ---- no Testbuild button any more; the debug overlay is an F3 toggle ----
+	_check("start screen: no Testbuild button / signal", not main.hud.has_signal("test_build_pressed"))
+	_check("debug overlay: hidden by default", main.hud.debug_label.get_parent().get_parent().visible == false and main.debug_mode == false)
+	var f3 := InputEventKey.new()
+	f3.keycode = KEY_F3
+	f3.pressed = true
+	main._unhandled_input(f3)
+	_check("debug overlay: F3 turns it on (debug build)", main.debug_mode == true and main.hud.debug_label.get_parent().get_parent().visible == true)
+	main._unhandled_input(f3)
+	_check("debug overlay: F3 turns it off again", main.debug_mode == false and main.hud.debug_label.get_parent().get_parent().visible == false)
+
+	# ---- start screen: condition selector ----
+	_check("start screen: condition selector lists Normal + every condition", main.hud.condition_option.item_count == 3, "got %d" % main.hud.condition_option.item_count)
+	main.hud.condition_option.item_selected.emit(1)
+	_check("start screen: picking a condition reaches Main", main.selected_condition_id == "matrix_ghost", "got '%s'" % main.selected_condition_id)
+	main.hud.condition_option.item_selected.emit(0)
+	_check("start screen: picking Normal clears it", main.selected_condition_id == "")
+
+	# ---- minimap arrow points where the camera looks (was mirrored) ----
+	var hud_script = load("res://scripts/hud.gd")
+	var arrow_e: PackedVector2Array = hud_script._minimap_arrow(Vector2.ZERO, -PI / 2.0) # looking east
+	_check("minimap arrow: yaw -90deg (east) points right", arrow_e[0].x > 4.0 and absf(arrow_e[0].y) < 0.01, "tip=%s" % arrow_e[0])
+	var arrow_w: PackedVector2Array = hud_script._minimap_arrow(Vector2.ZERO, PI / 2.0) # looking west
+	_check("minimap arrow: yaw +90deg (west) points left", arrow_w[0].x < -4.0, "tip=%s" % arrow_w[0])
+	var arrow_n: PackedVector2Array = hud_script._minimap_arrow(Vector2.ZERO, 0.0)
+	_check("minimap arrow: yaw 0 (north) points up", arrow_n[0].y < -4.0)
 
 	# ---- begin_game starts cleanly ----
 	main.begin_game()
@@ -229,9 +240,9 @@ func _run_checks() -> void:
 
 	# ---- speedrun: a fast clear beats the level-0 target and unlocks the bonus ----
 	Speedrun.reset_all()
-	main.begin_game()
+	main.begin_game("klassik-1")
 	await get_tree().process_frame
-	main.level_start_time = main.now - 5.0 # pretend 5s elapsed, well under the level-0 target
+	main.level_start_real = main.real_now - 5.0 # pretend 5s elapsed, well under every target
 	var pellet_cells2: Array = main.maze_view.pellet_cells
 	for cell in pellet_cells2:
 		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
@@ -240,8 +251,10 @@ func _run_checks() -> void:
 		var node2 = main.maze_view.power_nodes[i]
 		main.player.global_position = Vector3(node2.position.x, main.player.global_position.y, node2.position.z)
 		await get_tree().process_frame
-	_check("fast clear unlocks the Manhattan bonus", Speedrun.is_bonus_unlocked())
-	_check("fast clear records a level-0 best time", Speedrun.best_for(0) >= 0.0 and Speedrun.best_for(0) < 10.0, "best=%s" % Speedrun.best_for(0))
+	_check("fast clear earns the target-time badge", Speedrun.is_bonus_unlocked())
+	_check("fast clear records a klassik-1 best time", Speedrun.best_for("klassik-1") >= 0.0 and Speedrun.best_for("klassik-1") < 10.0, "best=%s" % Speedrun.best_for("klassik-1"))
+	_check("fast clear lands on the klassik-1 solo leaderboard", Leaderboard.get_top("klassik-1", "").size() == 1)
+	_check("fast clear leaves the chat board empty", Leaderboard.get_top("klassik-1", "", 5, "chat").size() == 0)
 	await get_tree().create_timer(2.0).timeout # let the level-clear banner finish so begin_game() below isn't fighting an in-flight await
 
 	# ---- Manhattan bonus level: reuses the normal systems against the real-Midtown grid ----
@@ -255,33 +268,31 @@ func _run_checks() -> void:
 	_check("manhattan: no power pellets either", main.maze_view.power_cells.size() == 0, "got %d" % main.maze_view.power_cells.size())
 	_check("manhattan: player warped to start_cell", main.player.cell() == main.start_cell, "got %s want %s" % [main.player.cell(), main.start_cell])
 
+	# Manhattan is an untimed hub: pellets are only signposts — no score, no
+	# completion, no clock, no leaderboard.
 	var manhattan_pellets: Array = main.maze_view.pellet_cells
+	var manhattan_score_before: int = main.score
 	for cell in manhattan_pellets:
 		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
 		await get_tree().process_frame
-	for i in main.maze_view.power_cells.size():
-		var node3 = main.maze_view.power_nodes[i]
-		main.player.global_position = Vector3(node3.position.x, main.player.global_position.y, node3.position.z)
-		await get_tree().process_frame
-	_check("manhattan: all pickups consumed", main.maze_view.remaining_pickups() <= 0, "remaining=%d" % main.maze_view.remaining_pickups())
-	_check("manhattan: clearing it returns to the start screen (not next_level)", main.running == false)
-	await get_tree().create_timer(2.4).timeout
-	_check("manhattan: playing_manhattan flag cleared after completion", main.playing_manhattan == false)
-	_check("manhattan: explorer next-run panel shown after completion", main.hud.explorer_next_panel.visible == true)
-	_check("manhattan: leaderboard recorded this run", Leaderboard.get_top("manhattan", "", 1).size() == 1)
+	_check("manhattan: all pellets can be eaten", main.maze_view.remaining_pickups() <= 0, "remaining=%d" % main.maze_view.remaining_pickups())
+	_check("manhattan: eating pellets gives no score", main.score == manhattan_score_before, "score=%d" % main.score)
+	_check("manhattan: eating every pellet does not complete the level", main.running == true and main.playing_manhattan == true)
+	_check("manhattan: no leaderboard entry anywhere", Leaderboard.get_top("manhattan", "", 1).size() == 0)
+	_check("manhattan: timer / score / lives chips are hidden", main.hud.timer_label.get_parent().get_parent().visible == false and main.hud.score_label.get_parent().get_parent().visible == false and main.hud.lives_box.get_parent().visible == false)
+	_check("manhattan: the high score is untouched", main.high_score == 0 or main.high_score == main._load_highscore())
+	main.paused = true
+	main.hud.set_pause_note(false)
+	_check("manhattan: pause note does not mention the speedrun clock", main.hud.pause_note_label.text.find("Speedrun") == -1)
+	main.paused = false
 
-	# "ZURÜCK ZUM MENÜ" on the next-run panel returns to the start screen.
-	main.hud.explorer_menu_pressed.emit()
+	# The selected condition is applied to an Explorer run (no next-run panel any more).
+	main.selected_condition_id = "fear_and_loathing"
+	main.hud.restart_pressed.emit() # NEUSTART in Manhattan restarts Manhattan, not a Matrix level
 	await get_tree().process_frame
-	_check("manhattan: back-to-menu returns to the start panel", main.hud.start_panel.visible == true)
-
-	# Picking one of the 4 next-run choices (same/other city × same/other
-	# condition — see Main._explorer_next_choices) starts a fresh Explorer
-	# run with that combination's condition wired onto the player.
-	main.hud.explorer_choice_pressed.emit("manhattan", "fear_and_loathing")
-	await get_tree().process_frame
-	_check("manhattan: choosing a next-run combo starts a new Explorer run", main.running == true and main.playing_manhattan == true)
-	_check("manhattan: choosing a next-run combo applies its condition", main.condition_id == "fear_and_loathing" and main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+	_check("manhattan: NEUSTART restarts the Explorer level", main.running == true and main.playing_manhattan == true)
+	_check("manhattan: the start-screen condition is applied", main.condition_id == "fear_and_loathing" and main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
+	main.selected_condition_id = ""
 
 	# ---- Twitch chat commands (opt-in gameplay effects), driven end-to-end
 	# through the real chat_command signal rather than calling Main's
@@ -333,35 +344,180 @@ func _run_checks() -> void:
 			any_still_skinned = true
 	_check("word mode: reverts after expiry (enemies)", not any_still_skinned)
 
-	# ---- Fear & Loathing power-up: scrambles input, turns the wall shader
-	# psychedelic, and flips collision randomly for its duration, then
-	# reverts everything (including whatever whole-run condition was active
-	# before it) ----
-	main.begin_game()
+	# ---- Fear & Loathing power-up: a risk/reward item. Only from the 2nd
+	# level of a run on, only in dead ends; scrambled steering + psychedelic
+	# walls for double points; never touches wall collision ----
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	_check("fear powerup: none on the first level of a run", main.maze_view.fear_powerup_nodes.is_empty())
+	main.level_index = 1
+	main.start_level(load("res://scripts/levels.gd").by_id("klassik-2"))
 	await get_tree().process_frame
 	_check("fear powerup: off at level start", main.fear_mode_until <= main.now)
-	_check("fear powerup: pickup node exists", main.maze_view.fear_powerup_nodes.size() > 0)
-	_check("fear powerup: more than one Fear & Loathing pickup spawns", main.maze_view.fear_powerup_nodes.size() > 1, "got %d" % main.maze_view.fear_powerup_nodes.size())
+	_check("fear powerup: spawns from the 2nd level on", main.maze_view.fear_powerup_nodes.size() > 0)
+	var all_dead_ends := true
+	for fc in main.maze_view.fear_powerup_cells:
+		if MazeGen.neighbors_of(main.maze, fc.x, fc.y).size() != 1:
+			all_dead_ends = false
+	_check("fear powerup: every pickup lies in a dead end", all_dead_ends)
+	var fear_nodes_before: int = main.maze_view.fear_powerup_nodes.size()
 	main.player.global_position = Vector3(main.maze_view.fear_powerup_nodes[0].position.x, main.player.global_position.y, main.maze_view.fear_powerup_nodes[0].position.z)
+	var score_pre_fear: int = main.score
 	await get_tree().process_frame
 	_check("fear powerup: picking it up activates it", main.fear_mode_until > main.now)
 	_check("fear powerup: player.active_condition becomes fear_and_loathing", main.player.active_condition != null and main.player.active_condition.id == "fear_and_loathing")
 	_check("fear powerup: wall shader gets the psychedelic uniform", main.maze_view.wall_material.get_shader_parameter("psychedelic_amount") == 1.0)
-
-	main._fear_next_noclip_toggle_at = main.now - 0.01 # force a toggle without waiting out the real interval
+	_check("fear powerup: the pickup itself is worth 75 (the double points start after it)", main.score - score_pre_fear == 75, "gained %d" % (main.score - score_pre_fear))
+	_check("fear powerup: wall collision stays on (no random noclip)", main.player.collision_mask == 2)
+	var pellet_spot = null
+	for i in main.maze_view.pellet_cells.size():
+		if main.maze_view.pellet_alive[i]:
+			pellet_spot = main.maze_view.pellet_cells[i]
+			break
+	var score_pre_pellet: int = main.score
+	main.player.global_position = Vector3(pellet_spot.y * main.CELL, main.player.global_position.y, pellet_spot.x * main.CELL)
 	await get_tree().process_frame
-	# The flip itself is random (50/50), so check the deterministic part: the
-	# toggle actually ran and scheduled its next one in the future, and left
-	# collision_mask at a valid value (0 = noclip or 2 = normal walls).
-	_check("fear powerup: collision toggle schedules its next flip", main._fear_next_noclip_toggle_at > main.now)
-	_check("fear powerup: collision_mask stays a valid value after a random flip", main.player.collision_mask == 0 or main.player.collision_mask == 2)
+	_check("fear powerup: pellets count double while it runs", main.score - score_pre_pellet == 10 * main.FEAR_SCORE_MULTIPLIER, "gained %d" % (main.score - score_pre_pellet))
+	_check("fear powerup: no steering input means no drift", main.player.active_condition.modify_input(Vector2.ZERO, 0.1) == Vector2.ZERO)
+
+	# A second pickup only extends the timer: no second saved condition.
+	if main.maze_view.fear_powerup_nodes.size() > 1:
+		main.fear_mode_until = main.now + 1.0
+		var saved_before = main._fear_saved_active_condition
+		main.player.global_position = Vector3(main.maze_view.fear_powerup_nodes[1].position.x, main.player.global_position.y, main.maze_view.fear_powerup_nodes[1].position.z)
+		await get_tree().process_frame
+		_check("fear powerup: a second pickup extends the timer", main.fear_mode_until > main.now + main.FEAR_MODE_DURATION - 0.5)
+		_check("fear powerup: a second pickup does not stack the condition", main._fear_saved_active_condition == saved_before and main.player.active_condition.id == "fear_and_loathing")
 
 	main.fear_mode_until = main.now - 0.01 # force expiry without waiting out the real duration
 	await get_tree().process_frame
 	_check("fear powerup: reverts after expiry (timer cleared)", main.fear_mode_until == 0.0)
 	_check("fear powerup: reverts after expiry (wall shader)", main.maze_view.wall_material.get_shader_parameter("psychedelic_amount") == 0.0)
-	_check("fear powerup: reverts after expiry (collision restored)", main.player.collision_mask == 2)
-	_check("fear powerup: reverts after expiry (active_condition restored)", main.player.active_condition == null)
+	_check("fear powerup: reverts after expiry (collision untouched)", main.player.collision_mask == 2)
+	_check("fear powerup: reverts after expiry (active_condition restored — also after a double pickup)", main.player.active_condition == null)
+	var score_post_fear: int = main.score
+	main._add_score(10)
+	_check("fear powerup: points are normal again after expiry", main.score - score_post_fear == 10)
+
+	# ---- overlapping effects can never leave noclip stuck on ----
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	main.level_index = 1
+	main.start_level(load("res://scripts/levels.gd").by_id("klassik-2"))
+	await get_tree().process_frame
+	main._activate_word_mode()
+	main._activate_fear_powerup()
+	main._deactivate_word_mode()
+	_check("overlap: word ends while fear runs -> noclip off", main.player.collision_mask == 2)
+	main._deactivate_fear_powerup()
+	_check("overlap: fear ends afterwards -> noclip still off", main.player.collision_mask == 2)
+	main._activate_fear_powerup()
+	main._activate_word_mode()
+	main._deactivate_fear_powerup()
+	_check("overlap: fear ends while word runs -> noclip stays on", main.player.collision_mask == 0)
+	main._deactivate_word_mode()
+	_check("overlap: word ends last -> noclip off", main.player.collision_mask == 2)
+	main.set_condition("matrix_ghost")
+	main._activate_word_mode()
+	main._deactivate_word_mode()
+	_check("overlap: matrix_ghost keeps noclip after a Word pickup ends", main.player.collision_mask == 0 and main.maze_view.word_mode_active == true)
+	main.set_condition("")
+	_check("overlap: clearing matrix_ghost turns noclip off", main.player.collision_mask == 2)
+
+	# ---- noclip can no longer lock the player out of the maze ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main._activate_word_mode()
+	main.player.global_position = Vector3(main.player.global_position.x, main.player.global_position.y, -7.0)
+	main._keep_noclip_player_in_maze()
+	_check("noclip: player is clamped to the maze rows", main.player.global_position.z >= 0.0)
+	var wall_cell := Vector2i(-1, -1)
+	for r in range(2, main.maze.rows - 2, 2):
+		for c in range(2, main.maze.cols - 2, 2):
+			if main.maze.grid[r][c] == 1 and wall_cell.x < 0:
+				wall_cell = Vector2i(r, c)
+	main.player.global_position = Vector3(wall_cell.y * main.CELL, main.player.global_position.y, wall_cell.x * main.CELL)
+	main._deactivate_word_mode()
+	var rescued: Vector2i = main.player.cell()
+	_check("noclip: ending inside a wall moves the player to an open cell", main.maze.grid[rescued.x][rescued.y] == 0, "cell=%s" % rescued)
+
+	# ---- Pause: effect timers freeze, the speedrun clock keeps running ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.frightened_until = main.now + 7.0
+	var remaining_before: float = main.frightened_until - main.now
+	main.toggle_pause()
+	var real_before: float = main.real_now
+	var elapsed_before: float = main.real_now - main.level_start_real
+	for i in 20:
+		main._process(0.5) # 10 s of pause
+	_check("pause: the effect timers do not run down", absf((main.frightened_until - main.now) - remaining_before) < 0.001)
+	_check("pause: the speedrun clock keeps running", main.real_now - real_before > 9.9 and main.real_now - main.level_start_real - elapsed_before > 9.9)
+	_check("pause: the timer display follows the speedrun clock", main.hud.timer_label.text == Speedrun.format_time(main.real_now - main.level_start_real))
+	main.toggle_pause()
+	_check("pause: pause note names the running clock", main.hud.pause_note_label.text.find("Speedrun-Zeit läuft weiter") != -1)
+
+	# ---- Chat interaction moves the level's time to the chat board ----
+	Speedrun.reset_all()
+	Leaderboard.reset_all()
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("chat: a plain level starts in solo mode", main.run_mode() == "solo" and main.level_chat_assisted == false)
+	Twitch.chat_command.emit("viewer", "power", "")
+	await get_tree().process_frame
+	_check("chat: a !power that took effect marks the level as chat", main.run_mode() == "chat")
+	_check("chat: the HUD shows the CHAT badge", main.hud.mode_label.text == "CHAT" and main.hud.mode_label.get_parent().get_parent().visible)
+	main.level_start_real = main.real_now - 5.0
+	for cell in main.maze_view.pellet_cells:
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+	for i in main.maze_view.power_cells.size():
+		var cnode = main.maze_view.power_nodes[i]
+		main.player.global_position = Vector3(cnode.position.x, main.player.global_position.y, cnode.position.z)
+		await get_tree().process_frame
+	_check("chat: the time lands on the chat leaderboard", Leaderboard.get_top("klassik-1", "", 5, "chat").size() == 1)
+	_check("chat: the solo leaderboard stays empty", Leaderboard.get_top("klassik-1", "", 5, "solo").size() == 0)
+	_check("chat: the solo best time stays empty", Speedrun.best_for("klassik-1") == -1.0 and Speedrun.best_for("klassik-1", "", "chat") >= 0.0)
+	_check("chat: a chat run does not earn the target-time badge", not Speedrun.is_bonus_unlocked())
+	await get_tree().create_timer(2.0).timeout
+	_check("chat: the next level starts clean (solo again)", main.run_mode() == "solo")
+
+	# ---- a condition run has its own board too ----
+	main.selected_condition_id = "matrix_ghost"
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.level_start_real = main.real_now - 5.0
+	for cell in main.maze_view.pellet_cells:
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+	for i in main.maze_view.power_cells.size():
+		var cnode2 = main.maze_view.power_nodes[i]
+		main.player.global_position = Vector3(cnode2.position.x, main.player.global_position.y, cnode2.position.z)
+		await get_tree().process_frame
+	_check("condition: the time lands on the matrix_ghost board", Leaderboard.get_top("klassik-1", "matrix_ghost", 5).size() == 1)
+	_check("condition: the unconditioned board is untouched", Leaderboard.get_top("klassik-1", "", 5).size() == 0)
+	await get_tree().create_timer(2.0).timeout
+	main.selected_condition_id = ""
+	Speedrun.reset_all()
+	Leaderboard.reset_all()
+
+	# ---- level pool: a run starts on a random level and never repeats within a round ----
+	var started := {}
+	for i in 25:
+		main.begin_game()
+		started[main.level_id] = true
+	_check("pool: random starts reach several different levels", started.size() >= 3, "got %s" % [started.keys()])
+	main.begin_game()
+	var run_levels := [main.level_id]
+	for i in 5:
+		main.level_index += 1
+		main.played_ids.append(main.level_id)
+		main.next_level()
+		run_levels.append(main.level_id)
+	var unique := {}
+	for id in run_levels:
+		unique[id] = true
+	_check("pool: a run plays every level once before repeating", unique.size() == run_levels.size(), "got %s" % [run_levels])
 
 	# ---- Manhattan is permanently word-built, has no Word Mode power-up,
 	# and its taxis/pedestrians block the player without costing a life ----

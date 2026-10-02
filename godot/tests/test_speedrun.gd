@@ -43,30 +43,30 @@ func _initialize() -> void:
 		print("FAIL bonus should start locked on a clean save")
 
 	checks += 1
-	if sr.best_for(0) != -1.0:
+	if sr.best_for("klassik-1") != -1.0:
 		failures += 1
-		print("FAIL best_for(0) should be -1.0 before any run")
+		print("FAIL best_for(klassik-1) should be -1.0 before any run")
 
-	# First run on level 0, slower than target (55.0) -> no bonus, is new best.
-	var r1: Dictionary = sr.record_level_time(0, 80.0)
+	# First run on klassik-1, slower than target (115.0) -> no bonus, is new best.
+	var r1: Dictionary = sr.record_level_time("klassik-1", 200.0)
 	checks += 1
 	if not r1.is_new_best or r1.beat_target or r1.newly_unlocked_bonus:
 		failures += 1
 		print("FAIL first slow run: unexpected result %s" % [r1])
 
 	# Second run, slower than the first -> not a new best, still no bonus.
-	var r2: Dictionary = sr.record_level_time(0, 90.0)
+	var r2: Dictionary = sr.record_level_time("klassik-1", 210.0)
 	checks += 1
 	if r2.is_new_best or r2.beat_target:
 		failures += 1
 		print("FAIL slower second run: unexpected result %s" % [r2])
 	checks += 1
-	if sr.best_for(0) != 80.0:
+	if sr.best_for("klassik-1") != 200.0:
 		failures += 1
-		print("FAIL best_for(0) should stay 80.0, got %s" % sr.best_for(0))
+		print("FAIL best_for should stay 200.0, got %s" % sr.best_for("klassik-1"))
 
-	# Third run beats the level-0 target (55.0) and is a new best -> unlocks bonus.
-	var r3: Dictionary = sr.record_level_time(0, 40.0)
+	# Third run beats the klassik-1 target (115.0) and is a new best -> unlocks bonus.
+	var r3: Dictionary = sr.record_level_time("klassik-1", 100.0)
 	checks += 1
 	if not r3.is_new_best or not r3.beat_target or not r3.newly_unlocked_bonus:
 		failures += 1
@@ -77,7 +77,7 @@ func _initialize() -> void:
 		print("FAIL bonus should be unlocked after beating target")
 
 	# Unlocking again on a later beat-target run must not re-report "newly" unlocked.
-	var r4: Dictionary = sr.record_level_time(1, 30.0) # well under level-1 target (70.0)
+	var r4: Dictionary = sr.record_level_time("klassik-2", 150.0) # under the klassik-2 target (170.0)
 	checks += 1
 	if r4.newly_unlocked_bonus:
 		failures += 1
@@ -90,16 +90,59 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL bonus_unlocked should persist to a fresh Speedrun instance")
 	checks += 1
-	if sr2.best_for(0) != 40.0:
+	if sr2.best_for("klassik-1") != 100.0:
 		failures += 1
-		print("FAIL best_for(0) should persist as 40.0, got %s" % sr2.best_for(0))
+		print("FAIL best_for should persist as 100.0, got %s" % sr2.best_for("klassik-1"))
 	checks += 1
-	if sr2.best_for(1) != 30.0:
+	if sr2.best_for("klassik-2") != 150.0:
 		failures += 1
-		print("FAIL best_for(1) should persist as 30.0, got %s" % sr2.best_for(1))
+		print("FAIL best_for(klassik-2) should persist as 150.0, got %s" % sr2.best_for("klassik-2"))
 
 	sr.free()
 	sr2.free()
+
+	# --- condition and mode boards are separate; only clean solo runs earn the badge
+	DirAccess.remove_absolute(SAVE_PATH)
+	var sr3 = speedrun_script.new()
+	sr3.record_level_time("offen", 200.0)
+	var rc: Dictionary = sr3.record_level_time("offen", 120.0, "matrix_ghost")
+	checks += 1
+	if not rc.is_new_best or rc.previous_best != -1.0:
+		failures += 1
+		print("FAIL a condition run should start its own best time: %s" % [rc])
+	checks += 1
+	if sr3.best_for("offen") != 200.0 or sr3.best_for("offen", "matrix_ghost") != 120.0:
+		failures += 1
+		print("FAIL conditions must not share best times")
+	var rchat: Dictionary = sr3.record_level_time("offen", 100.0, "", "chat")
+	checks += 1
+	if not rchat.is_new_best or sr3.best_for("offen") != 200.0 or sr3.best_for("offen", "", "chat") != 100.0:
+		failures += 1
+		print("FAIL chat runs must have their own best time")
+	checks += 1
+	if sr3.best_for("offen", "", "pvp") != -1.0 or sr3.best_for("offen", "", "coop") != -1.0:
+		failures += 1
+		print("FAIL pvp/coop boards should start empty and separate")
+	checks += 1
+	if sr3.is_bonus_unlocked():
+		failures += 1
+		print("FAIL a condition or chat run under the target must not earn the badge")
+	sr3.free()
+
+	# --- saves from before the level pool (keyed by level index) are migrated
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"best_times": {"0": 61.5, "2": 99.0}, "bonus_unlocked": true}))
+	f.close()
+	var sr4 = speedrun_script.new()
+	checks += 1
+	if sr4.best_for("klassik-1") != 61.5 or sr4.best_for("klassik-3") != 99.0 or sr4.best_for("klassik-2") != -1.0:
+		failures += 1
+		print("FAIL old index keys should migrate to klassik-N")
+	checks += 1
+	if not sr4.is_bonus_unlocked():
+		failures += 1
+		print("FAIL migration must keep bonus_unlocked")
+	sr4.free()
 
 	# Leave no trace for the next real play session / BotTest run.
 	if FileAccess.file_exists(SAVE_PATH):

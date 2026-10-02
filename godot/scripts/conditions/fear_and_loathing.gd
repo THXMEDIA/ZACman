@@ -3,7 +3,8 @@ extends "res://scripts/conditions/condition_base.gd"
 ## input gets continuously noisy and, on an unpredictable timer, flips
 ## (strafe/forward both invert) for a while before flipping back — so the
 ## same maze plays very differently each time this condition is active.
-## Self-contained (keeps its own internal clock via `delta`), so it needs no
+## The noise and the inversion only distort what the player is steering; with
+## no input the player stands still. Self-contained (keeps its own internal clock via `delta`), so it needs no
 ## reference to Main to do its job — only modify_input is overridden.
 
 const FLIP_MIN_INTERVAL := 2.5
@@ -31,6 +32,11 @@ func modify_input(v: Vector2, delta: float) -> Vector2:
 	if _clock >= _next_flip_at:
 		_inverted = not _inverted
 		_next_flip_at = _clock + randf_range(FLIP_MIN_INTERVAL, FLIP_MAX_INTERVAL)
+
+	# No steering, no effect: the noise used to push the player around with
+	# no key pressed (involuntary motion — a motion-sickness trigger).
+	if v.length() < 0.01:
+		return v
 
 	var noisy := Vector2(
 		v.x + sin(_clock * 11.3) * NOISE_AMOUNT,

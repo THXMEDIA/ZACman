@@ -172,9 +172,8 @@ static func get_theme(id: String) -> Resource:
 			return normal()
 
 
-## The "calm explorer" city themes selectable from the post-run "pick a
-## city" choice (see main.gd's _explorer_next_choices) — not the Matrix
-## speedrun levels, which aren't part of that rotation. Add a new city's id
+## The "calm explorer" city themes (see main.gd's start_explorer_level) — not
+## the Matrix speedrun levels, which aren't part of that rotation. Add a new city's id
 ## here once it has its own static func above.
 const EXPLORER_IDS := ["manhattan"]
 

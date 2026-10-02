@@ -1,9 +1,9 @@
 extends Node
-## Leaderboard — autoload singleton for high-score boards, one per
-## (city_id, condition_id) combination. A Matrix-Ghost run (no wall
-## collision) isn't comparable to an unmodified run, so they never share a
-## board — see this project's "Explorer-Level-Erweiterung, Leaderboard &
-## Konditionen" doc.
+## Leaderboard — autoload singleton for time boards, one per
+## (level_id, condition_id, mode) combination. A Matrix-Ghost run (no wall
+## collision) isn't comparable to an unmodified run, and neither is a run
+## with Twitch chat interaction, so they never share a board (modes: see
+## Levels.MODES). Manhattan has no board: it is an untimed hub level.
 ##
 ## This is the LOCAL backend: works fully offline, no account needed, and
 ## is what the game ships with today. Deliberately written behind a small
@@ -12,6 +12,8 @@ extends Node
 ## docs/STEAM_ROADMAP.md) can replace persistence without touching any
 ## calling code in Main/HUD — Steam isn't reachable from this dev sandbox,
 ## so that swap is future work, not done here.
+
+const LevelsScript := preload("res://scripts/levels.gd")
 
 const SAVE_PATH := "user://kugelschlucker_leaderboards.json"
 const MAX_ENTRIES_PER_BOARD := 20
@@ -25,20 +27,18 @@ func _ready() -> void:
 	_load()
 
 
-## The board key for a (city, condition) pair — "" (no condition) is
-## normalized to "none" so it reads clearly in the saved file.
-static func board_key(city_id: String, condition_id: String) -> String:
-	var cond := condition_id if condition_id != "" else "none"
-	return "%s|%s" % [city_id, cond]
+## The board key for a (level, condition, mode) — see Levels.board_key().
+static func board_key(level_id: String, condition_id: String, mode: String = "solo") -> String:
+	return LevelsScript.board_key(level_id, condition_id, mode)
 
 
-## Records a completed run's time on the (city_id, condition_id) board.
+## Records a completed run's time on the (level_id, condition_id, mode) board.
 ## Returns {rank: int (1-based, -1 if it didn't make the top
 ## MAX_ENTRIES_PER_BOARD), is_new_best: bool (a personal best for this
 ## player name on this specific board)}.
-func submit_time(city_id: String, condition_id: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME) -> Dictionary:
+func submit_time(level_id: String, condition_id: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME, mode: String = "solo") -> Dictionary:
 	_load()
-	var key := board_key(city_id, condition_id)
+	var key := board_key(level_id, condition_id, mode)
 	var board: Array = _boards.get(key, [])
 
 	var previous_best := INF
@@ -63,9 +63,9 @@ func submit_time(city_id: String, condition_id: String, time_seconds: float, pla
 
 
 ## Top `n` entries for a board, fastest first. Each entry: {name, time}.
-func get_top(city_id: String, condition_id: String, n: int = MAX_ENTRIES_PER_BOARD) -> Array:
+func get_top(level_id: String, condition_id: String, n: int = MAX_ENTRIES_PER_BOARD, mode: String = "solo") -> Array:
 	_load()
-	var key := board_key(city_id, condition_id)
+	var key := board_key(level_id, condition_id, mode)
 	var board: Array = _boards.get(key, [])
 	return board.slice(0, mini(n, board.size()))
 
@@ -96,8 +96,25 @@ func _load() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	for key in parsed.keys():
-		if typeof(parsed[key]) == TYPE_ARRAY:
-			_boards[key] = parsed[key]
+		if typeof(parsed[key]) != TYPE_ARRAY:
+			continue
+		var new_key := _migrate_key(str(key))
+		if new_key != "":
+			_boards[new_key] = parsed[key]
+
+
+## Boards from before the level pool were keyed "normal-N|cond" (N = 0-based
+## level index) and "manhattan|cond". The former are now klassik-(N+1); the
+## latter are dropped (Manhattan no longer has a time board).
+static func _migrate_key(key: String) -> String:
+	if key.begins_with("manhattan|"):
+		return ""
+	if key.begins_with("normal-"):
+		var rest := key.substr(7)
+		var parts := rest.split("|")
+		if parts.size() == 2 and parts[0].is_valid_int():
+			return "klassik-%d|%s" % [parts[0].to_int() + 1, parts[1]]
+	return key
 
 
 func _save() -> void:

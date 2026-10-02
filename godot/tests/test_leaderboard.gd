@@ -27,9 +27,22 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL different conditions on the same city should be different boards")
 	checks += 1
-	if Leaderboard.board_key("manhattan", "") == Leaderboard.board_key("normal-0", ""):
+	if Leaderboard.board_key("manhattan", "") == Leaderboard.board_key("klassik-1", ""):
 		failures += 1
 		print("FAIL different cities should be different boards")
+
+	# --- modes: chat / pvp / coop never share a board with solo ---
+	checks += 1
+	var keys := {}
+	for m in ["solo", "chat", "pvp", "coop"]:
+		keys[Leaderboard.board_key("offen", "", m)] = true
+	if keys.size() != 4:
+		failures += 1
+		print("FAIL every mode needs its own board key, got %s" % [keys.keys()])
+	checks += 1
+	if Leaderboard.board_key("offen", "") != "offen|none":
+		failures += 1
+		print("FAIL solo key should keep the short 'level|cond' form")
 
 	# --- an empty board has no entries yet ---
 	checks += 1
@@ -89,11 +102,47 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL a matrix_ghost submission should not leak into the unconditioned board")
 
+	# --- a chat run lands on the chat board only ---
+	Leaderboard.submit_time("durchbruch", "", 70.0, "Streamer", "chat")
+	Leaderboard.submit_time("durchbruch", "", 90.0, "Streamer", "solo")
+	checks += 1
+	if Leaderboard.get_top("durchbruch", "", 5, "chat").size() != 1 or Leaderboard.get_top("durchbruch", "", 5).size() != 1:
+		failures += 1
+		print("FAIL chat and solo submissions must land on separate boards")
+	checks += 1
+	if Leaderboard.get_top("durchbruch", "", 5)[0].time != 90.0:
+		failures += 1
+		print("FAIL the faster chat time must not appear on the solo board")
+	checks += 1
+	if Leaderboard.get_top("durchbruch", "", 5, "pvp").size() != 0 or Leaderboard.get_top("durchbruch", "", 5, "coop").size() != 0:
+		failures += 1
+		print("FAIL pvp/coop boards should be empty")
+
+	# --- boards saved before the level pool are migrated ---
+	Leaderboard.reset_all()
+	var f := FileAccess.open(Leaderboard.SAVE_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({
+		"normal-1|none": [{"name": "Old", "time": 80.0}],
+		"normal-3|matrix_ghost": [{"name": "Old", "time": 90.0}],
+		"manhattan|none": [{"name": "Old", "time": 50.0}],
+	}))
+	f.close()
+	var migrated = load("res://scripts/leaderboard.gd").new()
+	checks += 1
+	if migrated.get_top("klassik-2", "").size() != 1 or migrated.get_top("klassik-4", "matrix_ghost").size() != 1:
+		failures += 1
+		print("FAIL old normal-N boards should migrate to klassik-(N+1)")
+	checks += 1
+	if migrated.get_top("manhattan", "").size() != 0:
+		failures += 1
+		print("FAIL the old manhattan board should be dropped")
+	migrated.free()
+
 	# --- board caps at MAX_ENTRIES_PER_BOARD, keeping the fastest --------
 	Leaderboard.reset_all()
 	for i in Leaderboard.MAX_ENTRIES_PER_BOARD + 5:
-		Leaderboard.submit_time("normal-0", "", float(100 - i), "P%d" % i) # a range of distinct times
-	var capped = Leaderboard.get_top("normal-0", "", Leaderboard.MAX_ENTRIES_PER_BOARD + 10)
+		Leaderboard.submit_time("klassik-1", "", float(100 - i), "P%d" % i) # a range of distinct times
+	var capped = Leaderboard.get_top("klassik-1", "", Leaderboard.MAX_ENTRIES_PER_BOARD + 10)
 	checks += 1
 	if capped.size() != Leaderboard.MAX_ENTRIES_PER_BOARD:
 		failures += 1

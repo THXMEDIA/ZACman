@@ -87,24 +87,38 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 - **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
   "MATRIX-LEVEL" (die klassischen Speedrun-Level) und "EXPLORER-LEVEL"
   (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
-  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Direkt unter dem
-  Matrix-Level-Button sitzt zusätzlich ein "TESTBUILD"-Button: startet
-  denselben normalen Matrix-Level, blendet in der HUD-Leiste aber zusätzlich
-  einen "DEBUG"-Chip ein (FPS, Spielerposition, aktuelle Maze-Zelle, live
-  aktualisiert in `main.gd::_process`) — gedacht zum schnellen Prüfen eines
-  Builds, kein eigener Spielmodus. Der Startbildschirm ist inzwischen mit
+  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Unter dem
+  Matrix-Level-Button wählt man die **Kondition** (Normal, Matrix Ghost,
+  Fear & Loathing). Den Testbuild-Button gibt es nicht mehr; das
+  Debug-Overlay (FPS, Position, Zelle) schaltet **F3** ein, nur in
+  Debug-Builds (`main.gd::_unhandled_input`). Der Startbildschirm ist inzwischen mit
   genug Buttons/Zeilen gewachsen, dass er in einem kleineren Fenster nicht
   mehr sicher komplett hineinpasste — der Panel-Inhalt sitzt deshalb in
   einem `ScrollContainer` innerhalb einer auf 5%-95% der Fensterhöhe
   verankerten Spalte (`hud.gd::_overlay_panel(scrollable=true)`), sodass
   z. B. der EXPLORER-LEVEL-Button garantiert erreichbar bleibt, notfalls
   per Scrollen.
-- **Speedrun-Unterstützung**: Live-Timer und persistierte Bestzeiten pro
-  Level (`godot/scripts/speedrun.gd`). Wird eine Zielzeit unterboten, zeigt
-  der Startbildschirm zusätzlich ein "★ Speedrun-Bestzeit-Bonus
-  freigeschaltet"-Abzeichen neben dem Explorer-Button (rein kosmetisch,
-  siehe `hud.gd::set_bonus_unlocked` — schaltet nichts mehr frei/zu).
-  Manhattan ist ein von Hand nach dem echten Midtown-Straßenraster gebautes
+- **Speedrun-Unterstützung**: Live-Timer, Bestzeiten und Bestenlisten
+  **pro Level, Kondition und Modus** (`speedrun.gd`, `leaderboard.gd`;
+  Schlüssel `level|kondition[|modus]`, siehe `levels.gd::board_key`).
+  Modi: `solo`, `chat` (sobald ein Twitch-Befehl im Level gewirkt hat),
+  `pvp` und `coop` (reserviert für den geplanten Mehrspieler, noch ohne
+  Spielmodus). Alte Spielstände werden beim Laden migriert. Die Uhr läuft
+  auch in der Pause weiter; Effekt-Timer (Frightened, Word, Fear) bleiben
+  in der Pause stehen (`main.gd`: `now` vs. `real_now`).
+- **Level-Pool** (`godot/scripts/levels.gd`): sechs Speedrun-Level mit festem
+  Seed, vier klassische plus „Offen“ (mehr Schleifen, weniger Sackgassen)
+  und „Durchbruch“ (drei Türen in der geschlossenen Mittelspalte, die
+  Hälften hängen nicht mehr nur am Tunnel). Ein Lauf startet auf einem
+  zufälligen Level und spielt danach jedes weitere einmal, bevor sich eines
+  wiederholt. Die Zielzeit steht pro Level in `levels.gd` und wird von
+  `tests/test_levels.gd` gegen eine „nächster Pellet“-Route und die
+  physikalische Untergrenze geprüft. Wer sie unterbietet, bekommt ein
+  „★ Zielzeit geschafft“-Abzeichen (rein kosmetisch, nur für saubere
+  Solo-Läufe ohne Kondition).
+  Manhattan ist ein ruhiges Level ohne Uhr, Punkte und Bestenliste; die
+  Kugeln sind nur Wegweiser zu den U-Bahn-Schildern, und die U-Bahn ist der
+  Ausgang in einen Speedrun. Es ist ein von Hand nach dem echten Midtown-Straßenraster gebautes
   Level (`godot/scripts/manhattan_maze.gd`; echte Avenue-/Street-Namen,
   Startpunkt Penn Station, Geisterhaus bei Grand Central). Live-OSM/
   Overpass-Daten sind aus dieser Sandbox nicht erreichbar — für eine
@@ -116,7 +130,9 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Speedruns nicht beeinflusst werden). Zuschauer können mit `!power`
   (Frightened-Modus auslösen) und `!fruit` (Bonusfrucht spawnen) helfen —
   beide Effekte können den Spieler nur unterstützen, nie das Spiel beenden
-  oder die Eingabe blockieren.
+  oder die Eingabe blockieren. Wirkt ein Befehl, geht die Zeit dieses Levels
+  auf die eigene Chat-Bestzeit und die Chat-Bestenliste, nie auf die
+  Solo-Rekorde.
 - **Word-Mode / das "Wort-Welt"-Aussehen** (`godot/scripts/word_mesh.gd`):
   jedes Objekt besteht aus seinem eigenen englischen Namen als echtes
   extrudiertes 3D-Buchstabenmodell (Godots `TextMesh`) — eine Wand ist das
@@ -283,8 +299,8 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 - **U-Bahn-Stationen** (`metro_station.gd`): leuchtend-pulsierende `SUBWAY`-
   Schilder markieren feste Punkte im Manhattan-Level, platziert wie Taxis/
   Fußgänger kollisionsfrei mit den Pellets. Betritt der Spieler eine Station,
-  endet der Manhattan-Bonuslauf sofort und es geht zurück ins normale
-  Speedrun-Level (frischer Lauf ab Level 1).
+  endet der Explorer-Lauf und ein Speedrun auf einem zufälligen Level
+  beginnt.
 
 - **Mehr Zeichenvielfalt, dunklerer/leuchtenderer Matrix-Regen, mehr
   Kondition-Item-Spawns, synthetisierte Hintergrundmusik**

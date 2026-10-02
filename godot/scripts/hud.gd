@@ -7,10 +7,10 @@ signal start_pressed
 signal resume_pressed
 signal restart_pressed
 signal manhattan_pressed
-signal test_build_pressed
-signal explorer_choice_pressed(city_id: String, condition_id: String)
-signal explorer_menu_pressed
+signal condition_selected(condition_id: String)
 signal twitch_toggled(is_enabled: bool, channel: String)
+
+const ConditionsScript := preload("res://scripts/conditions.gd")
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
 const BORDER := Color(0.31, 0.66, 1.0, 0.35)
@@ -35,11 +35,11 @@ var levelclear_panel: Control
 var levelclear_label: Label
 var levelclear_sub: Label
 
-var explorer_next_panel: PanelContainer
-var explorer_title_label: Label
-var explorer_subtitle_label: Label
-var explorer_board_box: VBoxContainer
-var explorer_choices_box: VBoxContainer
+var pause_note_label: Label
+var mode_label: Label
+var condition_option: OptionButton
+## Chips that only make sense in a timed, scored level (hidden in Manhattan).
+var timed_chips: Array = []
 
 var final_score_label: Label
 var final_level_label: Label
@@ -66,7 +66,6 @@ func _ready() -> void:
 	_build_pause_panel()
 	_build_gameover_panel()
 	_build_levelclear_label()
-	_build_explorer_next_panel()
 
 
 func _panel_style() -> StyleBoxFlat:
@@ -96,16 +95,19 @@ func _build_hud_bar() -> void:
 	level_label = _make_chip(left, "LEVEL", "1")
 	timer_label = _make_chip(left, "ZEIT", "0:00.00")
 	best_label = _make_chip(left, "BESTZEIT", "--:--")
+	mode_label = _make_chip(left, "MODUS", "")
+	mode_label.get_parent().get_parent().visible = false
+	timed_chips = [score_label.get_parent().get_parent(), timer_label.get_parent().get_parent(), best_label.get_parent().get_parent()]
 
-	# Testbuild-only debug overlay (FPS / player position / cell) — hidden
-	# unless set_debug_overlay(true) is called, see main.gd's
-	# _on_test_build_pressed handler.
+	# Debug overlay (FPS / player position / cell) — hidden unless
+	# set_debug_overlay(true) is called (F3 in debug builds, see main.gd).
 	debug_label = _make_chip(left, "DEBUG", "--")
 	debug_label.get_parent().get_parent().visible = false
 
 	var lives_chip := PanelContainer.new()
 	lives_chip.add_theme_stylebox_override("panel", _panel_style())
 	left.add_child(lives_chip)
+	timed_chips.append(lives_chip)
 	lives_box = HBoxContainer.new()
 	lives_box.add_theme_constant_override("separation", 6)
 	lives_chip.add_child(lives_box)
@@ -184,14 +186,28 @@ func _build_power_timer() -> void:
 	row.add_child(power_bar)
 
 
-## Shows/hides the DEBUG chip in the top HUD bar (Testbuild mode only).
+## Manhattan has no clock, score, lives or best time: hide those chips.
+func set_explorer_hud(is_explorer: bool) -> void:
+	for chip in timed_chips:
+		chip.visible = not is_explorer
+	set_mode_badge("")
+
+
+## Shows a run-mode badge under the best time ("CHAT" once a chat command took
+## effect in this level — its time goes to the chat board). "" hides it.
+func set_mode_badge(text: String) -> void:
+	mode_label.text = text
+	mode_label.get_parent().get_parent().visible = text != ""
+
+
+## Shows/hides the DEBUG chip in the top HUD bar (F3 in debug builds).
 func set_debug_overlay(visible_now: bool) -> void:
 	debug_label.get_parent().get_parent().visible = visible_now
 
 
 ## Updates the DEBUG chip's text — FPS, player world position, and the
-## player's current maze cell — called every frame while Testbuild mode
-## is active (see main.gd::_process).
+## player's current maze cell — called every frame while the overlay is on
+## (see main.gd::_process).
 func update_debug_overlay(fps: float, pos: Vector3, cell: Vector2i) -> void:
 	debug_label.text = "%d fps  ·  (%.1f, %.1f, %.1f)  ·  cell (%d, %d)" % [int(fps), pos.x, pos.y, pos.z, cell.x, cell.y]
 
@@ -275,20 +291,25 @@ func _build_start_panel() -> void:
 	var btn := _make_button("MATRIX-LEVEL")
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
-	var matrix_sub := _subtitle_label("Ghosts, Speedrun-Bestzeiten, Konditionen — die klassischen Level.")
+	var matrix_sub := _subtitle_label("Zufälliges Level, Geister, Zeitjagd. Bestzeiten und Bestenlisten gibt es pro Level, Kondition und Modus (Solo, Chat).")
 	matrix_sub.add_theme_font_size_override("font_size", 11)
 	box.add_child(matrix_sub)
 
-	# Testbuild: a normal Matrix-level run, just with the DEBUG chip
-	# (FPS / position / cell) switched on — for checking builds, not a
-	# separate game mode. Placed directly under the Matrix-level button
-	# as asked, above the Explorer-level choice.
-	var test_btn := _make_button("TESTBUILD")
-	test_btn.pressed.connect(func(): test_build_pressed.emit())
-	box.add_child(test_btn)
-	var test_sub := _subtitle_label("Matrix-Level mit Debug-Overlay (FPS, Position, Zelle).")
-	test_sub.add_theme_font_size_override("font_size", 11)
-	box.add_child(test_sub)
+	var cond_row := HBoxContainer.new()
+	cond_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	cond_row.add_theme_constant_override("separation", 8)
+	box.add_child(cond_row)
+	var cond_tag := Label.new()
+	cond_tag.text = "KONDITION"
+	cond_tag.add_theme_color_override("font_color", Color(0.56, 0.64, 0.78))
+	cond_tag.add_theme_font_size_override("font_size", 12)
+	cond_row.add_child(cond_tag)
+	condition_option = OptionButton.new()
+	condition_option.custom_minimum_size = Vector2(190, 0)
+	for id in ConditionsScript.SELECTABLE_IDS:
+		condition_option.add_item(ConditionsScript.display_name_for(id))
+	condition_option.item_selected.connect(func(i: int): condition_selected.emit(ConditionsScript.SELECTABLE_IDS[i]))
+	cond_row.add_child(condition_option)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still
@@ -297,10 +318,10 @@ func _build_start_panel() -> void:
 	manhattan_btn = _make_button("EXPLORER-LEVEL")
 	manhattan_btn.pressed.connect(func(): manhattan_pressed.emit())
 	box.add_child(manhattan_btn)
-	var explorer_sub := _subtitle_label("Ruhige Stadt-Erkundung, kein Zeitdruck, eigenes Leaderboard.")
+	var explorer_sub := _subtitle_label("Ruhige Stadt ohne Uhr und Punkte. Die Kugeln zeigen den Weg zur U-Bahn (SUBWAY); sie ist der Ausgang in einen Speedrun.")
 	explorer_sub.add_theme_font_size_override("font_size", 11)
 	box.add_child(explorer_sub)
-	manhattan_bonus_label = _subtitle_label("★ Speedrun-Bestzeit-Bonus freigeschaltet")
+	manhattan_bonus_label = _subtitle_label("★ Zielzeit in einem Level geschafft")
 	manhattan_bonus_label.add_theme_font_size_override("font_size", 11)
 	manhattan_bonus_label.add_theme_color_override("font_color", PELLET_COLOR)
 	manhattan_bonus_label.visible = false
@@ -312,7 +333,8 @@ func _build_pause_panel() -> void:
 	pause_panel.visible = false
 	var box := pause_panel.get_child(0)
 	box.add_child(_title_label("PAUSE"))
-	box.add_child(_subtitle_label("Das Labyrinth wartet."))
+	pause_note_label = _subtitle_label("Das Labyrinth wartet. Die Speedrun-Zeit läuft weiter.")
+	box.add_child(pause_note_label)
 	var resume_btn := _make_button("WEITER")
 	resume_btn.pressed.connect(func(): resume_pressed.emit())
 	box.add_child(resume_btn)
@@ -359,82 +381,6 @@ func _stat_block(parent: Control, tag_text: String) -> Label:
 	return val
 
 
-## The post-Explorer-run panel: a small leaderboard for the (city,
-## condition) board just played, plus the 4 next-run choices (same/other
-## city × same/other condition — see Main._explorer_next_choices) so
-## finishing an Explorer level naturally invites another, differently-
-## flavored one instead of dropping straight back to the main menu.
-func _build_explorer_next_panel() -> void:
-	explorer_next_panel = _overlay_panel()
-	explorer_next_panel.visible = false
-	explorer_next_panel.custom_minimum_size = Vector2(460, 0)
-	var box := explorer_next_panel.get_child(0)
-
-	explorer_title_label = _title_label("EXPLORER GESCHAFFT!")
-	box.add_child(explorer_title_label)
-	explorer_subtitle_label = _subtitle_label("")
-	explorer_subtitle_label.add_theme_color_override("font_color", PELLET_COLOR)
-	box.add_child(explorer_subtitle_label)
-
-	var board_tag := _subtitle_label("BESTENLISTE")
-	board_tag.add_theme_font_size_override("font_size", 11)
-	box.add_child(board_tag)
-	explorer_board_box = VBoxContainer.new()
-	explorer_board_box.add_theme_constant_override("separation", 2)
-	box.add_child(explorer_board_box)
-
-	explorer_choices_box = VBoxContainer.new()
-	explorer_choices_box.add_theme_constant_override("separation", 6)
-	box.add_child(explorer_choices_box)
-
-	var menu_btn := _make_button("ZURÜCK ZUM MENÜ")
-	menu_btn.pressed.connect(func(): explorer_menu_pressed.emit())
-	box.add_child(menu_btn)
-
-
-## `choices` is an Array of {city_id, condition_id, label, sub} (see
-## Main._explorer_next_choices). `top_entries` is Leaderboard.get_top()'s
-## result for the board just played; `submit_result` is what
-## Leaderboard.submit_time() returned for this run.
-func show_explorer_next(choices: Array, top_entries: Array, submit_result: Dictionary, elapsed: float, title: String = "EXPLORER GESCHAFFT!") -> void:
-	hide_all_panels()
-	explorer_next_panel.visible = true
-	explorer_title_label.text = title
-
-	var rank: int = submit_result.get("rank", -1)
-	var rank_text := "Platz %d" % rank if rank > 0 else "außerhalb der Top-Liste"
-	var best_text := "  ·  neue Bestzeit!" if submit_result.get("is_new_best", false) else ""
-	explorer_subtitle_label.text = "Zeit %s  ·  %s%s" % [Speedrun.format_time(elapsed), rank_text, best_text]
-
-	for child in explorer_board_box.get_children():
-		child.queue_free()
-	if top_entries.is_empty():
-		var empty_l := _subtitle_label("Noch keine Einträge.")
-		empty_l.add_theme_font_size_override("font_size", 12)
-		explorer_board_box.add_child(empty_l)
-	else:
-		for i in top_entries.size():
-			var entry = top_entries[i]
-			var row := Label.new()
-			row.text = "%d. %s — %s" % [i + 1, entry.name, Speedrun.format_time(entry.time)]
-			row.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			row.add_theme_font_size_override("font_size", 13)
-			row.add_theme_color_override("font_color", ACCENT if i == 0 else Color(0.78, 0.85, 0.95))
-			explorer_board_box.add_child(row)
-
-	for child in explorer_choices_box.get_children():
-		child.queue_free()
-	for choice in choices:
-		var btn := _make_button(choice.label)
-		var city_id: String = choice.city_id
-		var cond_id: String = choice.condition_id
-		btn.pressed.connect(func(): explorer_choice_pressed.emit(city_id, cond_id))
-		explorer_choices_box.add_child(btn)
-		var sub_l := _subtitle_label(choice.get("sub", ""))
-		sub_l.add_theme_font_size_override("font_size", 11)
-		explorer_choices_box.add_child(sub_l)
-
-
 func _build_levelclear_label() -> void:
 	levelclear_panel = VBoxContainer.new()
 	levelclear_panel.add_theme_constant_override("separation", 6)
@@ -453,7 +399,7 @@ func _build_levelclear_label() -> void:
 ## the viewport height) and wraps its content box in a ScrollContainer,
 ## instead of shrink-centering the panel to its content's natural size. The
 ## start panel needs this: it has picked up enough buttons/labels over time
-## (Testbuild, Explorer-Level, Twitch row, ...) that on a smaller window it
+## (Explorer-Level, Condition row, Twitch row, ...) that on a smaller window it
 ## no longer reliably fits — the lower buttons could end up pushed off
 ## screen with nothing to scroll them into view. Other panels stay on the
 ## original shrink-centered behavior, which still looks right for them.
@@ -503,7 +449,7 @@ func _panel_box(panel: PanelContainer) -> VBoxContainer:
 
 
 func show_only(panel: Control) -> void:
-	for p in [start_panel, pause_panel, gameover_panel, explorer_next_panel]:
+	for p in [start_panel, pause_panel, gameover_panel]:
 		p.visible = p == panel
 
 
@@ -511,7 +457,6 @@ func hide_all_panels() -> void:
 	start_panel.visible = false
 	pause_panel.visible = false
 	gameover_panel.visible = false
-	explorer_next_panel.visible = false
 
 
 func set_score(v: int) -> void:
@@ -522,11 +467,15 @@ func set_level(v) -> void:
 	level_label.text = str(v)
 
 
-## The Explorer-level button is always visible/enabled now (see
-## _build_start_panel) — beating a speedrun target no longer gates access
-## to it, it's just a badge of honor shown alongside it.
+## The Explorer-level button is always enabled (see _build_start_panel);
+## beating a level's target time just shows a badge next to it.
 func set_bonus_unlocked(v: bool) -> void:
 	manhattan_bonus_label.visible = v
+
+
+## The pause note is only true in a timed level (Manhattan has no clock).
+func set_pause_note(timed_level: bool) -> void:
+	pause_note_label.text = "Das Labyrinth wartet. Die Speedrun-Zeit läuft weiter." if timed_level else "Die Stadt wartet."
 
 
 func set_twitch_status(text: String) -> void:
@@ -608,14 +557,19 @@ func _draw_minimap() -> void:
 			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, Color(1.0, 0.365, 0.635))
 	for e in minimap_enemies:
 		var col: Color = Color(0.35, 0.82, 1.0) if minimap_frightened else e.palette_color
-		minimap.draw_circle(Vector2((e.position.x / 2.0) * sx, (e.position.z / 2.0) * sy), 2.4, col)
+		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
 	if minimap_player != null:
-		var pr := minimap_player.global_position.x / 2.0
-		var pc := minimap_player.global_position.z / 2.0
-		var yaw: float = minimap_player.yaw if minimap_player.has_method("cell") else 0.0
-		var pts := PackedVector2Array([Vector2(0, -4.2), Vector2(3, 3.6), Vector2(-3, 3.6)])
-		var rotated := PackedVector2Array()
-		for p in pts:
-			var rp := p.rotated(yaw)
-			rotated.append(Vector2(pr * sx, pc * sy) + rp)
-		minimap.draw_colored_polygon(rotated, ACCENT)
+		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
+		minimap.draw_colored_polygon(_minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw), ACCENT)
+
+
+## The player arrow for the minimap, centred on `centre` (minimap pixels),
+## tip pointing where the camera looks. The camera looks along
+## (-sin(yaw), -cos(yaw)) in (x, z), which on the minimap (x right, z down) is
+## the arrow's "up" vector (0, -1) rotated by -yaw.
+static func _minimap_arrow(centre: Vector2, yaw: float) -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(0, -4.2), Vector2(3, 3.6), Vector2(-3, 3.6)])
+	var out := PackedVector2Array()
+	for p in pts:
+		out.append(centre + p.rotated(-yaw))
+	return out
