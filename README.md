@@ -351,6 +351,74 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     nahtlos schleifende PCM-Buffer gerendert werden und dass
     `play_*_music()`/`stop_all()`/`music_state()` korrekt zusammenspielen.
 
+- **Speedrun: kein Ausweichen mehr, höhere/engere Wände, dunkleres Matrix-Grün
+  — Explorer: breitere Straßen, echte Fahrspuren + Fußweg**
+  (`godot/scripts/main.gd`, `godot/scripts/maze_view.gd`,
+  `godot/scripts/city_themes.gd`, `godot/scripts/taxi.gd`,
+  `godot/shaders/matrix_rain.gdshader`, `godot/tests/bot_test.gd`,
+  `godot/tests/test_city_themes.gd`):
+  - **Kein seitliches Ausweichen an Geistern** (Speedrun): Die
+    Gegner-Kollision war rein distanzbasiert mit einem `ENEMY_HIT_RADIUS`
+    von `0.62` — bei `PLAYER_RADIUS = 0.34` blieben in einem 2 m breiten
+    Korridor nur 4 cm Lücke zum Vorbeiquetschen. `ENEMY_HIT_RADIUS` ist
+    jetzt `0.85`: breiter als die halbe Korridorbreite, ein Geist blockiert
+    den Korridor also tatsächlich vollständig.
+  - **Höhere, etwas engere Korridore** (Speedrun): `MazeView.WALL_H` von
+    `3.8` auf `4.4` angehoben (nur das "normal"-Theme nutzt diesen Wert
+    direkt — Manhattan hat ein eigenes Höhensystem). Zusätzlich bekommt das
+    "normal"-Theme jetzt `CityTheme.wall_footprint_scale = 1.12`: Die
+    Wände greifen leicht über ihre eigene Zellenfläche hinaus in den
+    Korridor hinein (ein 2 m breiter Korridor wird dadurch ~1,76 m), sowohl
+    visuell als auch in der echten `StaticBody3D`-Kollision.
+  - **Dunkleres Matrix-Grün, an die Ästhetik des Films angelehnt**
+    (`matrix_rain.gdshader`): `glyph_color`/`bg_color` auf ein tieferes,
+    gesättigteres Grün vor nahezu Schwarz gezogen, `EMISSION` von `2.2x`
+    auf `2.6x` angehoben — ein Stil-Abgleich mit der bekannten, oft
+    beschriebenen Bildsprache des Films (monochromes Grün, harter
+    Kontrast, fast schwarzer Hintergrund) rein nach Beschreibung/Augenmaß,
+    nicht anhand eines tatsächlichen Filmstills. Da die insgesamt höheren,
+    engeren, helleren Wände das Vektions-Risiko (Scheinbewegungsgefühl
+    durch eine durchgängig nach unten laufende Textur) erhöhen, wurde
+    `floor_fade_frac` (der statische, nicht scrollende Streifen am
+    Wandfuß) leicht von `0.16` auf `0.19` angehoben.
+  - **Explorer: breitere Straßen, echte Fahrspuren + Fußweg**: Manhattans
+    Gebäude rücken weiter von ihrer Zellenkante ab
+    (`CityTheme.wall_footprint_scale` `0.55` → `0.48` → `0.40`), wodurch
+    die Straßencanyons spürbar breiter werden. Taxis und Fußgänger teilten
+    sich vorher eine einzige Mittellinie — jetzt bekommt der Verkehr zwei
+    versetzte Fahrspuren (`MANHATTAN_VEHICLE_LANE_OFFSET`, eine je
+    Richtung, siehe `taxi.gd::_apply_lane()` — korrekt auch nach einem
+    Richtungswechsel am Straßenende, vorher blieb ein Taxi nach dem Wenden
+    fälschlich in seiner alten Spur) und Fußgänger einen eigenen Gehweg
+    nah an der Häuserfront (`MANHATTAN_SIDEWALK_OFFSET`).
+  - **Review-Fund behoben (kritisch)**: Die erste Fassung ließ zwischen
+    Gehweg und Hauswand weniger Platz als den weichen Verdrängungsradius
+    um einen Fußgänger selbst — der Spieler hätte faktisch nie neben einem
+    Fußgänger vorbeigehen können, was dem expliziten Auftrag
+    ("hier darf man neben Passanten... vorbei") widersprach. Behoben durch
+    einen eigenen, kleineren `MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS` (`0.35`
+    statt der von Fahrzeugen geteilten `0.55`) zusammen mit den oben
+    genannten `wall_footprint_scale`/`MANHATTAN_SIDEWALK_OFFSET`-Werten.
+  - Review-Prozess: Wie in `CLAUDE.md` vorgeschrieben liefen nach der
+    Implementierung die drei Review-Subagenten (`game-designer`,
+    `ux-reviewer`, `code-reviewer`) parallel gegen die geänderten Dateien.
+    Gefunden und behoben: der oben genannte Gehweg-Bug (game-designer,
+    unabhängig bestätigt durch code-reviewer) und der Taxi-Spurwechsel-Bug
+    (unabhängig von game-designer und code-reviewer gefunden). Als
+    Designfrage zurückgestellt (nicht eigenmächtig umgesetzt, siehe
+    `CLAUDE.md`s "größere Designänderungen vorher mit dem Nutzer
+    abstimmen"): die unbegrenzt mit dem Level wachsende Geister-
+    Geschwindigkeit wird durch das neue harte Nicht-Ausweichen spürbarer
+    und wurde vom ux-reviewer erneut als Balancing-Thema aufgeworfen.
+  - Getestet: `bot_test.gd` prüft den neuen `ENEMY_HIT_RADIUS` (kann nicht
+    mehr seitlich an einem gepinnten Gegner vorbeigeschlüpft werden), die
+    neuen Shader-Konstanten, `wall_footprint_scale` in beiden Themes, dass
+    Taxis/Fußgänger tatsächlich auf versetzten Spuren/Gehwegen fahren statt
+    auf der nackten Mittellinie, dass ein Taxi nach dem Wenden die Spur
+    wechselt, und dass die Gehweg-Hauswand-Lücke rechnerisch größer bleibt
+    als der Fußgänger-Verdrängungsradius. `test_city_themes.gd` prüft die
+    neuen `wall_footprint_scale`-Grenzen beider Themes.
+
 ## Steam-Veröffentlichung
 
 Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md): Godot-Export-Setup,

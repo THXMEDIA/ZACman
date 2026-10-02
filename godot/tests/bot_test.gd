@@ -95,9 +95,11 @@ func _run_checks() -> void:
 	# just return the "no override" nil rather than the shader's own default;
 	# check the darker/more-saturated defaults straight in the shader source
 	# instead.
-	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.001, 0.012, 0.004)") != -1)
-	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.08, 0.95, 0.22)") != -1)
-	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.2") != -1)
+	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.0004, 0.006, 0.002)") != -1)
+	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.05, 0.92, 0.18)") != -1)
+	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.6") != -1)
+	_check("matrix wall: corridors narrowed via a bigger-than-CELL wall footprint", main.maze_view.city_theme.wall_footprint_scale > 1.0)
+	_check("matrix wall: taller than the previous WALL_H", main.maze_view.WALL_H > 3.8)
 
 	# ---- Background music: an original synthesized "arcade" loop starts a
 	# normal run (see Sfx.play_arcade_music / audio_synth.gd) ----
@@ -196,6 +198,25 @@ func _run_checks() -> void:
 	main.invuln_until = 0.0
 	await get_tree().process_frame
 	_check("collision costs a life", main.lives == lives_before - 1, "before=%d after=%d" % [lives_before, main.lives])
+
+	# ---- can no longer squeeze past a ghost sideways in a corridor (per
+	# user request — see Main.ENEMY_HIT_RADIUS) ----
+	main.begin_game()
+	await get_tree().process_frame
+	var squeeze_cell: Vector2i = main.player.cell()
+	var en_squeeze = main.enemies[0]
+	en_squeeze.mode = "chase"
+	main.frightened_until = 0.0
+	main.invuln_until = main.now + 999.0 # hold off collision while enemy/player get positioned
+	_pin_enemy_at(en_squeeze, squeeze_cell)
+	await get_tree().process_frame # let enemy.update() actually move it onto the pinned cell
+	# 0.7 off to one side would have been outside the old 0.62 hit radius
+	# (i.e. the old "squeeze past" gap) but is well inside the new one.
+	main.player.global_position = Vector3(en_squeeze.position.x + 0.7, main.player.global_position.y, en_squeeze.position.z)
+	var lives_before_squeeze: int = main.lives
+	main.invuln_until = 0.0
+	await get_tree().process_frame
+	_check("can't squeeze past a ghost sideways anymore", main.lives == lives_before_squeeze - 1, "before=%d after=%d" % [lives_before_squeeze, main.lives])
 
 	# ---- losing the last life ends the game ----
 	main.begin_game()
@@ -371,14 +392,55 @@ func _run_checks() -> void:
 	_check("manhattan: no word power-up node exists", main.maze_view.word_powerup_nodes.is_empty())
 	_check("manhattan: taxis spawned", main.taxis.size() > 0, "got %d" % main.taxis.size())
 	_check("manhattan: pedestrians spawned", main.pedestrians.size() > 0, "got %d" % main.pedestrians.size())
+	# Per user request, traffic and pedestrians no longer share one bare
+	# street centerline: taxis drive an offset lane, pedestrians walk an
+	# offset sidewalk strip (see Main.MANHATTAN_VEHICLE_LANE_OFFSET/
+	# MANHATTAN_SIDEWALK_OFFSET). A centerline position is always an exact
+	# multiple of CELL (2.0), so fixed_coord mod CELL is the offset applied
+	# — either the constant itself (offset added on the positive side) or
+	# CELL minus it (added on the negative side, which fposmod wraps back
+	# into [0, CELL)) — checked against the real constants directly rather
+	# than a magic-threshold fractional-part test. (This can't just take
+	# the smaller of the two distances to a CELL multiple: once an offset
+	# exceeds half of CELL — true for MANHATTAN_SIDEWALK_OFFSET — the
+	# nearest multiple is genuinely the neighboring street, not the
+	# originating one, so both the offset and CELL-offset are legitimate
+	# readings and both must be accepted.)
+	var taxi_frac: float = fposmod(main.taxis[0].fixed_coord, main.CELL)
+	_check("manhattan: taxis drive an offset lane, not the bare centerline", is_equal_approx(taxi_frac, main.MANHATTAN_VEHICLE_LANE_OFFSET) or is_equal_approx(taxi_frac, main.CELL - main.MANHATTAN_VEHICLE_LANE_OFFSET), "frac=%f expected=%f" % [taxi_frac, main.MANHATTAN_VEHICLE_LANE_OFFSET])
+	var ped_frac: float = fposmod(main.pedestrians[0]._fixed_coord, main.CELL)
+	_check("manhattan: pedestrians walk an offset sidewalk, not the bare centerline", is_equal_approx(ped_frac, main.MANHATTAN_SIDEWALK_OFFSET) or is_equal_approx(ped_frac, main.CELL - main.MANHATTAN_SIDEWALK_OFFSET), "frac=%f expected=%f" % [ped_frac, main.MANHATTAN_SIDEWALK_OFFSET])
+
+	# ---- regression test: a taxi that reaches the end of its street and
+	# reverses must switch to the lane matching its NEW direction, not keep
+	# driving in the lane assigned at spawn (the lane-flip bug caught
+	# independently by the game-designer and code-reviewer review passes) ----
+	var taxi_lf = main.taxis[0]
+	taxi_lf.dir = 1.0
+	taxi_lf._apply_lane()
+	var fixed_at_positive_dir: float = taxi_lf.fixed_coord
+	taxi_lf.pos_along = taxi_lf.max_coord + 1.0 # force it past the end of its street
+	taxi_lf.update(0.0)
+	_check("manhattan: taxi reverses direction at the end of its street", taxi_lf.dir < 0.0, "dir=%f" % taxi_lf.dir)
+	_check("manhattan: taxi switches lanes after reversing, not stuck in its old lane", not is_equal_approx(taxi_lf.fixed_coord, fixed_at_positive_dir), "fixed=%f (was %f)" % [taxi_lf.fixed_coord, fixed_at_positive_dir])
+	_check("manhattan: taxi's new lane matches its new direction", is_equal_approx(taxi_lf.fixed_coord, taxi_lf.base_coord - taxi_lf.lane_offset), "fixed=%f base=%f lane_offset=%f" % [taxi_lf.fixed_coord, taxi_lf.base_coord, taxi_lf.lane_offset])
+
 	var lives_before_obstacle: int = main.lives
 	var ped = main.pedestrians[0]
 	main.player.global_position = Vector3(ped.position.x + 0.05, main.player.global_position.y, ped.position.z)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var d_to_ped := Vector2(main.player.global_position.x - ped.position.x, main.player.global_position.z - ped.position.z).length()
-	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
+	_check("manhattan: pedestrian blocks the player (pushed out to the clearance radius)", d_to_ped >= main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS - 0.01, "d=%f" % d_to_ped)
 	_check("manhattan: obstacles cost no life", main.lives == lives_before_obstacle)
+
+	# ---- the sidewalk must leave real room to pass a pedestrian without
+	# being shoved into the building face — the bug the critical review
+	# finding was about (wall_footprint_scale 0.48 + sidewalk offset 1.15
+	# left less clearance to the wall than the push-out radius itself) ----
+	var building_face_offset: float = main.CELL - main.CELL * main.maze_view.city_theme.wall_footprint_scale * 0.5
+	var sidewalk_to_wall_clearance: float = building_face_offset - main.MANHATTAN_SIDEWALK_OFFSET
+	_check("manhattan: sidewalk clearance to the building face exceeds the pedestrian push radius", sidewalk_to_wall_clearance > main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS, "clearance=%f radius=%f" % [sidewalk_to_wall_clearance, main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS])
 
 	# ---- Manhattan's Neo-Noir Cyberpunk dressing: real landmark names in
 	# the walls, a neon environment tint, and metro stations that return the

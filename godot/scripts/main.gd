@@ -10,6 +10,17 @@ const WORD_MODE_DURATION := 12.0
 const FEAR_MODE_DURATION := 10.0
 const FEAR_NOCLIP_FLIP_MIN := 0.4
 const FEAR_NOCLIP_FLIP_MAX := 1.1
+## Ghost hit-trigger distance (center-to-center; ghosts have no physical
+## collider of their own, so this is the only thing standing between a
+## ghost and the player in a corridor). The old 0.62 left just enough
+## clearance in a one-wide corridor (MazeView.CELL/wall_footprint_scale) for
+## the player to hug one wall and slip past a ghost sitting in the corridor
+## instead of colliding with it (see review finding GD-N4). Raised well
+## past the corridor's own width so that's no longer possible at all, per
+## user request ("kein Ausweichen mit Gegner möglich machen, nicht seitlich
+## vorbei können") — a ghost in the way now has to be eaten (frightened),
+## evaded by backing off into a side passage, or run into.
+const ENEMY_HIT_RADIUS := 0.85
 const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
 
 const LEVELS := [
@@ -29,6 +40,27 @@ const MANHATTAN_TAXI_ROW_COUNT := 5
 const MANHATTAN_TAXI_COL_COUNT := 4
 const MANHATTAN_PEDESTRIAN_COUNT := 16
 const MANHATTAN_OBSTACLE_RADIUS := 0.55
+## Pedestrians get their own, smaller push-out radius. With the shared
+## 0.55 radius, the push zone around a sidewalk pedestrian reached past the
+## sidewalk strip into the building face itself, leaving no actual gap for
+## the player to walk through next to them — directly contradicting the
+## "neben Passanten... vorbei" request. 0.35 keeps a soft bump against
+## pedestrians while leaving real room to pass on the building side.
+const MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS := 0.35
+## Streets used to put taxis AND pedestrians on the exact same centerline
+## (per user request: "mehrspurig für Verkehr und daneben Fußweg" — traffic
+## needs real lanes, and pedestrians need a sidewalk clear of them, not one
+## shared line down the middle of the street). MANHATTAN_VEHICLE_LANE_OFFSET
+## splits traffic into two lanes either side of the centerline (one per
+## direction — see Taxi.setup); MANHATTAN_SIDEWALK_OFFSET puts pedestrians
+## on a strip further out, near the building edge, clear of both lanes. Both
+## stay well inside the canyon between two building faces (see CityTheme.
+## wall_footprint_scale in city_themes.gd's manhattan()) — with that scale
+## at 0.40, the building face sits 1.6 world units off the street
+## centerline, so a 1.1 sidewalk offset leaves ~0.5 clearance to the wall,
+## comfortably more than MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS (0.35).
+const MANHATTAN_VEHICLE_LANE_OFFSET := 0.45
+const MANHATTAN_SIDEWALK_OFFSET := 1.1
 const MANHATTAN_METRO_COUNT := 4
 const MANHATTAN_METRO_RADIUS := 0.75
 const MANHATTAN_LIMO_COLOR := Color(0.82, 0.86, 0.95) # chrome/silver
@@ -398,7 +430,7 @@ func _spawn_manhattan_obstacles() -> void:
 		obstacle_root.add_child(taxi)
 		var v := _pick_weighted_vehicle(vehicle_pool)
 		var speed: float = v["speed_min"] + randf() * (v["speed_max"] - v["speed_min"])
-		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, speed, v["word"], v["color"], v["font_size"])
+		taxi.setup("row", row_choices[i] * CELL, min_x, max_x, speed, v["word"], v["color"], v["font_size"], MANHATTAN_VEHICLE_LANE_OFFSET)
 		taxis.append(taxi)
 	for i in mini(MANHATTAN_TAXI_COL_COUNT, col_choices.size()):
 		var taxi2 := Node3D.new()
@@ -406,7 +438,7 @@ func _spawn_manhattan_obstacles() -> void:
 		obstacle_root.add_child(taxi2)
 		var v2 := _pick_weighted_vehicle(vehicle_pool)
 		var speed2: float = v2["speed_min"] + randf() * (v2["speed_max"] - v2["speed_min"])
-		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, speed2, v2["word"], v2["color"], v2["font_size"])
+		taxi2.setup("col", col_choices[i] * CELL, min_z, max_z, speed2, v2["word"], v2["color"], v2["font_size"], MANHATTAN_VEHICLE_LANE_OFFSET)
 		taxis.append(taxi2)
 
 	var pedestrian_scripts := [
@@ -421,12 +453,13 @@ func _spawn_manhattan_obstacles() -> void:
 		ped.set_script(load(script_path))
 		obstacle_root.add_child(ped)
 		var speed := 0.8 + randf() * 0.7
+		var side := 1.0 if randf() > 0.5 else -1.0 # which building edge's sidewalk, so both sides of a street get walked
 		if row_choices.is_empty() or (not col_choices.is_empty() and randf() > 0.5):
 			var col: int = col_choices[randi() % col_choices.size()]
-			ped.setup(Vector3(col * CELL, 0.4, min_z), "col", min_z, max_z, speed)
+			ped.setup(Vector3(col * CELL + side * MANHATTAN_SIDEWALK_OFFSET, 0.4, min_z), "col", min_z, max_z, speed)
 		else:
 			var row: int = row_choices[randi() % row_choices.size()]
-			ped.setup(Vector3(min_x, 0.4, row * CELL), "row", min_x, max_x, speed)
+			ped.setup(Vector3(min_x, 0.4, row * CELL + side * MANHATTAN_SIDEWALK_OFFSET), "row", min_x, max_x, speed)
 		pedestrians.append(ped)
 
 
@@ -444,9 +477,9 @@ func _spawn_metro_stations(metro_cells: Array) -> void:
 
 func _check_manhattan_obstacles() -> void:
 	for t in taxis:
-		_push_player_away_from(t.position)
+		_push_player_away_from(t.position, MANHATTAN_OBSTACLE_RADIUS)
 	for p in pedestrians:
-		_push_player_away_from(p.position)
+		_push_player_away_from(p.position, MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign ends
@@ -476,17 +509,20 @@ func _enter_metro() -> void:
 	begin_game()
 
 
-## Soft-blocks the player out to MANHATTAN_OBSTACLE_RADIUS from an obstacle
-## — an "obstacle you can't walk through" without needing a real physics
-## body on a continuously-moving node. Never touches lives/score: Manhattan
-## obstacles are harmless by design (see this file's Manhattan header).
-func _push_player_away_from(obstacle_pos: Vector3) -> void:
+## Soft-blocks the player out to `radius` from an obstacle — an "obstacle
+## you can't walk through" without needing a real physics body on a
+## continuously-moving node. Never touches lives/score: Manhattan obstacles
+## are harmless by design (see this file's Manhattan header). Taxis and
+## pedestrians pass their own radius (MANHATTAN_OBSTACLE_RADIUS /
+## MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS) so the pedestrian push zone can be
+## smaller, leaving real sidewalk room to pass next to them.
+func _push_player_away_from(obstacle_pos: Vector3, radius: float) -> void:
 	var away := Vector2(player.global_position.x - obstacle_pos.x, player.global_position.z - obstacle_pos.z)
 	var d := away.length()
 	if d <= 0.0001:
-		player.global_position.x += MANHATTAN_OBSTACLE_RADIUS
-	elif d < MANHATTAN_OBSTACLE_RADIUS:
-		var push := away.normalized() * (MANHATTAN_OBSTACLE_RADIUS - d)
+		player.global_position.x += radius
+	elif d < radius:
+		var push := away.normalized() * (radius - d)
 		player.global_position.x += push.x
 		player.global_position.z += push.y
 
@@ -833,7 +869,7 @@ func _check_enemy_collision(enemy, frightened_active: bool) -> void:
 	if now <= invuln_until:
 		return
 	var d := Vector2(enemy.position.x - player.global_position.x, enemy.position.z - player.global_position.z).length()
-	if d < 0.62:
+	if d < ENEMY_HIT_RADIUS:
 		if frightened_active:
 			enemy.mode = "eaten"
 			enemy.eaten_until = now + 2.2

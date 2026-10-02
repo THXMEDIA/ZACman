@@ -23,6 +23,15 @@ static func normal() -> Resource:
 	t.wall_matrix_rain = true
 	t.landmark_provider_script = null
 
+	# Corridors a bit tighter/more claustrophobic (per user request): walls
+	# a touch bigger than their own CELL footprint (see CityTheme.
+	# wall_footprint_scale), encroaching slightly into the neighboring open
+	# cell on each side rather than stopping exactly at the cell boundary —
+	# a 2.0-wide corridor between two walls becomes ~1.76 wide. MazeView.
+	# WALL_H itself (the taller/narrower combo the user asked for) stays a
+	# MazeView constant since it's shared by every theme.
+	t.wall_footprint_scale = 1.12
+
 	# Brown dirt ground + a bright blue "sky" ceiling with blocky white
 	# clouds (see ceil_sky_clouds / cloud_mesh.gd) — a deliberate Super-
 	# Mario/Minecraft mashup against the green Matrix-code walls, per the
@@ -85,8 +94,21 @@ static func manhattan() -> Resource:
 	# Streets wider than the old edge-to-edge blocks: every building sits
 	# back from its cell's edges (see CityTheme.wall_footprint_scale), so
 	# the visible/walkable gap between two building faces is noticeably
-	# more than one bare CELL now.
-	t.wall_footprint_scale = 0.55
+	# more than one bare CELL now. Shrunk further still (0.55 -> 0.48 ->
+	# 0.40, per user request: "die Abstände zwischen Gebäuden sind zu eng"
+	# and "hier darf man neben Passanten... vorbei") — building faces
+	# across a street are now ~3.2 apart (was ~2.9), on top of the
+	# explicit vehicle-lane/sidewalk separation below (see Main.
+	# MANHATTAN_VEHICLE_LANE_OFFSET / MANHATTAN_SIDEWALK_OFFSET), which is
+	# the bigger part of the actual fix — traffic and pedestrians used to
+	# share one single centerline lane with no room to pass each other, now
+	# vehicles drive two offset lanes down the middle and pedestrians walk a
+	# dedicated strip near the building edge, clear of both. The review
+	# pass (docs/review/berichte/) found that at 0.48 the sidewalk strip
+	# (Main.MANHATTAN_SIDEWALK_OFFSET) left less clearance to the building
+	# face than the pedestrian push-out radius — i.e. no actual room to
+	# pass — so this went down to 0.40 alongside those two constants.
+	t.wall_footprint_scale = 0.40
 
 	# No physical ceiling plane (see CityTheme.ceil_enabled) — real-height
 	# skyscrapers need open sky above them, not a flat roof at the old

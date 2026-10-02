@@ -59,9 +59,19 @@ uniform float glyph_density = 0.7;   // fraction of cells showing a glyph rather
 // toward near-black, and EMISSION below is boosted — net effect is a wall
 // that reads as darker overall (more contrast, more black space between
 // glyphs) while the lit glyphs themselves glow harder/more neon.
-uniform vec3 glyph_color = vec3(0.08, 0.95, 0.22);
-uniform vec3 bg_color = vec3(0.001, 0.012, 0.004);
-uniform float floor_fade_frac = 0.16; // bottom fraction of the wall's own height that fades out to bg_color (a static strip right at floor level)
+//
+// Pushed further per a later request to match the film The Matrix's own
+// digital-rain look more closely: that film's code shots are famously
+// near-monochrome — a single narrow green channel over near-total black,
+// with almost no midtones, so the eye reads it as "glowing green on black"
+// rather than as a lit, colored surface. bg_color is pulled closer to true
+// black here and glyph_color is nudged toward a purer, less red-tinted
+// phosphor green (closer to the canonical "Matrix green", informally
+// around #00FF41) for that same high-contrast, monochrome feel — a
+// stylistic match done by eye/description, not from any actual film still.
+uniform vec3 glyph_color = vec3(0.05, 0.92, 0.18);
+uniform vec3 bg_color = vec3(0.0004, 0.006, 0.002);
+uniform float floor_fade_frac = 0.19; // bottom fraction of the wall's own height that fades out to bg_color (a static strip right at floor level) — nudged up from 0.16 alongside the taller/narrower, higher-emission Matrix pass (more wall height and brighter glyphs in view at once raises vection risk; a bit more static floor strip partly offsets that)
 
 const int LAYER_COUNT = 5; // "5 rows of code running behind each other" — see header comment above
 
@@ -227,10 +237,10 @@ void fragment() {
 	color = mix(bg_color, color, floor_fade);
 
 	ALBEDO = color;
-	// Boosted from 1.5x — a darker base (bg_color/glyph_color above) with a
-	// stronger emission multiplier is what actually reads as "darker AND
-	// more luminous": the unlit background sits closer to true black while
-	// the lit glyphs glow harder against it, instead of everything just
-	// getting dimmer together.
-	EMISSION = color * 2.2;
+	// Boosted from 1.5x, then again from 2.2x — a darker base (bg_color/
+	// glyph_color above) with a stronger emission multiplier is what
+	// actually reads as "darker AND more luminous": the unlit background
+	// sits closer to true black while the lit glyphs glow harder against
+	// it, instead of everything just getting dimmer together.
+	EMISSION = color * 2.6;
 }

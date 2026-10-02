@@ -4,7 +4,7 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
-const WALL_H := 3.8 # doubled from the original 1.9 per user request — taller, more imposing corridors
+const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal"/Matrix theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
 ## The voxel-cloud sky sits well above the wall tops rather than hugging
 ## them: both the sky ceiling and the clouds under it float at
 ## WALL_H * CLOUD_HEIGHT_MULT (see _build_floor_ceiling/_build_sky_clouds),
