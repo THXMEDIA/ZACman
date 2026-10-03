@@ -6,10 +6,16 @@ extends Node3D
 
 const CELL := 2.0
 const FRIGHTENED_DURATION := 7.0
-const WORD_MODE_DURATION := 12.0
-const FEAR_MODE_DURATION := 10.0
-const FEAR_SCORE_MULTIPLIER := 2 # the Fear pickup's reward: double points while it runs
-const FEAR_FIRST_LEVEL := 1 # levels already cleared in the run before Fear pickups appear (i.e. from the 2nd level on)
+## Start intro "Follow the white rabbit. But beware" (spec 2.1): shown for
+## this long at every speedrun start; it costs no time — the clock only starts
+## with the first movement input after it.
+const START_INTRO_S := 2.5
+## Rabbit conditions (spec 1.2/2.2): 0.8 s transition wave in and out, tick
+## sounds in the last 3 s, Matrix walls fade back in / blink in the last 3 s
+## (below 3 Hz).
+const CONDITION_TRANSITION_S := 0.8
+const CONDITION_WARN_S := 3.0
+const MATRIX_BLINK_HZ := 1.5
 ## Ghost hit-trigger distance (center-to-center; ghosts have no physical
 ## collider of their own, so this is the only thing standing between a
 ## ghost and the player in a corridor). The old 0.62 left just enough
@@ -90,6 +96,9 @@ const MANHATTAN_BIKE_COLOR := Color(0.35, 0.85, 0.45)
 const LevelsScript := preload("res://scripts/levels.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const ConditionsScript := preload("res://scripts/conditions.gd")
+const ConditionLooksScript := preload("res://scripts/condition_looks.gd")
+const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
+const SettingsScript := preload("res://scripts/settings.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 
 ## Ghost colors come from the level look (MazeView.ghost_palette(), see
@@ -116,7 +125,7 @@ var combo_count := 0
 var invuln_until := 0.0
 var start_cell := Vector2i(1, 1)
 var fruit_spawned := false
-## `now` is the game clock: effect timers (Frightened, Word, Fear, invulnerability,
+## `now` is the game clock: effect timers (Frightened, conditions, invulnerability,
 ## ghost release, fruit) are all relative to it, and it stands still while the
 ## game is paused. `real_now` never stops — the Speedrun time is measured on it,
 ## so pausing does not stop the clock (no pause abuse in a speedrun).
@@ -126,19 +135,37 @@ var level_start_real := 0.0
 ## true once a Twitch chat command took effect during the current level; the
 ## level's time then goes to the "chat" best time / leaderboard (Levels.MODES).
 var level_chat_assisted := false
-## Condition picked on the start screen (see hud.condition_selected).
-var selected_condition_id := ""
 var playing_manhattan := false
-var word_mode_until := 0.0
 
-## Fear & Loathing pickup (normal levels from the 2nd level of a run on, lying
-## in dead ends — see maze_view.gd): a risk/reward item. For FEAR_MODE_DURATION
-## seconds the steering is noisy/inverted (only while the player steers) and the
-## walls turn psychedelic; in return all points count double. A second pickup
-## only extends the timer. See _activate_fear_powerup.
-var fear_mode_until := 0.0
-var _fear_condition_instance = null
-var _fear_saved_active_condition = null
+## ---- Speedrun start hold (spec 2.1) ----
+## true from begin_game() until the first movement input after the start
+## intro: the world waits (game clock, ghosts, effects stand still), the clock
+## shows 0:00.00 and walking is locked while the intro is up. next_level()
+## does not hold (no intro between levels).
+var start_hold := false
+var intro_until_real := 0.0
+## Tests / tools: start a speedrun without the intro and the hold (the clock
+## then starts with the level, like next_level).
+var skip_start_intro := false
+
+## ---- Rabbit condition (spec 2.2-2.5) ----
+## THE active condition — the single source of truth (Code-W1 came from a
+## second, parallel "pickup condition"). null = none. Everything that depends
+## on it (noclip, ghost speed, minimap, look, HUD card) is derived from it.
+var active_condition = null
+var condition_started_at := 0.0 # game clock (`now`)
+var condition_until := 0.0 # game clock (`now`)
+var _last_tick_second := -1
+var _object_style := [false, false] # [outline, ignore_fog] currently applied
+## The "Kaninchen der Woche" generator of the current level (re-created at
+## every level start from level id + ISO week, so a restart never re-rolls).
+var rabbit_rng: RandomNumberGenerator = null
+var rabbit_week := Vector2i(0, 0)
+## Tests: force a week instead of the player's current local ISO week.
+var rabbit_week_override := Vector2i(0, 0)
+
+## "Effekte reduzieren" (spec 1.2), persisted via Settings.
+var reduce_fx := false
 
 ## Debug overlay (FPS, player position, cell): toggled with F3, debug builds only.
 var debug_mode := false
@@ -147,15 +174,6 @@ var debug_mode := false
 ## current/last Explorer run was played on. Only "manhattan" resolves to
 ## real content today (see start_explorer_level).
 var explorer_city_id := "manhattan"
-
-## The selected "Kondition" for the current run (see scripts/conditions.gd's
-## registry) — a whole-run modifier like Matrix Ghost (no wall collision) or
-## Fear & Loathing (noisy/inverted controls), independent of and additional
-## to the per-level Word Mode pickup above. null/"" = no condition, plays
-## unmodified. Set from `selected_condition_id` (start-screen selector) at the start of
-## every run.
-var current_condition = null
-var condition_id := ""
 
 var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
@@ -168,6 +186,7 @@ var world_env: WorldEnvironment
 func _ready() -> void:
 	level_rng.randomize()
 	high_score = _load_highscore()
+	reduce_fx = SettingsScript.load_settings().reduce_fx
 	_build_environment()
 	_build_player()
 	_build_hud()
@@ -181,6 +200,7 @@ func _ready() -> void:
 
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
+	hud.set_reduce_fx(reduce_fx)
 	hud.show_only(hud.start_panel)
 
 
@@ -234,7 +254,7 @@ func _build_hud() -> void:
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
 	hud.manhattan_pressed.connect(_on_manhattan_pressed)
-	hud.condition_selected.connect(_on_condition_selected)
+	hud.reduce_fx_toggled.connect(_on_reduce_fx_toggled)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
 	Twitch.chat_command.connect(_on_twitch_command)
 	Twitch.connection_state_changed.connect(_on_twitch_connection_changed)
@@ -245,20 +265,21 @@ func _build_hud() -> void:
 ## Starts one level of the pool (a Levels.POOL entry). Which one is decided by
 ## the caller: begin_game() draws the first, next_level() the following.
 func start_level(level: Dictionary) -> void:
+	_end_condition(false) # a condition never survives into the next level/attempt
 	current_level = level
 	level_id = level.id
 	maze = MazeGen.generate_maze(level.rows, level.cols, level.seed, LevelsScript.maze_opts(level))
 	start_cell = LevelsScript.start_cell(MazeGen, maze)
 	level_chat_assisted = false
+	rabbit_rng = _make_rabbit_rng(level_id)
 
-	maze_view.build(maze, start_cell, "normal", [], [], level_index >= FEAR_FIRST_LEVEL, level.get("look", ""))
+	# The rabbit's position follows the level seed (deterministic per level).
+	maze_view.build(maze, start_cell, "normal", [], [], level.seed, level.get("look", ""))
 	hud.set_explorer_hud(false)
+	hud.set_minimap_visible(true)
 	_apply_theme_environment("normal")
+	_object_style = [false, false]
 	fruit_spawned = false
-	word_mode_until = 0.0
-	fear_mode_until = 0.0
-	_fear_condition_instance = null
-	player.active_condition = current_condition # in case a Fear & Loathing pickup was interrupted by a restart, mid-effect
 	frightened_until = 0.0 # Code-W4: a power-pellet window must never survive into the next level/attempt
 	combo_count = 0
 	# Warp to the fresh start_cell BEFORE refreshing noclip, not after —
@@ -299,7 +320,7 @@ func start_level(level: Dictionary) -> void:
 	hud.set_level(level_index + 1)
 	hud.set_score(score)
 	hud.set_lives(lives)
-	hud.set_best_time(Speedrun.best_for(level_id, condition_id, "solo"))
+	hud.set_best_time(Speedrun.best_for(level_id, board_id(), "solo"))
 	level_start_real = real_now
 
 
@@ -312,7 +333,6 @@ func begin_game(forced_level_id: String = "") -> void:
 	playing_manhattan = false
 	level_index = 0
 	played_ids.clear()
-	set_condition(selected_condition_id)
 	hud.hide_all_panels()
 	if forced_level_id != "":
 		start_level(LevelsScript.by_id(forced_level_id))
@@ -321,6 +341,7 @@ func begin_game(forced_level_id: String = "") -> void:
 	running = true
 	paused = false
 	player.input_enabled = true
+	_begin_start_hold()
 	Sfx.set_siren(true, false)
 	Sfx.play_arcade_music()
 	if not OS.has_feature("web"):
@@ -334,6 +355,7 @@ func begin_game(forced_level_id: String = "") -> void:
 ## pause against a hand-built real-Midtown-grid Maze instead of a
 ## MazeGen.generate_maze() result.
 func start_manhattan_level() -> void:
+	_end_condition(false)
 	var mm = load("res://scripts/manhattan_maze.gd").new()
 	maze = mm.generate()
 	mm.free()
@@ -352,10 +374,6 @@ func start_manhattan_level() -> void:
 	maze_view.build(maze, start_cell, "manhattan", reserved_cells, metro_cells)
 	_apply_theme_environment("manhattan")
 	fruit_spawned = false
-	word_mode_until = 0.0
-	fear_mode_until = 0.0
-	_fear_condition_instance = null
-	player.active_condition = current_condition
 	frightened_until = 0.0
 	combo_count = 0
 	# Warp before refreshing noclip, not after — see start_level()'s matching comment.
@@ -372,6 +390,7 @@ func start_manhattan_level() -> void:
 
 	hud.set_level("MANHATTAN")
 	hud.set_explorer_hud(true) # no timer / score / lives / best time here
+	hud.set_minimap_visible(true)
 
 
 ## ---------------- start facing / noclip-end safety ----------------
@@ -608,15 +627,17 @@ func _push_player_away_from(obstacle_pos: Vector3, radius: float) -> void:
 		player.global_position.z += push.y
 
 
-## Starts (or restarts) the Explorer level with the condition picked on the
-## start screen. `city_id` is generic for a future second Explorer city (see
+## Starts (or restarts) the Explorer level. Explorer levels have no rabbit
+## and no conditions. `city_id` is generic for a future second Explorer city (see
 ## city_themes.gd's EXPLORER_IDS); only Manhattan exists today.
 func begin_manhattan_game(city_id: String = "manhattan") -> void:
 	Sfx.stop_all()
 	score = 0
 	lives = 3
 	playing_manhattan = true
-	set_condition(selected_condition_id)
+	start_hold = false
+	player.movement_locked = false
+	hud.show_start_intro(false)
 	hud.hide_all_panels()
 	start_explorer_level(city_id)
 	running = true
@@ -639,8 +660,45 @@ func _on_manhattan_pressed() -> void:
 	begin_manhattan_game()
 
 
-func _on_condition_selected(id: String) -> void:
-	selected_condition_id = id
+func _on_reduce_fx_toggled(on: bool) -> void:
+	set_reduce_fx(on)
+
+
+## "Effekte reduzieren": stored right away and applied to a running look.
+func set_reduce_fx(on: bool) -> void:
+	reduce_fx = on
+	SettingsScript.save_settings({"reduce_fx": on})
+	hud.set_reduce_fx(on)
+	if maze_view != null and maze_view.normal_wall_mmi != null:
+		maze_view.set_look_param("reduce_fx", 1.0 if on else 0.0)
+
+
+## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
+
+func _begin_start_hold() -> void:
+	if skip_start_intro:
+		start_hold = false
+		player.movement_locked = false
+		hud.show_start_intro(false)
+		return
+	start_hold = true
+	intro_until_real = real_now + START_INTRO_S
+	level_start_real = real_now
+	player.movement_locked = true
+	hud.show_start_intro(true)
+
+
+## While holding: the intro runs out, then the first movement input releases
+## the world and starts the clock (the intro and the waiting cost no time).
+func _update_start_hold() -> void:
+	level_start_real = real_now
+	if real_now < intro_until_real:
+		return
+	if hud.is_start_intro_visible():
+		hud.show_start_intro(false)
+		player.movement_locked = false
+	if not paused and player.has_move_input():
+		start_hold = false
 
 
 ## ---------------- Twitch chat (optional, opt-in) ----------------
@@ -672,7 +730,7 @@ func _on_twitch_connection_changed(is_connected: bool) -> void:
 ## A command that takes effect moves the level's time to the "chat" best time
 ## and leaderboard (Levels.MODES), so it can never touch the solo records.
 func _on_twitch_command(_user: String, command: String, _args: String) -> void:
-	if not (running and not paused) or playing_manhattan:
+	if not (running and not paused) or playing_manhattan or start_hold:
 		return
 	# GD-K3/Code-W7: any chat command that actually did something marks the
 	# run currently being timed as assisted — see level_complete_sequence /
@@ -700,7 +758,7 @@ func _mark_chat_assisted() -> void:
 	if level_chat_assisted:
 		return
 	level_chat_assisted = true
-	hud.set_best_time(Speedrun.best_for(level_id, condition_id, "chat"))
+	hud.set_best_time(Speedrun.best_for(level_id, board_id(), "chat"))
 	hud.set_mode_badge("CHAT")
 
 
@@ -708,6 +766,13 @@ func _mark_chat_assisted() -> void:
 ## effect, otherwise "solo" (pvp / coop are reserved for multiplayer).
 func run_mode() -> String:
 	return "chat" if level_chat_assisted else "solo"
+
+
+## The board of the current level's records. The condition is no longer part
+## of the key (spec 2.5); until Etappe 3 adds "chaos"/"chat" it is always the
+## weekly rabbit board.
+func board_id() -> String:
+	return LevelsScript.BOARD_WEEK
 
 
 func next_level() -> void:
@@ -738,6 +803,10 @@ func lose_life() -> void:
 
 func end_game() -> void:
 	running = false
+	_end_condition(false)
+	start_hold = false
+	player.movement_locked = false
+	hud.show_start_intro(false)
 	Sfx.stop_all()
 	if score > high_score:
 		high_score = score
@@ -752,6 +821,7 @@ func end_game() -> void:
 
 func level_complete_sequence() -> void:
 	running = false
+	_end_condition(false)
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
 
@@ -759,8 +829,8 @@ func level_complete_sequence() -> void:
 	var mode := run_mode()
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
-	var result := Speedrun.record_level_time(cleared_id, elapsed, condition_id, mode)
-	Leaderboard.submit_time(cleared_id, condition_id, elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode)
+	var result := Speedrun.record_level_time(cleared_id, elapsed, board_id(), mode)
+	Leaderboard.submit_time(cleared_id, board_id(), elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
 	if mode != "solo":
@@ -773,7 +843,7 @@ func level_complete_sequence() -> void:
 		subtitle += "  ·  neue Bestzeit!"
 	elif result.beat_target:
 		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
-	hud.set_best_time(Speedrun.best_for(cleared_id, condition_id, mode))
+	hud.set_best_time(Speedrun.best_for(cleared_id, board_id(), mode))
 
 	hud.show_levelclear(true, subtitle)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -810,6 +880,7 @@ func toggle_pause() -> void:
 	paused = not paused
 	if paused:
 		hud.set_pause_note(not playing_manhattan)
+		hud.set_reduce_fx(reduce_fx)
 		hud.show_only(hud.pause_panel)
 		Sfx.set_siren(false, false)
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -835,10 +906,15 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	real_now += delta
+	if running and start_hold:
+		_update_start_hold()
 	if running:
-		# The speedrun clock keeps running in the pause (see `real_now`).
+		# The speedrun clock keeps running in the pause (see `real_now`); it
+		# stands at 0 while the start hold lasts (level_start_real follows).
 		hud.set_timer(real_now - level_start_real)
-	if not (running and not paused):
+	if not (running and not paused) or start_hold:
+		if running and maze != null:
+			hud.update_minimap(maze, player, enemies, now < frightened_until, maze_view)
 		return
 	now += delta
 
@@ -852,7 +928,9 @@ func _process(delta: float) -> void:
 	if debug_mode:
 		hud.update_debug_overlay(Engine.get_frames_per_second(), player.global_position, player_cell)
 
+	var ghost_scale: float = active_condition.ghost_speed_scale() if active_condition != null else 1.0
 	for enemy in enemies:
+		enemy.speed_scale = ghost_scale
 		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
 		_check_enemy_collision(enemy, frightened_active)
 
@@ -874,18 +952,12 @@ func _process(delta: float) -> void:
 		_check_manhattan_obstacles()
 		_check_metro_entry()
 
-	if word_mode_until > 0.0 and now >= word_mode_until:
-		_deactivate_word_mode()
-
-	if fear_mode_until > 0.0 and now >= fear_mode_until:
-		_deactivate_fear_powerup()
-
-	if current_condition != null:
-		current_condition.on_process(delta, self)
+	_update_condition(delta)
 
 	hud.set_power_timer(frightened_until - now, FRIGHTENED_DURATION)
 	if now >= frightened_until and Sfx.siren_state() == "frightened":
 		Sfx.set_siren(true, false)
+	hud.set_minimap_visible(active_condition == null or active_condition.minimap_visible())
 	hud.update_minimap(maze, player, enemies, frightened_active, maze_view)
 
 
@@ -916,10 +988,8 @@ func _check_enemy_collision(enemy, frightened_active: bool) -> void:
 			lose_life()
 
 
-## All points go through here: the Fear pickup doubles them while it runs.
+## All points go through here.
 func _add_score(points: int) -> void:
-	if fear_mode_until > 0.0:
-		points *= FEAR_SCORE_MULTIPLIER
 	score += points
 
 
@@ -947,15 +1017,11 @@ func _check_pickups() -> void:
 	if result.fruit:
 		_add_score(150 + level_index * 50)
 		Sfx.fruit()
-	if result.word_powerup:
-		_add_score(75)
-		_activate_word_mode()
-	if result.fear_powerup:
-		_add_score(75)
-		_activate_fear_powerup()
+	if result.rabbit:
+		_on_rabbit_picked()
 	if result.pellet or result.power:
 		Sfx.munch()
-	if result.pellet or result.power or result.fruit or result.word_powerup or result.fear_powerup:
+	if result.pellet or result.power or result.fruit:
 		hud.set_score(score)
 
 	var total: int = maze_view.total_pickups()
@@ -973,37 +1039,13 @@ func _check_pickups() -> void:
 		level_complete_sequence()
 
 
-## ---------------- Word Mode power-up (normal levels only) ----------------
-## Reskins the level into the word-built-world look (walls become "WALL"
-## letterforms, ghosts become "GHOST" letterforms — same as Manhattan's
-## permanent look) and drops player-wall collision for WORD_MODE_DURATION
-## seconds. Manhattan never spawns this pickup (see maze_view.gd), so this
-## only ever fires during a normal level.
-func _activate_word_mode() -> void:
-	word_mode_until = now + WORD_MODE_DURATION
-	maze_view.set_word_mode(true)
-	_refresh_noclip()
-	for enemy in enemies:
-		enemy.set_word_skin(true)
-	Sfx.power()
+## ---------------- noclip (Matrix condition) ----------------
 
-
-func _deactivate_word_mode() -> void:
-	word_mode_until = 0.0
-	maze_view.set_word_mode(current_condition != null and current_condition.id == "matrix_ghost")
-	for enemy in enemies:
-		enemy.set_word_skin(current_condition != null and current_condition.id == "matrix_ghost")
-	_refresh_noclip()
-
-
-## Noclip is derived from the sources that want it (Word Mode, the Matrix
-## Ghost condition) instead of being saved and restored, so overlapping
-## effects can never leave it stuck on. When it turns off, a player who ended
-## up inside a wall is moved to the nearest open cell.
+## Noclip is derived from the one active condition instead of being saved and
+## restored, so it can never be left stuck on. When it turns off, a player
+## whose capsule overlaps a wall is moved to the nearest free cell.
 func _noclip_wanted() -> bool:
-	if word_mode_until > 0.0:
-		return true
-	return current_condition != null and current_condition.id == "matrix_ghost"
+	return active_condition != null and active_condition.wants_noclip()
 
 
 func _refresh_noclip() -> void:
@@ -1022,9 +1064,36 @@ func _keep_noclip_player_in_maze() -> void:
 	player.global_position.z = clampf(player.global_position.z, 0.0, (maze.rows - 1) * CELL)
 
 
+## Code-N3: checking only the player's cell is not enough — with
+## wall_footprint_scale 1.12 a wall reaches 0.12 m into the open cell next
+## to it, so a player at the edge of an open cell can still overlap it. The
+## capsule is "blocked" if its circle (PLAYER_RADIUS) touches any wall box
+## around it, or it is outside the maze rows.
+func capsule_blocked_at(pos: Vector3) -> bool:
+	var r := int(round(pos.z / CELL))
+	var c := int(round(pos.x / CELL))
+	if r < 0 or r >= maze.rows:
+		return true
+	var half: float = CELL * maze_view.city_theme.wall_footprint_scale * 0.5
+	var reach: float = player.PLAYER_RADIUS + 0.02
+	for dr in [-1, 0, 1]:
+		for dc in [-1, 0, 1]:
+			var rr: int = r + dr
+			var cc: int = c + dc
+			if rr < 0 or rr >= maze.rows:
+				continue
+			var cw := posmod(cc, maze.cols)
+			if maze.grid[rr][cw] != 1:
+				continue
+			var dx := maxf(absf(pos.x - cc * CELL) - half, 0.0)
+			var dz := maxf(absf(pos.z - rr * CELL) - half, 0.0)
+			if Vector2(dx, dz).length() < reach:
+				return true
+	return false
+
+
 func _rescue_player_from_wall() -> void:
-	var cell: Vector2i = player.cell()
-	if cell.x >= 0 and cell.x < maze.rows and cell.y >= 0 and cell.y < maze.cols and maze.grid[cell.x][cell.y] == 0:
+	if not capsule_blocked_at(player.global_position):
 		return
 	var best := Vector2i(-1, -1)
 	var best_d := INF
@@ -1032,7 +1101,12 @@ func _rescue_player_from_wall() -> void:
 		for c in maze.cols:
 			if maze.grid[r][c] != 0:
 				continue
-			var d := Vector2(c * CELL - player.global_position.x, r * CELL - player.global_position.z).length()
+			if r > maze.house.r0 and r < maze.house.r1 and c > maze.house.c0 and c < maze.house.c1:
+				continue # never into the ghost house
+			var pos := Vector3(c * CELL, player.global_position.y, r * CELL)
+			if capsule_blocked_at(pos):
+				continue
+			var d := Vector2(pos.x - player.global_position.x, pos.z - player.global_position.z).length()
 			if d < best_d:
 				best_d = d
 				best = Vector2i(r, c)
@@ -1040,47 +1114,155 @@ func _rescue_player_from_wall() -> void:
 		player.global_position = Vector3(best.y * CELL, player.global_position.y, best.x * CELL)
 
 
-## ---------------- Fear & Loathing power-up (normal levels only) ----------------
-## Risk and reward: FEAR_MODE_DURATION seconds of the Fear & Loathing
-## condition's scrambled steering (scripts/conditions/fear_and_loathing.gd,
-## reused directly — it only distorts while the player steers) and psychedelic
-## walls, for double points (_add_score). Wall collision is NOT touched.
-## Whatever whole-run condition (if any) was active is swapped back in
-## unchanged afterwards. A second pickup while it runs only extends it.
-func _activate_fear_powerup() -> void:
-	fear_mode_until = now + FEAR_MODE_DURATION
-	Sfx.fear_start()
-	if _fear_condition_instance != null:
-		return # already running: the timer above was the extension
-	_fear_saved_active_condition = player.active_condition
-	_fear_condition_instance = ConditionsScript.get_condition("fear_and_loathing")
-	_fear_condition_instance.on_start(self)
-	player.active_condition = _fear_condition_instance
-	maze_view.set_psychedelic(true)
+## ---------------- white rabbit and conditions (spec 2.2-2.5) ----------------
+
+## The rabbit generator of a level: "Kaninchen der Woche" (level id + ISO
+## week, local time — see white_rabbit.gd). Etappe 3: Chaos mode returns
+## WhiteRabbit.chaos_rng() here instead.
+func _make_rabbit_rng(lid: String) -> RandomNumberGenerator:
+	rabbit_week = rabbit_week_override if rabbit_week_override.x > 0 else WhiteRabbitScript.current_iso_week()
+	return WhiteRabbitScript.week_rng(lid, rabbit_week)
 
 
-func _deactivate_fear_powerup() -> void:
-	fear_mode_until = 0.0
-	player.active_condition = _fear_saved_active_condition
-	_fear_condition_instance = null
-	maze_view.set_psychedelic(false)
-	Sfx.fear_end()
+## Share of good conditions for the next rabbit. Etappe 3: the chat weighting
+## (spec 2.6) feeds in here.
+func _rabbit_p_good() -> float:
+	return ConditionsScript.P_GOOD_BASE
 
 
-## ---------------- Konditionen (whole-run modifiers) ----------------
-## See scripts/conditions.gd's registry and scripts/conditions/condition_base.gd.
-## Selects (or clears, with "") the condition applied for the current and
-## future runs until changed again. Safe to call whether or not a level is
-## currently running/built.
-func set_condition(id: String) -> void:
-	if current_condition != null:
-		current_condition.on_end(self)
-	condition_id = id
-	current_condition = ConditionsScript.get_condition(id)
-	player.active_condition = current_condition
-	if current_condition != null:
-		current_condition.on_start(self)
+func _on_rabbit_picked() -> void:
+	if rabbit_rng == null:
+		rabbit_rng = _make_rabbit_rng(level_id)
+	var id: String = ConditionsScript.pick_condition(rabbit_rng, _rabbit_p_good())
+	var c = ConditionsScript.get_condition(id)
+	if c == null:
+		return
+	c.roll(rabbit_rng)
+	start_condition(c)
+
+
+## Starts `c` as THE active condition. A running one is replaced, never
+## stacked (spec 2.2). The look is switched here, after the level is built —
+## never from the condition's on_start (Code-W1).
+func start_condition(c) -> void:
+	if active_condition != null:
+		_end_condition(false)
+	active_condition = c
+	player.active_condition = c
+	condition_started_at = now
+	condition_until = now + c.duration_s
+	_last_tick_second = -1
+	c.on_start(self)
+	if c.look_id != "" and maze_view.has_look(c.look_id):
+		maze_view.set_look(c.look_id)
+		maze_view.set_look_param("reduce_fx", 1.0 if reduce_fx else 0.0)
+	hud.show_condition_card(c)
+	if c.is_good:
+		Sfx.rabbit_good()
+	else:
+		Sfx.rabbit_bad()
 	_refresh_noclip()
+	_apply_condition_visuals(0.0, c.duration_s)
+
+
+func condition_remaining() -> float:
+	return maxf(condition_until - now, 0.0) if active_condition != null else 0.0
+
+
+func _update_condition(delta: float) -> void:
+	if active_condition == null:
+		return
+	var remaining := condition_until - now
+	if remaining <= 0.0:
+		_end_condition(true)
+		return
+	active_condition.on_process(delta, self, remaining)
+	var t_in := clampf((now - condition_started_at) / CONDITION_TRANSITION_S, 0.0, 1.0)
+	var t_out := clampf(remaining / CONDITION_TRANSITION_S, 0.0, 1.0)
+	_apply_condition_visuals(minf(t_in, t_out), remaining)
+	if remaining <= CONDITION_WARN_S:
+		var sec := int(ceil(remaining))
+		if sec != _last_tick_second:
+			_last_tick_second = sec
+			Sfx.condition_tick()
+	hud.update_condition_card(remaining, active_condition.duration_s)
+
+
+## Look transition `t` (0 = base, 1 = condition look): shader uniforms on the
+## shared condition material, environment blend, object style.
+func _apply_condition_visuals(t: float, remaining: float) -> void:
+	var c = active_condition
+	if c.look_id == "":
+		return
+	if maze_view.current_look == c.look_id:
+		maze_view.set_look_param("transition", t)
+		maze_view.set_look_param("flip", c.look_flip())
+		maze_view.set_look_param("matrix_solid", _matrix_solid(c, remaining))
+	var look: Dictionary = ConditionLooksScript.get_look(c.look_id)
+	if look.is_empty():
+		return
+	_blend_environment(look.env, t)
+	_set_object_style(look.outline and t >= 0.5, look.objects_ignore_fog and t > 0.0)
+
+
+## Matrix, last 3 s: the walls fade back in and blink (MATRIX_BLINK_HZ, below
+## 3 Hz) — with "Effekte reduzieren" only a steady fade.
+func _matrix_solid(c, remaining: float) -> float:
+	if not c.wants_noclip() or remaining > CONDITION_WARN_S:
+		return 0.0
+	var phase := CONDITION_WARN_S - remaining
+	var ramp := clampf(phase / (CONDITION_WARN_S - CONDITION_TRANSITION_S), 0.0, 1.0)
+	if reduce_fx:
+		return ramp
+	var pulse := 0.5 - 0.5 * cos(TAU * MATRIX_BLINK_HZ * phase)
+	return lerpf(pulse, 1.0, ramp)
+
+
+func _blend_environment(env_target: Dictionary, t: float) -> void:
+	if world_env == null or world_env.environment == null:
+		return
+	var base = CityThemesScript.get_theme("normal")
+	var env: Environment = world_env.environment
+	env.background_color = base.env_bg_color.lerp(env_target.bg, t)
+	env.fog_light_color = base.env_fog_color.lerp(env_target.fog, t)
+	env.fog_density = lerpf(base.env_fog_density, env_target.fog_density, t)
+	env.ambient_light_color = base.env_ambient_color.lerp(env_target.ambient, t)
+	env.ambient_light_energy = lerpf(base.env_ambient_energy, env_target.ambient_energy, t)
+
+
+func _set_object_style(outline: bool, ignore_fog: bool) -> void:
+	if _object_style == [outline, ignore_fog]:
+		return
+	_object_style = [outline, ignore_fog]
+	maze_view.set_object_style(outline, ignore_fog)
+	var ol: Material = ConditionLooksScript.outline_material() if outline else null
+	for e in enemies:
+		e.set_condition_style(ol, ignore_fog)
+
+
+## Ends the active condition (no-op without one): back to the base look and
+## environment, ghosts at normal speed, minimap on, HUD card off, noclip off
+## with the safe-cell rescue.
+func _end_condition(play_sound: bool) -> void:
+	if active_condition == null:
+		return
+	var c = active_condition
+	active_condition = null
+	player.active_condition = null
+	c.on_end(self)
+	if maze_view.normal_wall_mmi != null and maze_view.current_look != maze_view.LOOK_BASE:
+		maze_view.set_look(maze_view.LOOK_BASE)
+	if not playing_manhattan:
+		_apply_theme_environment("normal")
+	if maze_view.pellet_material != null:
+		_set_object_style(false, false)
+	for e in enemies:
+		e.speed_scale = 1.0
+	hud.hide_condition_card()
+	hud.set_minimap_visible(true)
+	_refresh_noclip()
+	if play_sound:
+		Sfx.condition_end()
 
 
 ## ---------------- high score persistence ----------------

@@ -5,7 +5,7 @@ extends RefCounted
 ## docs/design/kaninchen-speedrun.md 1.1): horns on top, one visor slit, a
 ## shield tapering to a point — deliberately no dome, no zig-zag skirt and
 ## no eyes, so it does not copy the classic arcade ghost. Chunky/blocky by design — the same retro-pixel
-## aesthetic as matrix_rain.gdshader's wall look and word_mesh.gd's
+## aesthetic as the Matrix condition's code walls and word_mesh.gd's
 ## letterform objects, just applied to the enemies (per the user's "wie bei
 ## Space Invaders" request: blocky pixel sprites, not rounded 3D shapes).
 ##

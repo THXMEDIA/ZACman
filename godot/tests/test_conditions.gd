@@ -1,160 +1,95 @@
 extends SceneTree
-## Headless test: res://scripts/conditions.gd and its condition scripts —
-## the "Konditionen" run-modifier system (Matrix Ghost, Fear & Loathing).
-## Pure-logic checks, no Main/scene needed (matrix_ghost's on_start/on_end
-## need a Main-shaped object — a tiny fake stands in for one here). Run with
+## Headless test: res://scripts/conditions.gd and its condition scripts — the
+## rabbit conditions (spec docs/design/kaninchen-speedrun.md 2.3/2.4).
+## Pure-logic checks, no Main/scene (the scene side is in bot_test.gd). Run with
 ##   godot --headless --path . --script res://tests/test_conditions.gd
 ## Exits with code 0 on success, 1 on any failure.
 
-## A minimal stand-in for Main, just shaped enough for matrix_ghost.gd's
-## on_start/on_end to call into (maze_view.set_word_mode, player.set_noclip,
-## enemies[].set_word_skin) without spinning up the real scene.
-class FakeMazeView:
-	var word_mode_active := false
-	func set_word_mode(active: bool) -> void:
-		word_mode_active = active
+var failures := 0
+var checks := 0
 
-class FakePlayer:
-	var noclip_active := false
-	func set_noclip(active: bool) -> void:
-		noclip_active = active
 
-class FakeEnemy:
-	var word_skin_active := false
-	func set_word_skin(active: bool) -> void:
-		word_skin_active = active
-
-class FakeMain:
-	var maze_view := FakeMazeView.new()
-	var player := FakePlayer.new()
-	var enemies: Array = []
+func _check(name: String, cond: bool, detail := "") -> void:
+	checks += 1
+	if not cond:
+		failures += 1
+		print("FAIL ", name, (" -> " + detail) if detail != "" else "")
 
 
 func _initialize() -> void:
 	var Conditions = load("res://scripts/conditions.gd")
-	var failures := 0
-	var checks := 0
+	var Fear = load("res://scripts/conditions/fear_and_loathing.gd")
 
-	# --- Registry: known ids resolve, unknown/empty id means "no condition" ---
-	checks += 1
-	if Conditions.get_condition("matrix_ghost") == null:
-		failures += 1
-		print("FAIL Conditions.get_condition('matrix_ghost') should return an instance")
+	# --- registry: pool, flags, durations, weights ---
+	_check("registry: the four conditions of the pool", Conditions.ids() == ["matrix", "taschenuhr", "fear_and_loathing", "stromausfall"], str(Conditions.ids()))
+	_check("registry: good = matrix, taschenuhr", Conditions.ids_of_kind(true) == ["matrix", "taschenuhr"])
+	_check("registry: bad = fear_and_loathing, stromausfall", Conditions.ids_of_kind(false) == ["fear_and_loathing", "stromausfall"])
+	for id in Conditions.ids():
+		var c = Conditions.get_condition(id)
+		var e: Dictionary = Conditions.entry(id)
+		_check("registry %s: instance with id, name, look and icon" % id, c != null and c.id == id and c.display_name != "" and c.look_id != "" and c.icon != "")
+		_check("registry %s: is_good/duration/weight from the registry" % id, c.is_good == e.is_good and c.duration_s == e.duration_s and c.weight == e.weight and e.weight > 0.0)
+		_check("registry %s: good 10 s, bad 8 s" % id, c.duration_s == (10.0 if c.is_good else 8.0))
+	_check("registry: '' and unknown ids mean no condition", Conditions.get_condition("") == null and Conditions.get_condition("matrix_ghost") == null)
+	_check("registry: matrix_ghost.gd is gone (renamed to matrix.gd)", not FileAccess.file_exists("res://scripts/conditions/matrix_ghost.gd") and FileAccess.file_exists("res://scripts/conditions/matrix.gd"))
+	_check("registry: no start-screen selection API any more", not ("SELECTABLE_IDS" in Conditions) and not Conditions.has_method("other_condition_id"))
 
-	checks += 1
-	if Conditions.get_condition("fear_and_loathing") == null:
-		failures += 1
-		print("FAIL Conditions.get_condition('fear_and_loathing') should return an instance")
+	# --- derived state ---
+	_check("matrix wants noclip, nobody else", Conditions.get_condition("matrix").wants_noclip() and not Conditions.get_condition("taschenuhr").wants_noclip() and not Conditions.get_condition("fear_and_loathing").wants_noclip() and not Conditions.get_condition("stromausfall").wants_noclip())
+	_check("taschenuhr halves the ghost speed", Conditions.get_condition("taschenuhr").ghost_speed_scale() == 0.5 and Conditions.get_condition("matrix").ghost_speed_scale() == 1.0)
+	_check("stromausfall switches the minimap off, nobody else", not Conditions.get_condition("stromausfall").minimap_visible() and Conditions.get_condition("matrix").minimap_visible())
 
-	checks += 1
-	if Conditions.get_condition("") != null:
-		failures += 1
-		print("FAIL Conditions.get_condition('') should mean 'no condition' (null)")
+	# --- pick_condition: 60:40 good:bad, equal within; only the given RNG ---
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 424242
+	var counts := {}
+	var n := 20000
+	for i in n:
+		var id: String = Conditions.pick_condition(rng, Conditions.P_GOOD_BASE)
+		counts[id] = counts.get(id, 0) + 1
+	var good: int = counts.get("matrix", 0) + counts.get("taschenuhr", 0)
+	var share := float(good) / n
+	# 4 standard deviations of a binomial(20000, 0.6): +-0.0139
+	_check("pick: good share 60 % over many draws", absf(share - 0.6) < 0.014, "share=%f" % share)
+	_check("pick: within good equally likely", absf(float(counts.get("matrix", 0)) / good - 0.5) < 0.02, str(counts))
+	var bad := n - good
+	_check("pick: within bad equally likely", absf(float(counts.get("fear_and_loathing", 0)) / bad - 0.5) < 0.025, str(counts))
+	var r1 := RandomNumberGenerator.new()
+	var r2 := RandomNumberGenerator.new()
+	r1.seed = 99
+	r2.seed = 99
+	var same := true
+	for i in 200:
+		seed(i) # the global generator must not matter
+		randf()
+		if Conditions.pick_condition(r1) != Conditions.pick_condition(r2):
+			same = false
+	_check("pick: same seed -> same sequence, independent of the global randf()", same)
+	_check("pick: p_good 1 -> always good, 0 -> always bad", Conditions.entry(Conditions.pick_condition(r1, 1.0)).is_good and not Conditions.entry(Conditions.pick_condition(r1, 0.0)).is_good)
 
-	checks += 1
-	if Conditions.get_condition("not_a_real_condition") != null:
-		failures += 1
-		print("FAIL Conditions.get_condition() with an unknown id should return null")
+	# --- Fear & Loathing manipulations (more in bot_test.gd) ---
+	for kind in Fear.MANIPULATIONS:
+		var f = Fear.new()
+		f.set_manipulation(kind)
+		var ok := true
+		var too_fast := false
+		for i in 120:
+			var v: Vector2 = f.modify_input(Vector2.ZERO, 1.0 / 60.0)
+			if v != Vector2.ZERO:
+				ok = false
+			var w: Vector2 = f.modify_input(Vector2(0.7071, 0.7071), 1.0 / 60.0)
+			if w.length() > 1.0001:
+				too_fast = true
+		_check("F&L %s: never movement without input" % kind, ok)
+		_check("F&L %s: never faster than full input" % kind, not too_fast)
+		_check("F&L %s: symbol and subtitle for the title card" % kind, f.icon == "fl_" + kind and f.subtitle() != "")
+	var f2 = Fear.new()
+	_check("F&L: the old sine noise / unannounced inversion is gone", not ("NOISE_AMOUNT" in f2) and not ("_inverted" in f2))
 
-	checks += 1
-	if Conditions.IDS.size() < 2:
-		failures += 1
-		print("FAIL Conditions.IDS should list at least the 2 built-in conditions")
-
-	# --- Matrix Ghost: toggles maze_view/player/enemies on start, reverts on end ---
-	var fake_main := FakeMain.new()
-	fake_main.enemies = [FakeEnemy.new(), FakeEnemy.new()]
-	var ghost = Conditions.get_condition("matrix_ghost")
-
-	ghost.on_start(fake_main)
-	checks += 1
-	if not fake_main.maze_view.word_mode_active:
-		failures += 1
-		print("FAIL matrix_ghost.on_start should turn on maze_view word mode")
-	# Noclip is deliberately NOT asserted here (and matrix_ghost.gd no longer
-	# touches player.set_noclip at all — see review finding Code-W2): the
-	# old on_start/on_end calls to main.player.set_noclip() got silently
-	# clobbered whenever start_manhattan_level() ran right after
-	# set_condition(), since that unconditionally reset collision back on a
-	# few lines later. Noclip is now derived centrally by
-	# Main._refresh_player_modifiers() (from current_condition.id ==
-	# "matrix_ghost"), called at every point that could affect it — a real
-	# Main instance, not this fake, so that path is covered end-to-end by
-	# bot_test.gd's "matrix ghost condition actually sets noclip through the
-	# real start path" check instead of here.
-	checks += 1
-	if fake_main.player.noclip_active:
-		failures += 1
-		print("FAIL matrix_ghost.on_start should no longer touch player noclip directly (see Code-W2)")
-	checks += 1
-	var all_reskinned := true
-	for e in fake_main.enemies:
-		if not e.word_skin_active:
-			all_reskinned = false
-	if not all_reskinned:
-		failures += 1
-		print("FAIL matrix_ghost.on_start should reskin every enemy")
-
-	ghost.on_end(fake_main)
-	checks += 1
-	if fake_main.maze_view.word_mode_active:
-		failures += 1
-		print("FAIL matrix_ghost.on_end should revert maze_view word mode")
-	checks += 1
-	var any_still_reskinned := false
-	for e in fake_main.enemies:
-		if e.word_skin_active:
-			any_still_reskinned = true
-	if any_still_reskinned:
-		failures += 1
-		print("FAIL matrix_ghost.on_end should revert every enemy's reskin")
-
-	# --- Fear & Loathing: perturbs input, and periodically inverts it -------
-	var drug = Conditions.get_condition("fear_and_loathing")
-	drug.on_start(fake_main)
-	var straight_forward := Vector2(0.0, 1.0)
-	var any_perturbed := false
-	var saw_inversion := false
-	var t := 0.0
-	while t < 20.0:
-		var result: Vector2 = drug.modify_input(straight_forward, 0.05)
-		if result != straight_forward:
-			any_perturbed = true
-		if result.y < 0.0: # forward became backward: an inversion window
-			saw_inversion = true
-		t += 0.05
-
-	checks += 1
-	if not any_perturbed:
-		failures += 1
-		print("FAIL fear_and_loathing.modify_input should perturb a straight input at some point")
-	checks += 1
-	if not saw_inversion:
-		failures += 1
-		print("FAIL fear_and_loathing.modify_input should invert the input at least once within 20s")
-
-	# --- A condition with no override (condition_base itself) is a no-op ---
+	# --- base class is a no-op ---
 	var base_condition = load("res://scripts/conditions/condition_base.gd").new()
-	checks += 1
-	if base_condition.modify_input(Vector2(0.3, 0.7), 0.1) != Vector2(0.3, 0.7):
-		failures += 1
-		print("FAIL condition_base's default modify_input should pass input through unchanged")
-
-	# --- other_condition_id: always picks a different selectable id, and
-	# "no condition" ("") is itself a selectable option ---
-	checks += 1
-	if not ("" in Conditions.SELECTABLE_IDS):
-		failures += 1
-		print("FAIL SELECTABLE_IDS should include '' (no condition) as an option")
-	checks += 1
-	var saw_wrong_repeat := false
-	for i in 30: # run several times since the pick is randomized
-		for current_id in Conditions.SELECTABLE_IDS:
-			if Conditions.other_condition_id(current_id) == current_id:
-				saw_wrong_repeat = true
-	if saw_wrong_repeat:
-		failures += 1
-		print("FAIL other_condition_id should never return the same id it was given")
+	_check("condition_base: modify_input passes input through", base_condition.modify_input(Vector2(0.3, 0.7), 0.1) == Vector2(0.3, 0.7))
+	_check("condition_base: neutral derived state", not base_condition.wants_noclip() and base_condition.ghost_speed_scale() == 1.0 and base_condition.minimap_visible() and base_condition.look_flip() == 0.0)
 
 	print("")
 	if failures == 0:

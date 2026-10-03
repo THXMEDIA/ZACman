@@ -7,10 +7,8 @@ signal start_pressed
 signal resume_pressed
 signal restart_pressed
 signal manhattan_pressed
-signal condition_selected(condition_id: String)
+signal reduce_fx_toggled(on: bool)
 signal twitch_toggled(is_enabled: bool, channel: String)
-
-const ConditionsScript := preload("res://scripts/conditions.gd")
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
 const BORDER := Color(0.31, 0.66, 1.0, 0.35)
@@ -18,6 +16,10 @@ const ACCENT := Color(0.2, 0.878, 1.0)
 const PELLET_COLOR := Color(1.0, 0.82, 0.4)
 const POWER_COLOR := Color(1.0, 0.365, 0.635)
 const DANGER := Color(1.0, 0.231, 0.365)
+## Condition title card (spec 2.2): good = green, bad = magenta.
+const COND_GOOD := Color("3ce37a")
+const COND_BAD := Color("ff3cc8")
+const RABBIT_WHITE := Color("f2f2ed")
 
 var score_label: Label
 var level_label: Label
@@ -37,7 +39,19 @@ var levelclear_sub: Label
 
 var pause_note_label: Label
 var mode_label: Label
-var condition_option: OptionButton
+var reduce_fx_start: CheckBox
+var reduce_fx_pause: CheckBox
+## Condition title card (top, under the power bar) and the start intro.
+var condition_card: PanelContainer
+var condition_icon: Control
+var condition_name_label: Label
+var condition_sub_label: Label
+var condition_bar: ProgressBar
+var condition_fill: StyleBoxFlat
+var condition_icon_kind := ""
+var condition_color := COND_GOOD
+var start_intro: CenterContainer
+var start_intro_panel: PanelContainer
 ## Chips that only make sense in a timed, scored level (hidden in Manhattan).
 var timed_chips: Array = []
 
@@ -66,6 +80,8 @@ func _ready() -> void:
 	_build_pause_panel()
 	_build_gameover_panel()
 	_build_levelclear_label()
+	_build_condition_card()
+	_build_start_intro()
 
 
 func _panel_style() -> StyleBoxFlat:
@@ -288,28 +304,12 @@ func _build_start_panel() -> void:
 	mode_tag.add_theme_font_size_override("font_size", 11)
 	box.add_child(mode_tag)
 
-	var btn := _make_button("MATRIX-LEVEL")
+	var btn := _make_button("SPEEDRUN")
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
-	var matrix_sub := _subtitle_label("Zufälliges Level, Geister, Zeitjagd. Bestzeiten und Bestenlisten gibt es pro Level, Kondition und Modus (Solo, Chat).")
-	matrix_sub.add_theme_font_size_override("font_size", 11)
-	box.add_child(matrix_sub)
-
-	var cond_row := HBoxContainer.new()
-	cond_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	cond_row.add_theme_constant_override("separation", 8)
-	box.add_child(cond_row)
-	var cond_tag := Label.new()
-	cond_tag.text = "KONDITION"
-	cond_tag.add_theme_color_override("font_color", Color(0.56, 0.64, 0.78))
-	cond_tag.add_theme_font_size_override("font_size", 12)
-	cond_row.add_child(cond_tag)
-	condition_option = OptionButton.new()
-	condition_option.custom_minimum_size = Vector2(190, 0)
-	for id in ConditionsScript.SELECTABLE_IDS:
-		condition_option.add_item(ConditionsScript.display_name_for(id))
-	condition_option.item_selected.connect(func(i: int): condition_selected.emit(ConditionsScript.SELECTABLE_IDS[i]))
-	cond_row.add_child(condition_option)
+	var speedrun_sub := _subtitle_label("Zufälliges Level, Geister, Zeitjagd. In jedem Level sitzt ein weißes Kaninchen: freiwillig, mit einer Kondition der Woche – gut oder schlecht. Bestzeiten pro Level und Modus (Solo, Chat).")
+	speedrun_sub.add_theme_font_size_override("font_size", 11)
+	box.add_child(speedrun_sub)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still
@@ -327,6 +327,24 @@ func _build_start_panel() -> void:
 	manhattan_bonus_label.visible = false
 	box.add_child(manhattan_bonus_label)
 
+	reduce_fx_start = _make_reduce_fx_toggle()
+	box.add_child(reduce_fx_start)
+
+
+## "Effekte reduzieren" (spec 1.2) — no settings menu yet, so the same switch
+## sits on the start screen and in the pause menu; both stay in sync.
+func _make_reduce_fx_toggle() -> CheckBox:
+	var cb := CheckBox.new()
+	cb.text = "Effekte reduzieren (ruhigere Konditions-Looks)"
+	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
+	return cb
+
+
+func set_reduce_fx(on: bool) -> void:
+	for cb in [reduce_fx_start, reduce_fx_pause]:
+		if cb != null:
+			cb.set_pressed_no_signal(on)
+
 
 func _build_pause_panel() -> void:
 	pause_panel = _overlay_panel()
@@ -341,6 +359,8 @@ func _build_pause_panel() -> void:
 	var restart_btn := _make_button("NEUSTART")
 	restart_btn.pressed.connect(func(): restart_pressed.emit())
 	box.add_child(restart_btn)
+	reduce_fx_pause = _make_reduce_fx_toggle()
+	box.add_child(reduce_fx_pause)
 
 
 func _build_gameover_panel() -> void:
@@ -381,18 +401,189 @@ func _stat_block(parent: Control, tag_text: String) -> Label:
 	return val
 
 
+## Level-clear banner: a centered panel with background (QA-W2: it used to
+## hang with its top-left corner in the screen center, without background).
 func _build_levelclear_label() -> void:
-	levelclear_panel = VBoxContainer.new()
-	levelclear_panel.add_theme_constant_override("separation", 6)
-	levelclear_panel.set_anchors_preset(Control.PRESET_CENTER)
-	levelclear_panel.alignment = BoxContainer.ALIGNMENT_CENTER
+	levelclear_panel = _centered_overlay()
 	levelclear_panel.visible = false
-	add_child(levelclear_panel)
+	var panel := PanelContainer.new()
+	var sb := _panel_style()
+	sb.set_content_margin_all(18)
+	sb.bg_color = Color(0.02, 0.03, 0.05, 0.92)
+	panel.add_theme_stylebox_override("panel", sb)
+	levelclear_panel.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(col)
 	levelclear_label = _title_label("LEVEL GESCHAFFT!", 20)
-	levelclear_panel.add_child(levelclear_label)
+	col.add_child(levelclear_label)
 	levelclear_sub = _subtitle_label("")
 	levelclear_sub.add_theme_color_override("font_color", PELLET_COLOR)
-	levelclear_panel.add_child(levelclear_sub)
+	col.add_child(levelclear_sub)
+
+
+## A full-screen, input-transparent CenterContainer: whatever goes in sits
+## exactly in the middle at any resolution.
+func _centered_overlay() -> CenterContainer:
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(cc)
+	return cc
+
+
+## Start intro "Follow the white rabbit. But beware" (spec 2.1): its own
+## centered panel with background, shown for Main.START_INTRO_S at every
+## speedrun start.
+func _build_start_intro() -> void:
+	start_intro = _centered_overlay()
+	start_intro.visible = false
+	start_intro_panel = PanelContainer.new()
+	var sb := _panel_style()
+	sb.set_content_margin_all(28)
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.88)
+	sb.border_color = Color(RABBIT_WHITE, 0.45)
+	start_intro_panel.add_theme_stylebox_override("panel", sb)
+	start_intro.add_child(start_intro_panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	start_intro_panel.add_child(col)
+	var l1 := _title_label("Follow the white rabbit.", 30)
+	l1.add_theme_color_override("font_color", RABBIT_WHITE)
+	col.add_child(l1)
+	var l2 := _title_label("But beware", 22)
+	l2.add_theme_color_override("font_color", COND_BAD)
+	col.add_child(l2)
+
+
+func show_start_intro(on: bool) -> void:
+	start_intro.visible = on
+
+
+func is_start_intro_visible() -> bool:
+	return start_intro.visible
+
+
+## Condition title card (spec 2.2): name, symbol, remaining-time bar; green
+## for good, magenta for bad conditions; for Fear & Loathing the symbol of
+## the drawn manipulation. Sits under the power bar, top center.
+func _build_condition_card() -> void:
+	condition_card = PanelContainer.new()
+	condition_card.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	condition_card.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	condition_card.offset_left = -150
+	condition_card.offset_right = 150
+	condition_card.offset_top = 56
+	condition_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	condition_card.visible = false
+	add_child(condition_card)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	condition_card.add_child(row)
+	condition_icon = Control.new()
+	condition_icon.custom_minimum_size = Vector2(40, 40)
+	condition_icon.draw.connect(func(): _draw_condition_icon(condition_icon, condition_icon_kind, condition_color))
+	row.add_child(condition_icon)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 3)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	condition_name_label = Label.new()
+	condition_name_label.add_theme_font_size_override("font_size", 18)
+	col.add_child(condition_name_label)
+	condition_sub_label = Label.new()
+	condition_sub_label.add_theme_font_size_override("font_size", 11)
+	condition_sub_label.add_theme_color_override("font_color", Color(0.8, 0.84, 0.9))
+	col.add_child(condition_sub_label)
+	condition_bar = ProgressBar.new()
+	condition_bar.custom_minimum_size = Vector2(200, 6)
+	condition_bar.show_percentage = false
+	condition_bar.max_value = 1.0
+	condition_fill = StyleBoxFlat.new()
+	condition_fill.set_corner_radius_all(3)
+	var bgs := StyleBoxFlat.new()
+	bgs.bg_color = Color(1, 1, 1, 0.12)
+	bgs.set_corner_radius_all(3)
+	condition_bar.add_theme_stylebox_override("fill", condition_fill)
+	condition_bar.add_theme_stylebox_override("background", bgs)
+	col.add_child(condition_bar)
+
+
+func show_condition_card(c) -> void:
+	condition_color = COND_GOOD if c.is_good else COND_BAD
+	condition_icon_kind = c.icon
+	condition_name_label.text = c.display_name.to_upper()
+	condition_name_label.add_theme_color_override("font_color", condition_color)
+	condition_sub_label.text = c.subtitle()
+	condition_fill.bg_color = condition_color
+	condition_bar.value = 1.0
+	var sb := _panel_style()
+	sb.bg_color = Color(0.02, 0.02, 0.03, 0.9)
+	sb.border_color = Color(condition_color, 0.8)
+	sb.set_border_width_all(2)
+	condition_card.add_theme_stylebox_override("panel", sb)
+	condition_card.visible = true
+	condition_icon.queue_redraw()
+
+
+func update_condition_card(remaining: float, duration: float) -> void:
+	condition_bar.value = clampf(remaining / maxf(duration, 0.001), 0.0, 1.0)
+
+
+func hide_condition_card() -> void:
+	condition_card.visible = false
+
+
+## Vector symbols of the conditions (no font glyphs needed).
+func _draw_condition_icon(ci: Control, kind: String, col: Color) -> void:
+	var s := ci.size
+	var c := s * 0.5
+	var r := minf(s.x, s.y) * 0.42
+	match kind:
+		"matrix":
+			# falling code columns
+			for i in 4:
+				var x := s.x * (0.2 + i * 0.2)
+				var top := s.y * (0.1 + 0.15 * float(i % 2))
+				for j in 4:
+					var y := top + j * s.y * 0.2
+					if y < s.y * 0.9:
+						ci.draw_rect(Rect2(x - 2, y, 4, s.y * 0.12), Color(col, 1.0 - j * 0.22))
+		"taschenuhr":
+			ci.draw_arc(c, r, 0, TAU, 32, col, 2.5, true)
+			ci.draw_rect(Rect2(c.x - 3, c.y - r - 6, 6, 5), col)
+			ci.draw_line(c, c + Vector2(0, -r * 0.75), col, 2.5, true)
+			ci.draw_line(c, c + Vector2(r * 0.5, 0), col, 2.5, true)
+		"stromausfall":
+			var bolt := PackedVector2Array([c + Vector2(r * 0.2, -r), c + Vector2(-r * 0.45, r * 0.1), c + Vector2(0, r * 0.1), c + Vector2(-r * 0.2, r), c + Vector2(r * 0.45, -r * 0.1), c + Vector2(0, -r * 0.1)])
+			ci.draw_colored_polygon(bolt, col)
+			ci.draw_line(c + Vector2(-r, -r), c + Vector2(r, r), Color(0, 0, 0), 5, true)
+			ci.draw_line(c + Vector2(-r, -r), c + Vector2(r, r), col, 2.5, true)
+		"fl_swap":
+			# A <-> D: two opposite arrows
+			ci.draw_line(c + Vector2(-r, -r * 0.35), c + Vector2(r, -r * 0.35), col, 2.5, true)
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(r, -r * 0.35), c + Vector2(r * 0.55, -r * 0.65), c + Vector2(r * 0.55, -r * 0.05)]), col)
+			ci.draw_line(c + Vector2(r, r * 0.35), c + Vector2(-r, r * 0.35), col, 2.5, true)
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r, r * 0.35), c + Vector2(-r * 0.55, r * 0.05), c + Vector2(-r * 0.55, r * 0.65)]), col)
+		"fl_drift":
+			# straight intent (faint) vs. drifting path (bright)
+			ci.draw_line(c + Vector2(-r * 0.4, r), c + Vector2(-r * 0.4, -r), Color(col, 0.35), 2.0, true)
+			var pts := PackedVector2Array()
+			for i in 9:
+				var t := float(i) / 8.0
+				pts.append(c + Vector2(-r * 0.4 + t * t * r * 1.2, r - t * 2.0 * r))
+			ci.draw_polyline(pts, col, 2.5, true)
+			var tip: Vector2 = pts[pts.size() - 1]
+			ci.draw_colored_polygon(PackedVector2Array([tip + Vector2(0, -4), tip + Vector2(-6, 4), tip + Vector2(5, 5)]), col)
+		"fl_delay":
+			# hourglass
+			ci.draw_line(c + Vector2(-r * 0.7, -r), c + Vector2(r * 0.7, -r), col, 2.5, true)
+			ci.draw_line(c + Vector2(-r * 0.7, r), c + Vector2(r * 0.7, r), col, 2.5, true)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-r * 0.6, -r), c + Vector2(r * 0.6, r), c + Vector2(-r * 0.6, r), c + Vector2(r * 0.6, -r), c + Vector2(-r * 0.6, -r)]), col, 2.0, true)
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 0.35, r * 0.9), c + Vector2(r * 0.35, r * 0.9), c + Vector2(0, r * 0.4)]), col)
+		_:
+			ci.draw_circle(c, r * 0.5, col)
 
 
 ## scrollable=true anchors the panel to a tall, centered column (5%-95% of
@@ -418,7 +609,11 @@ func _overlay_panel(scrollable: bool = false) -> PanelContainer:
 		root.offset_top = 0
 		root.offset_bottom = 0
 	else:
+		# QA-W2: grow from the center in both directions, so the panel sits
+		# centered instead of hanging from its top-left corner.
 		root.set_anchors_preset(Control.PRESET_CENTER)
+		root.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		root.grow_vertical = Control.GROW_DIRECTION_BOTH
 	var sb := _panel_style()
 	sb.set_content_margin_all(26)
 	sb.bg_color = Color(0.035, 0.055, 0.11, 0.97)
@@ -524,6 +719,11 @@ func set_best_time(seconds: float) -> void:
 ## consumed pickups just aren't drawn anymore, same pellet_alive/power_alive
 ## arrays MazeView already keeps, nothing new to track here) each frame by
 ## Main, drawn via _draw().
+## Stromausfall switches the minimap off for its duration.
+func set_minimap_visible(on: bool) -> void:
+	minimap.visible = on
+
+
 func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool, maze_view = null) -> void:
 	minimap_maze = maze
 	minimap_player = player
@@ -563,6 +763,13 @@ func _draw_minimap() -> void:
 				continue
 			var pw: Vector2i = minimap_maze_view.power_cells[i]
 			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, power_col)
+		# The white rabbit is visible on the minimap from the level start on
+		# (spec 2.2): a white dot with a dark ring, bigger than a pellet.
+		if minimap_maze_view.rabbit_alive:
+			var rc: Vector2i = minimap_maze_view.rabbit_cell
+			var rp := Vector2((rc.y + 0.5) * sx, (rc.x + 0.5) * sy)
+			minimap.draw_circle(rp, 3.4, Color(0, 0, 0))
+			minimap.draw_circle(rp, 2.4, RABBIT_WHITE)
 	# Review findings GD-K4/UX-K2/Code-W11: the player's real facing
 	# direction is (-sin(yaw), -cos(yaw)) (see player_controller.gd's
 	# _physics_process), but the arrow was rotated by `p.rotated(yaw)` —

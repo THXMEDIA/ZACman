@@ -15,6 +15,7 @@ const SAVE_FILES := [
 	"kugelschlucker_speedrun.json",
 	"kugelschlucker_leaderboards.json",
 	"kugelschlucker_highscore.txt",
+	"kugelschlucker_settings.json",
 ]
 
 

@@ -4,12 +4,14 @@ extends Node3D
 ## frightened -> eaten -> house.
 
 const CELL := 2.0
-const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const GhostMeshScript := preload("res://scripts/ghost_mesh.gd")
 
 var palette_color := Color(1, 0.23, 0.36)
 var palette_glow := Color(1, 0.42, 0.51)
 var base_speed := 2.0
+## Multiplier from the active condition (Taschenuhr: 0.5), set by Main every
+## frame before update(); 1.0 = normal.
+var speed_scale := 1.0
 
 var mode := "house" # house | chase | frightened | eaten
 var r := 0
@@ -24,9 +26,7 @@ var eaten_until := 0.0
 
 var body_mesh: Node3D
 var body_material: StandardMaterial3D
-var word_mesh: MeshInstance3D
 var light: OmniLight3D
-var word_skin_active := false
 ## Set by Main from the theme before setup() (CityTheme.ghost_*); the
 ## defaults are the original deep-blue frightened look.
 var frightened_color := Color(0.13, 0.2, 0.93)
@@ -55,13 +55,6 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	body_mesh = GhostMeshScript.build(body_material)
 	add_child(body_mesh)
 
-	# Word Mode reskin: the same enemy, drawn as the word GHOST instead of
-	# a polyhedron, while Main's word-mode power-up is active. Built once
-	# up front (hidden) so toggling it is instant.
-	word_mesh = WordMeshScript.build("GHOST", color, {"font_size": 26, "depth": 0.18, "emission_energy": 1.2})
-	word_mesh.visible = false
-	add_child(word_mesh)
-
 	light = OmniLight3D.new()
 	light.light_color = glow
 	light.omni_range = 3.2
@@ -69,10 +62,12 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	add_child(light)
 
 
-func set_word_skin(active: bool) -> void:
-	word_skin_active = active
-	body_mesh.visible = not active
-	word_mesh.visible = active
+## Condition-look object style (spec 1.2): the ghost keeps its color and
+## shape; `outline` adds the black contour, `ignore_fog` keeps it glowing
+## through the Stromausfall fog.
+func set_condition_style(outline_material: Material, ignore_fog: bool) -> void:
+	body_material.next_pass = outline_material
+	body_material.disable_fog = ignore_fog
 
 
 func place_in_house(cell: Vector2i) -> void:
@@ -117,11 +112,11 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, 
 		body_material.albedo_color = palette_color
 		body_material.emission = palette_color
 
-	var use_speed := base_speed
+	var use_speed := base_speed * speed_scale
 	if mode == "frightened":
-		use_speed = base_speed * 0.55
+		use_speed = base_speed * 0.55 * speed_scale
 	elif mode == "eaten":
-		use_speed = base_speed * 2.2
+		use_speed = base_speed * 2.2 * speed_scale
 
 	t += (delta * use_speed) / CELL
 	if t >= 1.0:

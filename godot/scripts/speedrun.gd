@@ -15,9 +15,11 @@ const SAVE_VERSION := 2
 const LevelsScript := preload("res://scripts/levels.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 
-## Best times per (level, condition, mode) — key from Levels.board_key(),
-## e.g. "klassik-2|none" (solo, no condition), "offen|matrix_ghost",
-## "durchbruch|none|chat". Target times live in Levels.POOL[].target_s.
+## Best times per (level, board, mode) — key from Levels.board_key(),
+## e.g. "klassik-2|woche" (solo run on the weekly rabbit board),
+## "durchbruch|woche|chat". Older saves also hold condition boards
+## ("offen|matrix_ghost", "klassik-1|none"); they are kept as they are until
+## Etappe 3 migrates them. Target times live in Levels.POOL[].target_s.
 var best_times: Dictionary = {}
 var bonus_unlocked := false
 ## Version of the file that was loaded (0 = no file / unreadable). Saves from
@@ -54,23 +56,24 @@ func target_for(level_id: String) -> float:
 	return LevelsScript.by_id(level_id).target_s
 
 
-func best_for(level_id: String, condition_id: String = "", mode: String = "solo") -> float:
+func best_for(level_id: String, board: String = "", mode: String = "solo") -> float:
 	_load()
-	var key := LevelsScript.board_key(level_id, condition_id, mode)
+	var key := LevelsScript.board_key(level_id, board, mode)
 	if best_times.has(key):
 		return best_times[key]
 	return -1.0
 
 
 ## Called by Main when a level's pellets are all eaten. Returns a Dictionary
-## with is_new_best (for this level/condition/mode), previous_best (-1.0 if
+## with is_new_best (for this level/board/mode), previous_best (-1.0 if
 ## none), beat_target, target, newly_unlocked_bonus (true only on the frame
 ## the badge is earned) so the caller can show the right banner text.
-## Only a clean run (no condition, mode "solo") can earn the badge.
-func record_level_time(level_id: String, elapsed_seconds: float, condition_id: String = "", mode: String = "solo") -> Dictionary:
+## Only a solo run on a badge board (Levels.BADGE_BOARDS: the weekly rabbit
+## board, or the old no-condition board) can earn the badge.
+func record_level_time(level_id: String, elapsed_seconds: float, board: String = "", mode: String = "solo") -> Dictionary:
 	_load()
-	var key := LevelsScript.board_key(level_id, condition_id, mode)
-	var previous_best := best_for(level_id, condition_id, mode)
+	var key := LevelsScript.board_key(level_id, board, mode)
+	var previous_best := best_for(level_id, board, mode)
 	var is_new_best := previous_best < 0.0 or elapsed_seconds < previous_best
 	if is_new_best:
 		best_times[key] = elapsed_seconds
@@ -78,7 +81,7 @@ func record_level_time(level_id: String, elapsed_seconds: float, condition_id: S
 	var target := target_for(level_id)
 	var beat_target := elapsed_seconds <= target
 	var newly_unlocked := false
-	if beat_target and condition_id == "" and mode == "solo" and not bonus_unlocked:
+	if beat_target and LevelsScript.board_earns_badge(board) and mode == "solo" and not bonus_unlocked:
 		bonus_unlocked = true
 		newly_unlocked = true
 

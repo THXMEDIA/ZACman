@@ -1,9 +1,12 @@
 extends Node
 ## Leaderboard — autoload singleton for time boards, one per
-## (level_id, condition_id, mode) combination. A Matrix-Ghost run (no wall
-## collision) isn't comparable to an unmodified run, and neither is a run
-## with Twitch chat interaction, so they never share a board (modes: see
-## Levels.MODES). Manhattan has no board: it is an untimed hub level.
+## (level_id, board, mode) combination. The board is "woche" for every
+## speedrun run since the rabbit conditions (Levels.BOARD_WEEK; Etappe 3 adds
+## "chaos"/"chat"); a run with Twitch chat interaction is not comparable to a
+## solo run, so modes never share a board (Levels.MODES). The second key
+## part used to be the run condition (matrix_ghost, ...); such old boards
+## stay in the file untouched until Etappe 3 migrates them. Manhattan has no
+## board: it is an untimed hub level.
 ##
 ## This is the LOCAL backend: works fully offline, no account needed, and
 ## is what the game ships with today. Deliberately written behind a small
@@ -52,47 +55,47 @@ func reload() -> void:
 	_load()
 
 
-## The board key for a (level, condition, mode) — see Levels.board_key().
-static func board_key(level_id: String, condition_id: String, mode: String = "solo") -> String:
-	return LevelsScript.board_key(level_id, condition_id, mode)
+## The board key for a (level, board, mode) — see Levels.board_key().
+static func board_key(level_id: String, board: String, mode: String = "solo") -> String:
+	return LevelsScript.board_key(level_id, board, mode)
 
 
-## Records a completed run's time on the (level_id, condition_id, mode) board.
+## Records a completed run's time on the (level_id, board, mode) board.
 ## Returns {rank: int (1-based, -1 if it didn't make the top
 ## MAX_ENTRIES_PER_BOARD), is_new_best: bool (a personal best for this
 ## player name on this specific board)}.
-func submit_time(level_id: String, condition_id: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME, mode: String = "solo") -> Dictionary:
+func submit_time(level_id: String, board: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME, mode: String = "solo") -> Dictionary:
 	_load()
-	var key := board_key(level_id, condition_id, mode)
-	var board: Array = _boards.get(key, [])
+	var key := board_key(level_id, board, mode)
+	var entries: Array = _boards.get(key, [])
 
 	var previous_best := INF
-	for entry in board:
+	for entry in entries:
 		if entry.name == player_name and entry.time < previous_best:
 			previous_best = entry.time
 	var is_new_best: bool = time_seconds < previous_best
 
-	board.append({"name": player_name, "time": time_seconds})
-	board.sort_custom(func(a, b): return a.time < b.time)
-	if board.size() > MAX_ENTRIES_PER_BOARD:
-		board.resize(MAX_ENTRIES_PER_BOARD)
-	_boards[key] = board
+	entries.append({"name": player_name, "time": time_seconds})
+	entries.sort_custom(func(a, b): return a.time < b.time)
+	if entries.size() > MAX_ENTRIES_PER_BOARD:
+		entries.resize(MAX_ENTRIES_PER_BOARD)
+	_boards[key] = entries
 	_save()
 
 	var rank := -1
-	for i in board.size():
-		if board[i].name == player_name and is_equal_approx(board[i].time, time_seconds):
+	for i in entries.size():
+		if entries[i].name == player_name and is_equal_approx(entries[i].time, time_seconds):
 			rank = i + 1
 			break
 	return {"rank": rank, "is_new_best": is_new_best}
 
 
 ## Top `n` entries for a board, fastest first. Each entry: {name, time}.
-func get_top(level_id: String, condition_id: String, n: int = MAX_ENTRIES_PER_BOARD, mode: String = "solo") -> Array:
+func get_top(level_id: String, board: String, n: int = MAX_ENTRIES_PER_BOARD, mode: String = "solo") -> Array:
 	_load()
-	var key := board_key(level_id, condition_id, mode)
-	var board: Array = _boards.get(key, [])
-	return board.slice(0, mini(n, board.size()))
+	var key := board_key(level_id, board, mode)
+	var entries: Array = _boards.get(key, [])
+	return entries.slice(0, mini(n, entries.size()))
 
 
 ## Test/debug hook: wipes every board, in memory and on disk at the current

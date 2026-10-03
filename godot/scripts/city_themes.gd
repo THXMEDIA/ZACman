@@ -38,9 +38,11 @@ const GHOST_FRIGHTENED := Color("bdfcef")
 
 
 ## The Speedrun levels: Pac-Man base look "Lagune" (wall/floor shaders, CRT
-## overlay, cream pickups, "Schild mit Visier" ghosts). The word-built-world
-## fields below are the Word Mode power-up skin, still in Matrix green until
-## Etappe 2 replaces Word Mode with the rabbit conditions.
+## overlay, cream pickups, "Schild mit Visier" ghosts) plus the rabbit-
+## condition looks (kond_wall/kond_floor, spec 1.2). The word-built-world
+## fields are only kept as theme data; the Speedrun is never word-built
+## (Word Mode is gone, MazeView builds the word skin only for permanently
+## word-built themes like Manhattan).
 static func normal() -> Resource:
 	var t = CityThemeScript.new()
 	t.id = "normal"
@@ -64,9 +66,10 @@ static func normal() -> Resource:
 
 	# Dark channels, glowing edges; no sky, no clouds, no Mario vista (those
 	# are tied to ceil_sky_clouds), a plain dark ceiling at wall height.
-	t.wall_matrix_rain = false
 	t.wall_shader_path = "res://shaders/pacman_wall.gdshader"
 	t.floor_shader_path = "res://shaders/pacman_floor.gdshader"
+	t.cond_wall_shader_path = "res://shaders/kond_wall.gdshader"
+	t.cond_floor_shader_path = "res://shaders/kond_floor.gdshader"
 	t.screen_overlay_shader_path = "res://shaders/crt_overlay.gdshader"
 	t.floor_color = LOOK_FLOOR
 	t.floor_roughness = 0.9

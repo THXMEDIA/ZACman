@@ -28,13 +28,6 @@ var wall_palette: Array = [Color(0.25, 1.0, 0.35)]
 ## time, rather than perfectly UV-mapped signage — set false for a theme
 ## that wants every block facing the same way.
 var wall_alternate_rotation := true
-## When true, the boxy (non-word-mode) walls are shaded with
-## matrix_rain.gdshader instead of a plain StandardMaterial3D: scrolling
-## random green glyphs baked directly into the wall surface, always fully
-## visible regardless of camera distance (see MazeView._make_materials).
-## Unlike the old screen-space post effect this doesn't fade to a flat
-## color up close — it's the wall's actual material, not a distance blend.
-var wall_matrix_rain := false
 
 ## ---- Per-building height / "real skyscraper" look ----
 ## A second word an ordinary block can be built from instead of wall_word,
@@ -115,11 +108,17 @@ var ceil_sky_clouds := false
 var ceil_enabled := true
 
 ## ---- Shader-based look (Speedrun "Lagune", spec 1.1) ----
-## Optional .gdshader paths. Empty = the classic StandardMaterial3D /
-## matrix_rain behavior, so a theme that does not set them (Manhattan)
+## Optional .gdshader paths. Empty = the classic StandardMaterial3D
+## behavior, so a theme that does not set them (Manhattan)
 ## looks exactly as before.
-var wall_shader_path := "" # replaces matrix_rain when set; gets the neighbor mask (MultiMesh custom data)
+var wall_shader_path := "" # base-look wall shader; gets the neighbor mask (MultiMesh custom data)
 var floor_shader_path := "" # gets the cell map (MazeView.maze_tex) and the level look's colors
+## Rabbit-condition looks (spec 1.2): one shared wall/floor shader pair with
+## the uniforms look/transition/flip/reduce_fx, swapped onto the same wall
+## MultiMesh and floor by MazeView's Look API while a condition runs.
+## "" = the theme has no condition looks (Manhattan).
+var cond_wall_shader_path := ""
+var cond_floor_shader_path := ""
 var screen_overlay_shader_path := "" # full-screen canvas_item overlay (CRT lines), "" = none
 
 ## ---- Pickups ----
@@ -174,13 +173,13 @@ var env_ambient_color := Color(0.165, 0.227, 0.4)
 var env_ambient_energy := 0.9
 
 ## ---- Gameplay ----
-## Manhattan-style "calm explorer" levels have no power pellets/Word Mode
-## pickup and no ghosts (see manhattan_maze.gd's header); a future
+## Manhattan-style "calm explorer" levels have no power pellets, no white
+## rabbit and no ghosts (see manhattan_maze.gd's header); a future
 ## Matrix-style Explorer level would set this true.
 var has_power_ups := true
 ## Whether MazeView starts in the word-built-world skin permanently (true
-## for Manhattan) rather than only switching to it when the Word Mode
-## pickup is eaten (the normal levels). Kept separate from has_power_ups so
+## for Manhattan); every other theme never shows it (the Word Mode pickup
+## of the speedrun levels is gone). Kept separate from has_power_ups so
 ## a future non-word-built theme (e.g. a shader-only NPR look) can be a
 ## permanent, power-up-free explorer without implying the letterform skin.
 var permanently_word_built := false

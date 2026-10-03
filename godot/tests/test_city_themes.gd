@@ -10,7 +10,7 @@ func _initialize() -> void:
 	var failures := 0
 	var checks := 0
 
-	# --- normal: Matrix-green "WALL" blocks, no landmarks, has power-ups ---
+	# --- normal (Speedrun): no landmarks, has power-ups, never word-built ---
 	var normal = CityThemes.get_theme("normal")
 	checks += 1
 	if normal.id != "normal":
@@ -33,11 +33,15 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal theme should not be permanently word-built")
 	checks += 1
-	# Speedrun base look "Lagune" (spec 1.1): the old matrix_rain walls and
-	# the Mario/cloud sky are gone; Matrix becomes a rabbit condition.
-	if normal.wall_shader_path != "res://shaders/pacman_wall.gdshader" or normal.wall_matrix_rain:
+	# Speedrun base look "Lagune" (spec 1.1); Matrix is a rabbit condition
+	# look on the shared kond_wall/kond_floor shaders (spec 1.2).
+	if normal.wall_shader_path != "res://shaders/pacman_wall.gdshader" or "wall_matrix_rain" in normal:
 		failures += 1
-		print("FAIL normal theme's walls should use the pacman_wall shader (not matrix_rain)")
+		print("FAIL normal theme's walls should use the pacman_wall shader (matrix_rain is gone)")
+	checks += 1
+	if normal.cond_wall_shader_path != "res://shaders/kond_wall.gdshader" or normal.cond_floor_shader_path != "res://shaders/kond_floor.gdshader":
+		failures += 1
+		print("FAIL normal theme should name the condition-look shaders kond_wall/kond_floor")
 	checks += 1
 	if normal.ceil_sky_clouds or normal.floor_shader_path != "res://shaders/pacman_floor.gdshader" or normal.screen_overlay_shader_path != "res://shaders/crt_overlay.gdshader":
 		failures += 1
@@ -111,9 +115,9 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL manhattan theme should have no power-ups (calm explorer)")
 	checks += 1
-	if manhattan.wall_matrix_rain:
+	if manhattan.wall_shader_path != "" or manhattan.cond_wall_shader_path != "":
 		failures += 1
-		print("FAIL manhattan theme's boxy walls should not use the matrix_rain shader (it's always word-built anyway)")
+		print("FAIL manhattan theme should have no wall shader and no condition looks (it's always word-built anyway)")
 	checks += 1
 	if manhattan.ceil_sky_clouds:
 		failures += 1

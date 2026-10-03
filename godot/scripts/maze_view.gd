@@ -4,7 +4,7 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
-const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal"/Matrix theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
+const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal" (Speedrun) theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
 ## The voxel-cloud sky sits well above the wall tops rather than hugging
 ## them: both the sky ceiling and the clouds under it float at
 ## WALL_H * CLOUD_HEIGHT_MULT (see _build_floor_ceiling/_build_sky_clouds),
@@ -17,7 +17,8 @@ const WordMeshScript := preload("res://scripts/word_mesh.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const CloudMeshScript := preload("res://scripts/cloud_mesh.gd")
 const PixelRabbitMeshScript := preload("res://scripts/pixel_rabbit_mesh.gd")
-const PsychedelicHeadMeshScript := preload("res://scripts/psychedelic_head_mesh.gd")
+const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
+const ConditionLooksScript := preload("res://scripts/condition_looks.gd")
 
 var maze # MazeGen.Maze
 var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "manhattan" | ...)
@@ -33,31 +34,19 @@ var fruit_node: MeshInstance3D = null
 var fruit_alive := false
 var fruit_expire_at := 0.0
 
-## The "Word Mode" power-up (normal levels only — see spawn_word_powerup
-## note in _build_pellets). Manhattan never has one: it's set permanently
-## into word-mode instead, and has no power-ups at all.
-##
-## More than one now spawns per level ("mehr spawn der Kondition Items") —
-## parallel arrays, same pattern as power_cells/power_nodes/power_alive
-## above, rather than a single cell/node/alive triple.
-const WORD_POWERUP_COUNT := 2
-var word_powerup_cells: Array = [] # Array[Vector2i]
-var word_powerup_nodes: Array = [] # Array[Node3D] — each a MultiMeshInstance3D (the pixel-rabbit — see pixel_rabbit_mesh.gd), typed as the common Node3D base
-var word_powerup_alive: Array = [] # Array[bool]
-
-## The Fear & Loathing pickup (normal levels only, same rules as the WORD
-## pickup above): eating it temporarily applies the Fear & Loathing
-## condition's control-scrambling (see Main._activate_fear_powerup), turns
-## the matrix_rain wall shader psychedelic (see set_psychedelic), and
-## randomly flips the player's wall collision on and off for a few seconds.
-const FEAR_POWERUP_COUNT := 2
-var fear_powerup_cells: Array = [] # Array[Vector2i]
-var fear_powerup_nodes: Array = [] # Array[Node3D]
-var fear_powerup_alive: Array = [] # Array[bool]
+## The white rabbit (speedrun levels only, spec 2.2): exactly one per level,
+## in a dead end far from the start (WhiteRabbit.pick_cell), on a cell that
+## carries no pellet — it is voluntary and never counts toward clearing the
+## level. Picking it up starts a condition (Main._on_rabbit_picked).
+const RABBIT_COLOR := Color("f2f2ed") # rabbit white (spec 1.2)
+var rabbit_cell := Vector2i(-1, -1)
+var rabbit_node: Node3D = null
+var rabbit_alive := false
+var rabbit_material: StandardMaterial3D = null
 
 var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
-var word_wall_root: Node3D
+var word_wall_root: Node3D = null # word-built skin, only for permanently word-built themes (Manhattan)
 var word_mode_active := false
 var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed in _process
 var sky_cloud_nodes: Array = [] # Array[MultiMeshInstance3D], sky-cloud themes only — see _build_sky_clouds; tracked mainly so tests can check their height
@@ -73,15 +62,20 @@ var maze_tex: ImageTexture
 var floor_mesh: MeshInstance3D
 var screen_overlay: CanvasLayer = null # CRT overlay (CityTheme.screen_overlay_shader_path), else null
 
-## ---- Look switching (prepared for the rabbit conditions, Etappe 2) ----
-## A look is a pair of materials for the SAME wall MultiMesh and floor mesh;
-## set_look() only swaps material_override, it never builds a second set of
-## walls. Today only LOOK_BASE is registered (the theme's own materials).
+## ---- Look switching (rabbit conditions, spec 1.2) ----
+## A look is a pair of materials for the SAME wall MultiMesh and floor mesh
+## plus shader parameters; set_look() only swaps material_override and sets
+## the parameters, it never builds a second set of walls. build() registers
+## LOOK_BASE (the theme's own materials) and, for a theme with condition
+## shaders, every ConditionLooks look on the shared kond_wall/kond_floor
+## materials (only the `look` uniform differs).
 const LOOK_BASE := "base"
 var current_look := LOOK_BASE
-var _looks: Dictionary = {} # look id -> {"wall": Material, "floor": Material}
+var _looks: Dictionary = {} # look id -> {"wall": Material, "floor": Material, "params": Dictionary}
+var cond_wall_material: ShaderMaterial = null
+var cond_floor_material: ShaderMaterial = null
 
-var wall_material: Material # the CURRENT wall material: StandardMaterial3D, matrix_rain or the theme's wall shader (see _make_materials / set_look)
+var wall_material: Material # the CURRENT wall material: StandardMaterial3D, the theme's wall shader or a condition look's (see _make_materials / set_look)
 var pellet_material: StandardMaterial3D
 var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
@@ -95,9 +89,12 @@ var fruit_material: StandardMaterial3D
 ## station cells pellets should route toward — see
 ## CityTheme.pellets_follow_metro_trails / _metro_trail_cells.
 ##
+## `rabbit_seed` >= 0 places the white rabbit (deterministic per level seed,
+## see WhiteRabbit.pick_cell); -1 = no rabbit (Manhattan).
+##
 ## `look_id` names the level's color variant (Levels.POOL[].look, e.g.
 ## "lagune"/"riff"); "" or an unknown id uses CityTheme.default_level_look.
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false, look_id: String = "") -> void:
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "") -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -108,12 +105,12 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	power_alive.clear()
 	fruit_node = null
 	fruit_alive = false
-	word_powerup_cells.clear()
-	word_powerup_nodes.clear()
-	word_powerup_alive.clear()
-	fear_powerup_cells.clear()
-	fear_powerup_nodes.clear()
-	fear_powerup_alive.clear()
+	rabbit_cell = Vector2i(-1, -1)
+	rabbit_node = null
+	rabbit_alive = false
+	rabbit_material = null
+	word_wall_root = null
+	word_mode_active = false
 	sky_cloud_nodes.clear()
 	screen_overlay = null
 	_looks.clear()
@@ -132,12 +129,12 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_build_floor_ceiling()
 	_build_sky_clouds()
 	_build_tunnel_vistas()
-	_build_pellets(start_cell, reserved_cells, metro_cells, fear_enabled)
+	_build_pellets(start_cell, reserved_cells, metro_cells, rabbit_seed)
 	_build_screen_overlay()
 	register_look(LOOK_BASE, wall_material, floor_mesh.material_override)
-	# A permanently-word-built theme (Manhattan) starts in the word-built-
-	# world look; other themes start out looking normal and only switch when
-	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
+	_register_condition_looks()
+	# A permanently-word-built theme (Manhattan) shows the word-built-world
+	# look for good; every other theme never does (Word Mode is gone).
 	set_word_mode(city_theme.permanently_word_built)
 
 
@@ -154,13 +151,6 @@ func _make_materials() -> void:
 		sp_mat.set_shader_parameter("cell", CELL)
 		_apply_level_look(sp_mat)
 		wall_material = sp_mat
-	elif city_theme.wall_matrix_rain:
-		# Scrolling green ASCII glyphs baked into the wall surface itself —
-		# see matrix_rain.gdshader. Always fully "ASCII", never a flat real
-		# color, at any distance (unlike the old screen-space post effect).
-		var shader_mat := ShaderMaterial.new()
-		shader_mat.shader = load("res://shaders/matrix_rain.gdshader")
-		wall_material = shader_mat
 	else:
 		var sm := StandardMaterial3D.new()
 		sm.albedo_color = Color(0.047, 0.086, 0.22)
@@ -182,6 +172,25 @@ func _make_materials() -> void:
 	power_material.emission_enabled = true
 	power_material.emission = city_theme.power_emission
 	power_material.emission_energy_multiplier = city_theme.power_energy
+
+	# Condition looks: one shared material pair, same level-look colors as
+	# the base so the swap at transition 0 is invisible.
+	cond_wall_material = null
+	cond_floor_material = null
+	if city_theme.cond_wall_shader_path != "":
+		cond_wall_material = ShaderMaterial.new()
+		cond_wall_material.shader = load(city_theme.cond_wall_shader_path)
+		cond_wall_material.set_shader_parameter("cell", CELL)
+		cond_wall_material.set_shader_parameter("wall_top", WALL_H)
+		_apply_level_look(cond_wall_material)
+	if city_theme.cond_floor_shader_path != "":
+		cond_floor_material = ShaderMaterial.new()
+		cond_floor_material.shader = load(city_theme.cond_floor_shader_path)
+		cond_floor_material.set_shader_parameter("cell", CELL)
+		cond_floor_material.set_shader_parameter("maze_tex", maze_tex)
+		cond_floor_material.set_shader_parameter("maze_size", Vector2(maze.cols, maze.rows))
+		cond_floor_material.set_shader_parameter("floor_albedo", city_theme.floor_color)
+		_apply_level_look(cond_floor_material)
 
 	fruit_material = StandardMaterial3D.new()
 	fruit_material.albedo_color = Color(0.486, 1.0, 0.42)
@@ -302,14 +311,13 @@ func _build_walls() -> void:
 	normal_wall_mmi.material_override = wall_material
 	add_child(normal_wall_mmi)
 
-	# The word-built-world skin: every wall cell doubles as a 3D letterform,
+	# The word-built-world skin (permanently word-built themes only, e.g.
+	# Manhattan; see _build_word_walls): every wall cell doubles as a 3D letterform,
 	# now at that cell's real height (see _wall_height_for_cell) instead of
 	# a uniform WALL_H — a theme that opts in (CityTheme.wall_vertical_text,
 	# e.g. Manhattan) reads it hochkant, one letter stacked per row up the
 	# block's full height, so a SKYSCRAPER or a landmark actually looks
-	# taller than an ordinary BUILDING next to it. Built alongside the
-	# normal boxy walls (not on demand) so toggling Word Mode mid-level is
-	# instant; hidden until set_word_mode() turns it on. Entirely data-
+	# taller than an ordinary BUILDING next to it. Entirely data-
 	# driven off city_theme (see city_theme.gd/city_themes.gd): an ordinary
 	# block cycles through city_theme.wall_palette as city_theme.wall_word
 	# (or wall_word_tall, see _is_skyscraper_cell), and any block
@@ -317,9 +325,27 @@ func _build_walls() -> void:
 	# manhattan_maze.gd's real Midtown buildings) gets that name, a
 	# brighter accent color, and its own pulsing light (animated in
 	# _process, see landmark_lights) instead.
+	landmark_lights.clear()
+	if city_theme.permanently_word_built:
+		_build_word_walls(wall_cells, landmark_names, heights)
+
+	walls_body = StaticBody3D.new()
+	walls_body.collision_layer = 2
+	walls_body.collision_mask = 0
+	add_child(walls_body)
+	for cell in wall_cells:
+		var h2: float = heights[cell]
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(CELL * fp, h2, CELL * fp)
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = Vector3(cell.y * CELL, h2 * 0.5, cell.x * CELL)
+		walls_body.add_child(cs)
+
+
+func _build_word_walls(wall_cells: Array, landmark_names: Dictionary, heights: Dictionary) -> void:
 	word_wall_root = Node3D.new()
 	add_child(word_wall_root)
-	landmark_lights.clear()
 	for cell in wall_cells:
 		var landmark_name: String = landmark_names[cell]
 		var h: float = heights[cell]
@@ -350,19 +376,6 @@ func _build_walls() -> void:
 			node2.position.z = cell.x * CELL
 			node2.rotation.y = rot_y
 			word_wall_root.add_child(node2)
-
-	walls_body = StaticBody3D.new()
-	walls_body.collision_layer = 2
-	walls_body.collision_mask = 0
-	add_child(walls_body)
-	for cell in wall_cells:
-		var h2: float = heights[cell]
-		var shape := BoxShape3D.new()
-		shape.size = Vector3(CELL * fp, h2, CELL * fp)
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		cs.position = Vector3(cell.y * CELL, h2 * 0.5, cell.x * CELL)
-		walls_body.add_child(cs)
 
 
 func _apply_level_look(m: ShaderMaterial) -> void:
@@ -538,32 +551,35 @@ func _add_tunnel_vista_panel(pos: Vector3, rot_y: float, shader: Shader) -> void
 	add_child(mi)
 
 
-## Swaps the visible wall skin: word-built ("WALL" letterforms) vs the
-## normal boxy walls. Collision (walls_body) is untouched either way — this
-## is purely cosmetic; Main separately toggles the player's noclip.
+## Swaps the visible wall skin: word-built (letterforms) vs the normal boxy
+## walls. Only a permanently word-built theme has the word skin at all; for
+## every other theme this keeps the boxy walls. Collision (walls_body) is
+## untouched either way.
 func set_word_mode(active: bool) -> void:
-	word_mode_active = active
-	word_wall_root.visible = active
-	normal_wall_mmi.visible = not active
+	word_mode_active = active and word_wall_root != null
+	if word_wall_root != null:
+		word_wall_root.visible = word_mode_active
+	normal_wall_mmi.visible = not word_mode_active
 
 
-## Turns the wall shader's psychedelic mode on/off (psychedelic_amount
-## uniform of pacman_wall.gdshader / matrix_rain.gdshader) — used by Main for
-## the Fear & Loathing pickup's temporary "LSD trip" wall look. Replaced by
-## the condition looks in Etappe 2. A no-op on themes whose wall material is
-## not a shader (Godot ignores a parameter the shader does not declare).
-func set_psychedelic(active: bool) -> void:
-	if wall_material is ShaderMaterial:
-		wall_material.set_shader_parameter("psychedelic_amount", 1.0 if active else 0.0)
-
-
-## ---- Look API (Etappe 2: rabbit conditions switch looks at runtime) ----
+## ---- Look API (rabbit conditions switch looks at runtime) ----
 
 ## Registers (or replaces) a look: the materials the wall MultiMesh and the
-## floor use while it is active. A null material keeps that surface's base
-## material. build() registers LOOK_BASE with the theme's own materials.
-func register_look(look_id: String, wall_mat: Material, floor_mat: Material) -> void:
-	_looks[look_id] = {"wall": wall_mat, "floor": floor_mat}
+## floor use while it is active, plus shader parameters set on them when it
+## is switched on (e.g. {"look": 1}). A null material keeps that surface's
+## base material. build() registers LOOK_BASE with the theme's own materials.
+func register_look(look_id: String, wall_mat: Material, floor_mat: Material, params: Dictionary = {}) -> void:
+	_looks[look_id] = {"wall": wall_mat, "floor": floor_mat, "params": params}
+
+
+## Every ConditionLooks look on the shared condition materials (only for a
+## theme with condition shaders; Manhattan has none).
+func _register_condition_looks() -> void:
+	if cond_wall_material == null:
+		return
+	for id in ConditionLooksScript.LOOKS:
+		var look: Dictionary = ConditionLooksScript.LOOKS[id]
+		register_look(id, cond_wall_material, cond_floor_material, {"look": look.shader, "transition": 0.0, "flip": 0.0, "matrix_solid": 0.0})
 
 
 func has_look(look_id: String) -> bool:
@@ -584,6 +600,8 @@ func set_look(look_id: String) -> bool:
 	normal_wall_mmi.material_override = wall_mat
 	floor_mesh.material_override = floor_mat
 	current_look = look_id
+	for param in look.get("params", {}):
+		set_look_param(param, look.params[param])
 	return true
 
 
@@ -596,80 +614,22 @@ func set_look_param(param: String, value) -> void:
 			m.set_shader_parameter(param, value)
 
 
-func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
-	var best: Vector2i = cells[0]
-	var best_d := -1.0
-	for cell in cells:
-		var d: float = (cell.x - from.x) * (cell.x - from.x) + (cell.y - from.y) * (cell.y - from.y)
-		if d > best_d:
-			best_d = d
-			best = cell
-	return best
-
-
-## The WORD pickup's visual: a small blocky white pixel-rabbit (see
-## pixel_rabbit_mesh.gd) rather than the literal word "WORD" — "follow the
-## white rabbit" for the pickup that drops wall collision and reskins the
-## level into its word-built-world look. One instance per cell in
-## word_powerup_cells (see WORD_POWERUP_COUNT).
-func _build_word_powerup_mesh(cell: Vector2i) -> void:
-	var mesh := PixelRabbitMeshScript.build()
+## The white rabbit's figure: the blocky pixel rabbit (pixel_rabbit_mesh.gd)
+## in rabbit white, with a soft light so it reads from down the corridor.
+func _build_rabbit_mesh(cell: Vector2i) -> void:
+	var mesh := PixelRabbitMeshScript.build({"color": RABBIT_COLOR})
+	mesh.name = "WhiteRabbit"
 	mesh.scale = Vector3.ONE * 1.4
-	mesh.position = Vector3(cell.y * CELL, 0.55, cell.x * CELL)
+	mesh.position = Vector3(cell.y * CELL, 0.6, cell.x * CELL)
+	rabbit_material = mesh.multimesh.mesh.material
 	var light := OmniLight3D.new()
-	light.light_color = Color(0.85, 0.9, 1.0)
-	light.omni_range = 2.6
-	light.light_energy = 0.85
+	light.light_color = Color(0.95, 0.95, 1.0)
+	light.omni_range = 2.8
+	light.light_energy = 0.9
 	mesh.add_child(light)
 	add_child(mesh)
-	word_powerup_nodes.append(mesh)
-	word_powerup_alive.append(true)
-
-
-## The Fear & Loathing pickup's visual — see psychedelic_head_mesh.gd. One
-## instance per cell in fear_powerup_cells (see FEAR_POWERUP_COUNT).
-func _build_fear_powerup_mesh(cell: Vector2i) -> void:
-	var head := PsychedelicHeadMeshScript.build()
-	head.scale = Vector3.ONE * 0.5
-	head.position = Vector3(cell.y * CELL, 0.55, cell.x * CELL)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.4, 0.9)
-	light.omni_range = 2.6
-	light.light_energy = 0.9
-	head.add_child(light)
-	add_child(head)
-	fear_powerup_nodes.append(head)
-	fear_powerup_alive.append(true)
-
-
-## Greedy farthest-point sampling seeded by `anchor` (not itself part of the
-## output): picks up to `count` cells out of `cells` so each new pick is as
-## far as possible from `anchor` *and* every cell already picked — spreads
-## several same-type pickups across different neighborhoods instead of
-## clustering them together. Used for the WORD/Fear & Loathing pickups below
-## now that more than one of each can spawn per level.
-func _pick_multiple_farthest(cells: Array, count: int, anchor: Vector2i) -> Array:
-	var picked := []
-	var refs := [anchor]
-	var pool := cells.duplicate()
-	for i in count:
-		if pool.is_empty():
-			break
-		var best = null
-		var best_d := -1.0
-		for cell in pool:
-			var d := INF
-			for r in refs:
-				var dd: float = (cell.x - r.x) * (cell.x - r.x) + (cell.y - r.y) * (cell.y - r.y)
-				if dd < d:
-					d = dd
-			if d > best_d:
-				best_d = d
-				best = cell
-		picked.append(best)
-		refs.append(best)
-		pool.erase(best)
-	return picked
+	rabbit_node = mesh
+	rabbit_alive = true
 
 
 func _pick_power_cells(candidates: Array) -> Array:
@@ -775,7 +735,7 @@ func _metro_trail_cells(candidates: Array, metro_cells: Array, start_cell: Vecto
 	return out
 
 
-func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false) -> void:
+func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1) -> void:
 	var all_cells: Array = MazeGen.cells_in_room(maze, false)
 	var reserved_set := {}
 	for cell in reserved_cells:
@@ -786,8 +746,8 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 			candidates.append(cell)
 
 	# A "calm explorer" theme (city_theme.has_power_ups == false, e.g.
-	# Manhattan) has no power-ups at all (no power pellets, no Word Mode
-	# pickup below) — it has no ghosts to use them against. Every open cell
+	# Manhattan) has no power-ups at all (no power pellets, no rabbit
+	# below) — it has no ghosts to use them against. Every open cell
 	# there is just a plain collectible pellet.
 	power_cells = _pick_power_cells(candidates) if city_theme.has_power_ups else []
 	var power_set := {}
@@ -803,30 +763,13 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 	else:
 		pellet_cells = pellet_candidates
 
-	# Word Mode power-up: WORD_POWERUP_COUNT per level that has power-ups at
-	# all, taken out of the regular pellet grid (not extra pellets on top of
-	# it) and spread apart via farthest-point sampling so they land in
-	# different corners of the maze rather than clustering. A "calm explorer"
-	# theme like Manhattan has none (see build()/has_power_ups).
-	if city_theme.has_power_ups and pellet_cells.size() > 0:
-		word_powerup_cells = _pick_multiple_farthest(pellet_cells, WORD_POWERUP_COUNT, start_cell)
-		for cell in word_powerup_cells:
-			pellet_cells.erase(cell)
-
-	# Fear & Loathing pickup: a risk/reward item, only when the caller allows
-	# it (from the 2nd level of a run on) and only in dead ends — it lies
-	# off the main routes, so nobody runs into it by accident. Taken out of
-	# the pellet grid like the WORD pickups and spread away from them. A
-	# level with fewer dead ends than FEAR_POWERUP_COUNT gets fewer (or none).
-	if fear_enabled and city_theme.has_power_ups and pellet_cells.size() > 0:
-		var dead_ends := []
-		for cell in pellet_cells:
-			if MazeGen.neighbors_of(maze, cell.x, cell.y).size() == 1:
-				dead_ends.append(cell)
-		var fear_anchor: Vector2i = word_powerup_cells[0] if word_powerup_cells.size() > 0 else start_cell
-		fear_powerup_cells = _pick_multiple_farthest(dead_ends, FEAR_POWERUP_COUNT, fear_anchor)
-		for cell in fear_powerup_cells:
-			pellet_cells.erase(cell)
+	# White rabbit: one per level (rabbit_seed >= 0), in a far dead end that
+	# is neither the start nor a power pellet; its cell carries no pellet, so
+	# the level never needs it (voluntary, spec 2.2).
+	if rabbit_seed >= 0 and city_theme.has_power_ups:
+		rabbit_cell = WhiteRabbitScript.pick_cell(MazeGen, maze, start_cell, rabbit_seed, power_cells)
+		if rabbit_cell.x >= 0:
+			pellet_cells.erase(rabbit_cell)
 
 	var sphere: Mesh = _pickup_mesh(city_theme.pellet_shape, city_theme.pellet_size, pellet_material)
 	for cell in pellet_cells:
@@ -854,10 +797,8 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		power_nodes.append(mesh)
 		power_alive.append(true)
 
-	for cell in word_powerup_cells:
-		_build_word_powerup_mesh(cell)
-	for cell in fear_powerup_cells:
-		_build_fear_powerup_mesh(cell)
+	if rabbit_cell.x >= 0:
+		_build_rabbit_mesh(rabbit_cell)
 
 
 func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
@@ -927,9 +868,9 @@ func spawn_fruit(now: float) -> void:
 
 
 ## Consumes any pickup within `radius` of `pos`. Returns a Dictionary describing
-## what was eaten this call: {pellet, power, fruit, word_powerup: bool}.
+## what was eaten this call: {pellet, power, fruit, rabbit: bool}.
 func consume_at(pos: Vector3, now: float) -> Dictionary:
-	var result := {"pellet": false, "power": false, "fruit": false, "word_powerup": false, "fear_powerup": false}
+	var result := {"pellet": false, "power": false, "fruit": false, "rabbit": false}
 	for i in pellet_cells.size():
 		if not pellet_alive[i]:
 			continue
@@ -950,25 +891,12 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			node.visible = false
 			result.power = true
 
-	for i in word_powerup_nodes.size():
-		if not word_powerup_alive[i]:
-			continue
-		var node: Node3D = word_powerup_nodes[i]
-		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
-		if d < 0.5:
-			word_powerup_alive[i] = false
-			node.visible = false
-			result.word_powerup = true
-
-	for i in fear_powerup_nodes.size():
-		if not fear_powerup_alive[i]:
-			continue
-		var node: Node3D = fear_powerup_nodes[i]
-		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
-		if d < 0.5:
-			fear_powerup_alive[i] = false
-			node.visible = false
-			result.fear_powerup = true
+	if rabbit_alive and rabbit_node != null:
+		var dr := Vector2(rabbit_node.position.x - pos.x, rabbit_node.position.z - pos.z).length()
+		if dr < 0.5:
+			rabbit_alive = false
+			rabbit_node.visible = false
+			result.rabbit = true
 
 	if fruit_alive and fruit_node != null:
 		var d := Vector2(fruit_node.position.x - pos.x, fruit_node.position.z - pos.z).length()
@@ -995,27 +923,23 @@ func _process(delta: float) -> void:
 				power_nodes[i].scale = Vector3.ONE * s
 	if fruit_alive and fruit_node != null:
 		fruit_node.rotate_y(delta * 1.4)
-	for i in word_powerup_nodes.size():
-		if not word_powerup_alive[i]:
-			continue
-		var wnode: Node3D = word_powerup_nodes[i]
-		wnode.rotate_y(delta * 2.0)
-		var ws := 1.4 + sin(_t * 5.0 + i) * 0.14
-		wnode.scale = Vector3.ONE * ws
-	for i in fear_powerup_nodes.size():
-		if not fear_powerup_alive[i]:
-			continue
-		var fnode: Node3D = fear_powerup_nodes[i]
-		fnode.rotate_y(delta * 1.4)
-		var fs := 0.5 + sin(_t * 3.0 + i) * 0.05
-		fnode.scale = Vector3.ONE * fs
-		for child in fnode.get_children():
-			if child is MeshInstance3D and child.name.begins_with("aura"):
-				var hue := fmod(_t * 0.3 + float(child.get_index()) / 8.0 + i * 0.5, 1.0)
-				var c := Color.from_hsv(hue, 0.9, 1.0)
-				var mat: StandardMaterial3D = child.material_override
-				mat.albedo_color = c
-				mat.emission = c
+	if rabbit_alive and rabbit_node != null:
+		# slow turn (~0.24 Hz) and bob (0.4 Hz): all motion below 0.5 Hz
+		rabbit_node.rotate_y(delta * 1.5)
+		rabbit_node.position.y = 0.6 + sin(_t * TAU * 0.4) * 0.05
 	for i in landmark_lights.size():
 		var light: OmniLight3D = landmark_lights[i]
 		light.light_energy = 1.0 + sin(_t * 3.0 + i * 0.7) * 0.55
+
+
+## Object style of the condition looks (spec 1.2): pellets, power pellets,
+## fruit and the rabbit keep their color and shape; `outline` adds the black
+## inverted-hull contour, `ignore_fog` lets them glow through the Stromausfall
+## fog. Main applies the same to the ghosts.
+func set_object_style(outline: bool, ignore_fog: bool) -> void:
+	var ol: Material = ConditionLooksScript.outline_material() if outline else null
+	for m in [pellet_material, power_material, fruit_material, rabbit_material]:
+		if m == null:
+			continue
+		m.next_pass = ol
+		m.disable_fog = ignore_fog

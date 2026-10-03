@@ -48,14 +48,31 @@ const MODES := ["solo", "chat", "pvp", "coop"]
 const MODE_LABELS := {"solo": "Solo", "chat": "Chat", "pvp": "PvP", "coop": "Koop"}
 
 
-## Key of the best time / leaderboard of one (level, condition, mode).
-## "" condition is stored as "none". Solo keeps the short "level|cond" form
-## the saved files already use; the other modes append "|mode".
-static func board_key(level_id: String, condition_id: String, mode: String = "solo") -> String:
-	var cond := condition_id if condition_id != "" else "none"
+## Boards (spec 2.5). Since the rabbit conditions (Etappe 2) the condition
+## is no longer part of a board key: a speedrun run is recorded on the
+## "woche" board (Kaninchen der Woche — everyone gets the same rabbits in a
+## given week). Etappe 3 adds "chaos" and "chat" and migrates the old
+## condition boards (matrix_ghost, fear_and_loathing, none); until then those
+## old keys simply stay in the files, untouched and no longer shown.
+const BOARD_WEEK := "woche"
+## Boards whose solo runs may earn the target-time badge ("" = the old
+## no-condition board, kept for old saves and tests).
+const BADGE_BOARDS := ["", BOARD_WEEK]
+
+
+## Key of the best time / leaderboard of one (level, board, mode).
+## "" board is stored as "none" (the pre-rabbit "no condition" board). Solo
+## keeps the short "level|board" form the saved files already use; the other
+## modes append "|mode".
+static func board_key(level_id: String, board: String, mode: String = "solo") -> String:
+	var b := board if board != "" else "none"
 	if mode == "solo" or mode == "":
-		return "%s|%s" % [level_id, cond]
-	return "%s|%s|%s" % [level_id, cond, mode]
+		return "%s|%s" % [level_id, b]
+	return "%s|%s|%s" % [level_id, b, mode]
+
+
+static func board_earns_badge(board: String) -> bool:
+	return BADGE_BOARDS.has(board)
 
 
 static func ids() -> Array:
