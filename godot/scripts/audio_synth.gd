@@ -64,6 +64,10 @@ var _clock_tick: AudioStreamWAV
 var _fruit_1: AudioStreamWAV
 var _fruit_2: AudioStreamWAV
 var _clear_notes: Array[AudioStreamWAV] = []
+## Tokyo scramble: the pedestrian-crossing tone (a synthetic bird-like
+## chirp, two short rising sine glides) announcing "All Walk".
+var _crossing_a: AudioStreamWAV
+var _crossing_b: AudioStreamWAV
 
 
 func _ready() -> void:
@@ -88,6 +92,8 @@ func _ready() -> void:
 	_fruit_2 = _tone(1000.0, 0.1, "sine", 0.45)
 	for f in [523.0, 659.0, 784.0, 1047.0]:
 		_clear_notes.append(_tone(f, 0.22, "square", 0.5))
+	_crossing_a = _sweep(2350.0, 3050.0, 0.08, "sine", 0.3)
+	_crossing_b = _sweep(2050.0, 2650.0, 0.1, "sine", 0.26)
 	_siren_normal = _siren_loop(90.0, 25.0, 3.2, 0.16)
 	_siren_frightened = _siren_loop(220.0, 40.0, 9.0, 0.2)
 	_arcade_music = _build_arcade_music()
@@ -182,6 +188,18 @@ func death() -> void:
 func fruit() -> void:
 	_play(_fruit_1)
 	_play(_fruit_2, 0.07)
+
+
+## "All Walk" at the Tokyo scramble: three chirp pairs ("pi-yo") over ~1.5 s.
+func crossing_signal() -> void:
+	for k in 3:
+		_play(_crossing_a, k * 0.5)
+		_play(_crossing_b, k * 0.5 + 0.16)
+
+
+## The streams of the crossing tone (tests check they exist and are short).
+func crossing_streams() -> Array:
+	return [_crossing_a, _crossing_b]
 
 
 func level_clear() -> void:

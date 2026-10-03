@@ -13,6 +13,7 @@ signal explorer_pressed(city_id: String)
 signal menu_pressed
 signal quit_pressed
 signal reduce_fx_toggled(on: bool)
+signal reduce_rain_toggled(on: bool)
 ## UX-K1 comfort block: field of view (degrees) and mouse sensitivity (factor).
 signal fov_changed(value: float)
 signal mouse_sens_changed(value: float)
@@ -109,6 +110,8 @@ var lb_return_panel: Control = null
 var current_week := Vector2i(0, 0)
 var reduce_fx_start: CheckBox
 var reduce_fx_pause: CheckBox
+var reduce_rain_start: CheckBox
+var reduce_rain_pause: CheckBox
 ## UX-K1 comfort sliders, one pair on the start screen, one in the pause.
 var fov_sliders: Array = []
 var sens_sliders: Array = []
@@ -456,6 +459,7 @@ func _build_start_panel() -> void:
 	box.add_child(_title_label("ZAPMANIAC"))
 	comfort_start_block = _build_comfort_block()
 	reduce_fx_start = comfort_start_block.get_meta("reduce_fx")
+	reduce_rain_start = comfort_start_block.get_meta("reduce_rain")
 	box.add_child(comfort_start_block)
 
 	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus.  WASD laufen · Maus umschauen · Esc Pause"))
@@ -559,12 +563,23 @@ func _build_comfort_block() -> Control:
 	head.add_theme_color_override("font_color", ACCENT)
 	head.add_theme_font_size_override("font_size", 13)
 	col.add_child(head)
+	# both switches in one row, so the block keeps its height (the start
+	# screen still fits 1152 x 720)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	col.add_child(row)
 	var cb := CheckBox.new()
-	cb.text = "Effekte reduzieren (ruhigere Konditions-Looks, kein Kippen)"
+	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen)"
 	cb.add_theme_font_size_override("font_size", TEXT_PX)
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
-	col.add_child(cb)
+	row.add_child(cb)
 	panel.set_meta("reduce_fx", cb)
+	var rain := CheckBox.new()
+	rain.text = "Regen reduzieren"
+	rain.add_theme_font_size_override("font_size", TEXT_PX)
+	rain.toggled.connect(func(pressed: bool): reduce_rain_toggled.emit(pressed))
+	row.add_child(rain)
+	panel.set_meta("reduce_rain", rain)
 	var fov_s := _comfort_slider(col, "Sichtfeld", SettingsScript.FOV_MIN, SettingsScript.FOV_MAX, 1.0, fov_value_labels)
 	fov_s.value_changed.connect(func(v: float):
 		if not _comfort_syncing:
@@ -632,6 +647,12 @@ func set_reduce_fx(on: bool) -> void:
 			cb.set_pressed_no_signal(on)
 
 
+func set_reduce_rain(on: bool) -> void:
+	for cb in [reduce_rain_start, reduce_rain_pause]:
+		if cb != null:
+			cb.set_pressed_no_signal(on)
+
+
 ## Pause (UX-K2): WEITER / NEUSTART / HAUPTMENÜ — HAUPTMENÜ asks once in a
 ## speedrun ("Lauf abbrechen?") — and the comfort block.
 func _build_pause_panel() -> void:
@@ -676,6 +697,7 @@ func _build_pause_panel() -> void:
 	menu_confirm_row = confirm
 	comfort_pause_block = _build_comfort_block()
 	reduce_fx_pause = comfort_pause_block.get_meta("reduce_fx")
+	reduce_rain_pause = comfort_pause_block.get_meta("reduce_rain")
 	box.add_child(comfort_pause_block)
 
 

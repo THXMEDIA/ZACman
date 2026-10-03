@@ -239,6 +239,8 @@ var rabbit_week_override := Vector2i(0, 0)
 
 ## "Effekte reduzieren" (spec 1.2), persisted via Settings.
 var reduce_fx := false
+## "Regen reduzieren" (comfort block, Tokyo M2): fewer, dimmer rain drops.
+var reduce_rain := false
 ## Chaos mode (spec 2.5, start screen switch, persisted via Settings): real
 ## randomness for every rabbit, own board "chaos".
 var chaos_mode := false
@@ -258,6 +260,9 @@ var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
 var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only (Pedestrian, ManWalkingDog or KidGroup)
 var metro_stations: Array = [] # Array[MetroStation] — Manhattan only
+## Tokyo: rain, traffic, passers-by and the scramble crossing (tokyo_life.gd);
+## null in every other level.
+var tokyo_life: Node3D = null
 var obstacle_root: Node3D
 var world_env: WorldEnvironment
 
@@ -268,6 +273,7 @@ func _ready() -> void:
 	high_score = _load_highscore()
 	var settings := SettingsScript.load_settings()
 	reduce_fx = settings.reduce_fx
+	reduce_rain = settings.reduce_rain
 	chaos_mode = settings.chaos
 	fov = settings.fov
 	mouse_sens = settings.mouse_sens
@@ -286,6 +292,7 @@ func _ready() -> void:
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.set_reduce_fx(reduce_fx)
+	hud.set_reduce_rain(reduce_rain)
 	hud.set_chaos_mode(chaos_mode)
 	hud.set_comfort(fov, mouse_sens)
 	hud.set_game_hud_visible(false)
@@ -422,6 +429,7 @@ func _build_hud() -> void:
 	hud.menu_pressed.connect(go_to_main_menu)
 	hud.quit_pressed.connect(_on_quit_pressed)
 	hud.reduce_fx_toggled.connect(_on_reduce_fx_toggled)
+	hud.reduce_rain_toggled.connect(set_reduce_rain)
 	hud.fov_changed.connect(set_fov)
 	hud.mouse_sens_changed.connect(set_mouse_sens)
 	hud.chaos_toggled.connect(set_chaos_mode)
@@ -585,6 +593,8 @@ func start_explorer_level(city_id: String) -> void:
 	_clear_explorer_obstacles()
 	if city.traffic == "manhattan":
 		_spawn_manhattan_obstacles()
+	elif city.traffic == "tokyo":
+		_spawn_tokyo_life(int(city.seed))
 	_spawn_metro_stations(metro_cells, city.metro_script)
 
 	hud.set_level(city.label)
@@ -667,6 +677,26 @@ func _clear_explorer_obstacles() -> void:
 	for m in metro_stations:
 		m.queue_free()
 	metro_stations.clear()
+	if tokyo_life != null:
+		tokyo_life.queue_free()
+		tokyo_life = null
+
+
+## Tokyo (M2): rain, cars, passers-by and the scramble crossing as one node
+## of six MultiMeshes (tokyo_life.gd), seeded with the city's level seed.
+func _spawn_tokyo_life(level_seed: int) -> void:
+	tokyo_life = Node3D.new()
+	tokyo_life.set_script(load("res://scripts/tokyo_life.gd"))
+	obstacle_root.add_child(tokyo_life)
+	tokyo_life.setup(maze_view, level_seed)
+	tokyo_life.set_comfort(reduce_rain, reduce_fx)
+	tokyo_life.walk_started.connect(_on_tokyo_walk_started)
+
+
+## The scramble's "All Walk" begins: the synthetic crossing tone.
+func _on_tokyo_walk_started() -> void:
+	if running and not paused:
+		Sfx.crossing_signal()
 
 
 ## Metro-station cells, picked ahead of pellet placement (see maze_view.gd's
@@ -806,6 +836,14 @@ func _check_explorer_obstacles() -> void:
 		_push_player_away_from(t.position, MANHATTAN_OBSTACLE_RADIUS)
 	for p in pedestrians:
 		_push_player_away_from(p.position, MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	if tokyo_life != null:
+		# Tokyo: the same push as Manhattan — cars as a capsule along their
+		# axis (obstacle), passers-by with the small, harmless radius.
+		for i in tokyo_life.car_count():
+			_push_player_away_from(tokyo_life.car_closest_point(i, player.global_position), tokyo_life.CAR_RADIUS)
+		for i in tokyo_life.walker_count():
+			if tokyo_life.walker_visible(i):
+				_push_player_away_from(tokyo_life.walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
@@ -898,6 +936,18 @@ func set_reduce_fx(on: bool) -> void:
 	_vis_flip = -1.0 # re-evaluate the Kippbild frame next frame
 	if not on:
 		hud.set_flip_frame(0.0)
+	if tokyo_life != null:
+		tokyo_life.set_comfort(reduce_rain, reduce_fx)
+
+
+## "Regen reduzieren" (comfort block): stored right away, applied to a
+## running Tokyo level (fewer and dimmer drops).
+func set_reduce_rain(on: bool) -> void:
+	reduce_rain = on
+	_save_settings()
+	hud.set_reduce_rain(on)
+	if tokyo_life != null:
+		tokyo_life.set_comfort(reduce_rain, reduce_fx)
 
 
 ## Chaos mode (start screen switch): stored right away; takes effect with the
@@ -910,7 +960,7 @@ func set_chaos_mode(on: bool) -> void:
 
 
 func _save_settings() -> void:
-	SettingsScript.save_settings({"reduce_fx": reduce_fx, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
+	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
 
 
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
@@ -1313,6 +1363,8 @@ func _process(delta: float) -> void:
 			p.update(delta, now)
 		for m in metro_stations:
 			m.update(delta, now)
+		if tokyo_life != null:
+			tokyo_life.update(delta, player.global_position, player.camera.global_position)
 
 	# Pickups are checked before the obstacle push so a taxi/pedestrian that
 	# happens to be passing over the player's exact cell this frame can

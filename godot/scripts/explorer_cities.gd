@@ -13,7 +13,8 @@ extends RefCounted
 ##                 "maze": maze_script.metro_cells() (Tokyo: the station exit)
 ##   metro_script  the subway sign node (setup(pos) / update(delta, now))
 ##   traffic       "manhattan" = Manhattan's word traffic and pedestrians,
-##                 "" = none yet (Tokyo: passers-by and cars come in M2)
+##                 "tokyo" = rain, wire cars, passers-by and the scramble
+##                 crossing (tokyo_life.gd), "" = none
 ##   exit_text     level-clear banner when the player takes the subway
 
 const EXPLORER_IDS := ["manhattan", "tokyo"]
@@ -33,7 +34,7 @@ static func get_city(id: String) -> Dictionary:
 				"id": "tokyo", "theme": "tokyo", "label": "TOKYO",
 				"maze_script": "res://scripts/tokyo_maze.gd", "seed": 7310,
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/tokyo_metro_station.gd",
-				"traffic": "", "exit_text": "U-BAHN — los zum Speedrun!",
+				"traffic": "tokyo", "exit_text": "U-BAHN — los zum Speedrun!",
 			}
 	return {}
 
