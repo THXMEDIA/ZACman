@@ -803,6 +803,7 @@ func begin_manhattan_game(city_id: String = "manhattan") -> void:
 	start_hold = false
 	player.movement_locked = false
 	hud.show_start_intro(false)
+	hud.show_clock_hint(false)
 	hud.hide_all_panels()
 	start_explorer_level(city_id)
 	running = true
@@ -1170,6 +1171,12 @@ func toggle_pause() -> void:
 		return
 	paused = not paused
 	if paused:
+		# QA 03.10. W1: the start intro must never cover the pause menu. Pausing
+		# during the intro ends it (the clock is held anyway until the first step).
+		if start_hold:
+			intro_until_real = real_now
+			hud.show_start_intro(false)
+			hud.show_clock_hint(false)
 		hud.set_pause_note(not playing_manhattan)
 		hud.set_reduce_fx(reduce_fx)
 		hud.set_comfort(fov, mouse_sens)
@@ -1180,6 +1187,8 @@ func toggle_pause() -> void:
 		player.input_enabled = false
 	else:
 		hud.hide_all_panels()
+		if start_hold:
+			hud.show_clock_hint(true)
 		Sfx.set_siren(true, now < frightened_until)
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		player.input_enabled = true

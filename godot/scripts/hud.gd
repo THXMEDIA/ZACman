@@ -1035,7 +1035,9 @@ func _centered_overlay() -> CenterContainer:
 func _build_start_intro() -> void:
 	start_intro = _centered_overlay()
 	start_intro.visible = false
+	start_intro.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	start_intro_panel = PanelContainer.new()
+	start_intro_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := _panel_style()
 	sb.set_content_margin_all(28)
 	sb.bg_color = Color(0.0, 0.0, 0.0, 0.88)

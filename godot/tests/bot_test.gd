@@ -1219,6 +1219,23 @@ func _run_intro_checks() -> void:
 	_release_all_move_keys()
 	_check("hold: the first movement input starts the clock", not main.start_hold and main.real_now - main.level_start_real > 0.0 and main.hud.timer_label.text != "0:00.00")
 	_check("hold: the game clock runs again", main.now > now_before)
+	# QA 03.10. W1: pausing during the intro must not leave the intro over the pause menu
+	main.skip_start_intro = false
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("intro: up before the pause test", main.hud.is_start_intro_visible())
+	main.toggle_pause()
+	await get_tree().process_frame
+	_check("pause during intro: intro hidden, pause menu visible", main.paused and main.hud.pause_panel.visible and not main.hud.is_start_intro_visible())
+	_check("pause during intro: intro never blocks clicks", main.hud.start_intro.mouse_filter == Control.MOUSE_FILTER_IGNORE and main.hud.start_intro_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE)
+	main.toggle_pause()
+	await get_tree().process_frame
+	_check("pause during intro: after resume the clock still waits for the first step", main.start_hold and not main.hud.is_start_intro_visible())
+	Input.action_press("move_forward")
+	for i in 20:
+		await get_tree().process_frame
+	_release_all_move_keys()
 	main.level_index += 1
 	main.next_level()
 	_check("next_level: no intro between levels", not main.start_hold and not main.hud.is_start_intro_visible())
