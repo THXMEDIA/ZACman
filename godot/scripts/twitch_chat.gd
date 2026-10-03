@@ -15,16 +15,21 @@ extends Node
 ## parsing is split into pure static functions (parse_irc_line,
 ## parse_command) that a headless test can exercise directly against
 ## synthetic IRC lines without any real network access — see
-## tests/test_twitch_chat.gd.
+## tests/test_twitch.gd.
 
 signal chat_command(user: String, command: String, args: String)
 signal connection_state_changed(is_connected: bool)
 
 const HOST := "irc.chat.twitch.tv"
 const PORT := 6667
-## Recognized viewer commands. Kept deliberately small, harmless, and
-## reversible: nothing here can end a run or lock out player input.
-const KNOWN_COMMANDS := ["power", "fruit"]
+## Recognized viewer commands. Kept deliberately small and reversible:
+## nothing here can end a run or lock out player input.
+##   !power / !fruit     help (Frightened mode, bonus fruit); global cooldown
+##                       in Main (CHAT_COMMAND_COOLDOWN_S, Code-W8)
+##   !gut / !schlecht    vote on the white rabbit's good/bad ratio (spec 2.6,
+##                       ChatVote) — the only way the chat can make a level
+##                       harder, and only through the rabbit
+const KNOWN_COMMANDS := ["power", "fruit", "gut", "schlecht"]
 
 var enabled := false
 var channel := ""

@@ -38,6 +38,14 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL parse_irc_line should reject lines without a ':' prefix")
 
+	# a vote as a full IRC line, end to end through both parsers
+	checks += 1
+	var vote_line: Dictionary = twitch.parse_irc_line(":Carol!carol@carol.tmi.twitch.tv PRIVMSG #zapmaniac :!schlecht")
+	var vote_cmd: Dictionary = twitch.parse_command(vote_line.get("message", ""))
+	if vote_line.get("user") != "Carol" or vote_cmd.get("command") != "schlecht":
+		failures += 1
+		print("FAIL a !schlecht line should parse to user Carol, command schlecht: %s %s" % [vote_line, vote_cmd])
+
 	checks += 1
 	var no_user_line := ":bob!bob@bob.tmi.twitch.tv PRIVMSG #zapmaniac :just chatting, no command here"
 	var parsed2: Dictionary = twitch.parse_irc_line(no_user_line)
@@ -51,6 +59,10 @@ func _initialize() -> void:
 		["!power now please", {"command": "power", "args": "now please"}],
 		["!FRUIT", {"command": "fruit", "args": ""}],
 		["  !fruit  ", {"command": "fruit", "args": ""}],
+		["!gut", {"command": "gut", "args": ""}],
+		["!schlecht", {"command": "schlecht", "args": ""}],
+		["!GUT bitte Matrix", {"command": "gut", "args": "bitte Matrix"}],
+		["  !Schlecht  ", {"command": "schlecht", "args": ""}],
 	]
 	for c in cmd_cases:
 		checks += 1
@@ -65,6 +77,8 @@ func _initialize() -> void:
 		"!unknowncommand",       # not in KNOWN_COMMANDS
 		"!",                     # empty command
 		"power",                 # missing the leading '!'
+		"gut",                   # a vote needs the '!' too
+		"!gutschlecht",          # not a command
 	]
 	for msg in rejected_cases:
 		checks += 1
@@ -75,7 +89,7 @@ func _initialize() -> void:
 	# --- KNOWN_COMMANDS sanity: every command Main actually handles must be
 	# whitelisted here, and vice versa, so the two can't silently drift.
 	checks += 1
-	var main_handled := ["power", "fruit"]
+	var main_handled := ["power", "fruit", "gut", "schlecht"]
 	var known: Array = twitch.KNOWN_COMMANDS
 	var same := known.size() == main_handled.size()
 	if same:

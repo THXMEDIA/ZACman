@@ -4,13 +4,16 @@ extends SceneTree
 ##   godot --headless --path . --script res://tests/test_save_migration.gd
 ## Exits with code 0 on success, 1 on any failure.
 ##
-## Works only in its own test folders (TEST_ROOT/ZAPmaniac as the "new"
-## user folder, TEST_ROOT/ZACman as the "old" one) and checks at the end
-## that the real save files — current and old folder — are untouched.
+## Runs inside SaveIsolation (QA-W6): only in its own test folders
+## (TEST_ROOT/ZAPmaniac as the "new" user folder, TEST_ROOT/ZACman as the
+## "old" one), and SaveIsolation.end() checks that the real save files —
+## new and old names, current and old folder — are untouched.
 
 const MigrationScript := preload("res://scripts/save_migration.gd")
+const SaveIsolation := preload("res://tests/save_isolation.gd")
+const SavePathsScript := preload("res://scripts/save_paths.gd")
 
-const TEST_ROOT := "user://test_save_migration"
+const TEST_ROOT := SavePathsScript.TEST_ROOT + "/migration"
 const NEW_DIR := TEST_ROOT + "/ZAPmaniac"
 const OLD_DIR := TEST_ROOT + "/ZACman"
 
@@ -49,23 +52,14 @@ func _wipe(dir_path: String) -> void:
 	DirAccess.remove_absolute(dir_path)
 
 
-## md5 of every real save file (new and old names, current and old folder).
-func _real_fingerprint() -> Dictionary:
-	var out := {}
-	for folder in [OS.get_user_data_dir(), MigrationScript.legacy_user_dir()]:
-		for prefix in [MigrationScript.NEW_PREFIX, MigrationScript.OLD_PREFIX]:
-			for suffix in MigrationScript.FILE_SUFFIXES:
-				var p: String = folder.path_join(prefix + suffix)
-				out[p] = FileAccess.get_md5(p) if FileAccess.file_exists(p) else ""
-	return out
-
-
 func _initialize() -> void:
-	var real_before := _real_fingerprint()
+	var real_saves := SaveIsolation.begin()
 	_wipe(TEST_ROOT)
 
 	# --- guard: never runs automatically in a test ---------------------
 	_check("startup guard is off in a headless test run", not MigrationScript.should_run_on_startup())
+	_check("SavePaths is redirected, so the autoload would skip too", not SavePathsScript.is_default_root())
+	_check("the test folders lie under the test save root", TEST_ROOT.begins_with(SavePathsScript.TEST_ROOT), TEST_ROOT)
 	var legacy: String = MigrationScript.legacy_user_dir()
 	_check("old folder is the 'ZACman' sibling of the user folder",
 		legacy.get_file() == "ZACman" and legacy.get_base_dir() == OS.get_user_data_dir().get_base_dir(), legacy)
@@ -113,7 +107,8 @@ func _initialize() -> void:
 	# --- clean up, real files untouched ---------------------------------
 	_wipe(TEST_ROOT)
 	_check("test folder removed", not DirAccess.dir_exists_absolute(TEST_ROOT))
-	_check("real save files unchanged", _real_fingerprint() == real_before)
+	_check("real save files unchanged", SaveIsolation.end(real_saves))
+	_check("save root restored", SavePathsScript.is_default_root())
 
 	print("")
 	if failures == 0:

@@ -10,7 +10,7 @@ func _initialize() -> void:
 	var failures := 0
 	var checks := 0
 
-	# --- normal: Matrix-green "WALL" blocks, no landmarks, has power-ups ---
+	# --- normal (Speedrun): no landmarks, has power-ups, never word-built ---
 	var normal = CityThemes.get_theme("normal")
 	checks += 1
 	if normal.id != "normal":
@@ -33,13 +33,47 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal theme should not be permanently word-built")
 	checks += 1
-	if not normal.wall_matrix_rain:
+	# Speedrun base look "Lagune" (spec 1.1); Matrix is a rabbit condition
+	# look on the shared kond_wall/kond_floor shaders (spec 1.2).
+	if normal.wall_shader_path != "res://shaders/pacman_wall.gdshader" or "wall_matrix_rain" in normal:
 		failures += 1
-		print("FAIL normal theme's walls should use the matrix_rain shader")
+		print("FAIL normal theme's walls should use the pacman_wall shader (matrix_rain is gone)")
 	checks += 1
-	if not normal.ceil_sky_clouds:
+	if normal.cond_wall_shader_path != "res://shaders/kond_wall.gdshader" or normal.cond_floor_shader_path != "res://shaders/kond_floor.gdshader":
 		failures += 1
-		print("FAIL normal theme should have the voxel-cloud sky ceiling enabled")
+		print("FAIL normal theme should name the condition-look shaders kond_wall/kond_floor")
+	checks += 1
+	if normal.ceil_sky_clouds or normal.floor_shader_path != "res://shaders/pacman_floor.gdshader" or normal.screen_overlay_shader_path != "res://shaders/crt_overlay.gdshader":
+		failures += 1
+		print("FAIL normal theme should have no sky clouds, the pacman floor shader and the CRT overlay")
+	checks += 1
+	if not (normal.level_looks.has("lagune") and normal.level_looks.has("riff") and normal.default_level_look == "lagune"):
+		failures += 1
+		print("FAIL normal theme should offer the level looks lagune/riff, lagune by default")
+	checks += 1
+	var line_blue := []
+	for look_id in normal.level_looks:
+		for role in ["top", "base"]:
+			var c: Color = normal.level_looks[look_id][role]
+			if c.h * 360.0 >= 215.0 and c.h * 360.0 <= 250.0:
+				line_blue.append("%s.%s" % [look_id, role])
+	if not line_blue.is_empty() or (normal.minimap_wall_color.h * 360.0 >= 215.0 and normal.minimap_wall_color.h * 360.0 <= 250.0):
+		failures += 1
+		print("FAIL no wall line / minimap color may sit in the blue hue range 215-250 deg: %s" % [line_blue])
+	checks += 1
+	var lagune_ghosts: Array = normal.level_looks.lagune.ghosts
+	var riff_ghosts: Array = normal.level_looks.riff.ghosts
+	var riff_has_violet := false
+	for g in riff_ghosts:
+		if g.role == "streuner":
+			riff_has_violet = true
+	if lagune_ghosts.size() != 5 or not riff_has_violet or riff_ghosts.size() != 5:
+		failures += 1
+		print("FAIL Lagune and Riff should both have all five ghost colors incl. the violet Streuner (studio head, 03.10.2026)")
+	checks += 1
+	if normal.env_bg_color != Color("05070b") or normal.floor_color != Color("0d0f16") or normal.ceil_color != Color("05070b"):
+		failures += 1
+		print("FAIL room/fog/ceiling should be #05070B and the floor #0D0F16")
 	checks += 1
 	if normal.wall_word_tall != "" or normal.wall_height_min > 0.0 or normal.wall_vertical_text or normal.pellets_follow_metro_trails:
 		failures += 1
@@ -81,9 +115,9 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL manhattan theme should have no power-ups (calm explorer)")
 	checks += 1
-	if manhattan.wall_matrix_rain:
+	if manhattan.wall_shader_path != "" or manhattan.cond_wall_shader_path != "":
 		failures += 1
-		print("FAIL manhattan theme's boxy walls should not use the matrix_rain shader (it's always word-built anyway)")
+		print("FAIL manhattan theme should have no wall shader and no condition looks (it's always word-built anyway)")
 	checks += 1
 	if manhattan.ceil_sky_clouds:
 		failures += 1
@@ -130,6 +164,17 @@ func _initialize() -> void:
 	if not (manhattan.wall_footprint_scale > 0.0 and manhattan.wall_footprint_scale < 1.0):
 		failures += 1
 		print("FAIL manhattan theme's buildings should sit back from their cell edges (wall_footprint_scale < 1.0), got %f" % manhattan.wall_footprint_scale)
+
+	# --- manhattan keeps its own look: none of the Speedrun look fields ---
+	var defaults = load("res://scripts/city_theme.gd").new()
+	checks += 1
+	var leaked := []
+	for field in ["wall_shader_path", "floor_shader_path", "screen_overlay_shader_path", "pellet_color", "pellet_shape", "pellet_size", "pellet_height", "power_color", "power_shape", "power_diamond", "power_blink_hz", "level_looks", "default_level_look", "minimap_wall_color", "minimap_bg_color", "ghost_frightened_color"]:
+		if manhattan.get(field) != defaults.get(field):
+			leaked.append(field)
+	if not leaked.is_empty():
+		failures += 1
+		print("FAIL manhattan must keep the default (pre-Speedrun-look) values, changed: %s" % [leaked])
 
 	# Every hand-authored landmark (manhattan_maze.gd's LANDMARKS) needs a
 	# real height here, or it would silently fall back to a flat default —
@@ -181,6 +226,56 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL other_explorer_id should fall back to the same id with only 1 explorer city registered, got '%s'" % CityThemes.other_explorer_id("manhattan"))
 
+	# --- UX-W2 (03.10. review): frightened ghosts in a clearly separate colour
+	# — not near-white, not in the blue band 215-250 deg (too close to the
+	# original), and perceptually far (OKLab) from every ghost colour, the
+	# pellets, rabbit white, Matrix green/head and both Kippbild palettes, the
+	# wall lines and level gradients ---
+	var fr: Color = CityThemes.GHOST_FRIGHTENED
+	checks += 1
+	if fr.h * 360.0 >= 215.0 and fr.h * 360.0 <= 250.0:
+		failures += 1
+		print("FAIL frightened colour must not sit in the blue band 215-250 deg (h=%.1f)" % (fr.h * 360.0))
+	checks += 1
+	if fr.s < 0.6 or fr.v < 0.6:
+		failures += 1
+		print("FAIL frightened colour must be saturated and bright, not near-white (s=%.2f v=%.2f)" % [fr.s, fr.v])
+	checks += 1
+	if not normal.ghost_frightened_color.is_equal_approx(fr) or not normal.minimap_frightened_color.is_equal_approx(fr):
+		failures += 1
+		print("FAIL the theme must use GHOST_FRIGHTENED for ghosts and minimap")
+	# must never be confused with (game objects): large distance
+	var critical := {
+		"jaeger": CityThemes.GHOST_JAEGER.color, "abfaenger": CityThemes.GHOST_ABFAENGER.color,
+		"streuner": CityThemes.GHOST_STREUNER.color, "lauerer": CityThemes.GHOST_LAUERER.color,
+		"nachzuegler": CityThemes.GHOST_NACHZUEGLER.color, "pellet": CityThemes.LOOK_PELLET,
+		"rabbit white": Color("f2f2ed"), "matrix green": Color("00d94d"), "matrix head": Color("4dff88"),
+	}
+	# must stay apart from (surroundings): clear distance
+	var surroundings := {
+		"top edge": CityThemes.LOOK_LINE_TOP, "lagune": CityThemes.LOOK_BASE_LAGUNE, "riff": CityThemes.LOOK_BASE_RIFF,
+		"kippbild a low": Color("2b0a3d"), "kippbild a mid": Color("b3175c"), "kippbild a high": Color("f26b33"),
+		"kippbild b low": Color("072e33"), "kippbild b mid": Color("0f8c85"), "kippbild b high": Color("4dccf2"),
+	}
+	for k in critical:
+		checks += 1
+		var d := _oklab_distance(fr, critical[k])
+		if d < 0.2:
+			failures += 1
+			print("FAIL frightened colour too close to %s (OKLab %.3f < 0.2)" % [k, d])
+	for k in surroundings:
+		checks += 1
+		var d2 := _oklab_distance(fr, surroundings[k])
+		if d2 < 0.1:
+			failures += 1
+			print("FAIL frightened colour too close to %s (OKLab %.3f < 0.1)" % [k, d2])
+	# the kond_wall shader's Matrix head is the green used above, not near-white
+	checks += 1
+	var kw: String = (load("res://shaders/kond_wall.gdshader") as Shader).code
+	if kw.find("mx_head : source_color = vec3(0.30, 1.0, 0.53)") == -1:
+		failures += 1
+		print("FAIL Matrix glyph heads should be green #4DFF88 in kond_wall.gdshader")
+
 	print("")
 	if failures == 0:
 		print("ALL %d CITY THEME CHECKS PASSED" % checks)
@@ -188,3 +283,22 @@ func _initialize() -> void:
 	else:
 		print("%d/%d CITY THEME CHECKS FAILED" % [failures, checks])
 		quit(1)
+
+
+
+## Perceptual distance of two sRGB colours in OKLab (Björn Ottosson).
+static func _oklab(c: Color) -> Vector3:
+	var lin := func(x: float) -> float: return x / 12.92 if x <= 0.04045 else pow((x + 0.055) / 1.055, 2.4)
+	var r: float = lin.call(c.r)
+	var g: float = lin.call(c.g)
+	var b: float = lin.call(c.b)
+	var l := pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1.0 / 3.0)
+	var m := pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1.0 / 3.0)
+	var s := pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1.0 / 3.0)
+	return Vector3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)
+
+
+static func _oklab_distance(a: Color, b: Color) -> float:
+	return _oklab(a).distance_to(_oklab(b))

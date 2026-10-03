@@ -17,6 +17,15 @@ extends Node
 ## repeating tone" to "several voices playing a short note sequence".
 
 const SAMPLE_RATE := 44100
+## Condition music layer (spec 2.2: "Musikschicht für die Dauer"): an extra
+## loop on top of the arcade track while a rabbit condition runs — bright
+## arpeggios for a good one, a detuned low pulse for a bad one. Same length
+## and tempo as the arcade loop (32 eighths at 0.15 s), started in sync with
+## it, faded in and out with a volume ramp (never a hard cut).
+const LAYER_FADE_IN_S := 0.6
+const LAYER_FADE_OUT_S := 0.9
+const LAYER_VOLUME_DB := -10.0
+const LAYER_SILENT_DB := -60.0
 
 var _munch_toggle := false
 var _players: Array[AudioStreamPlayer] = []
@@ -30,6 +39,13 @@ var _arcade_music: AudioStreamWAV
 var _explorer_music: AudioStreamWAV
 var _music_state := "" # "", "arcade", "explorer"
 
+var _layer_player: AudioStreamPlayer
+var _layer_good: AudioStreamWAV
+var _layer_bad: AudioStreamWAV
+var _layer_state := "" # "", "good", "bad" — what is wanted right now
+var _layer_gain := 0.0 # 0..1, ramps towards _layer_target
+var _layer_target := 0.0
+
 var _munch_a: AudioStreamWAV
 var _munch_b: AudioStreamWAV
 var _power: AudioStreamWAV
@@ -37,9 +53,14 @@ var _eat_1: AudioStreamWAV
 var _eat_2: AudioStreamWAV
 var _eat_3: AudioStreamWAV
 var _death: AudioStreamWAV
-var _fear_start_a: AudioStreamWAV
-var _fear_start_b: AudioStreamWAV
-var _fear_end: AudioStreamWAV
+## White rabbit (spec 2.2): good conditions rise, bad ones fall detuned;
+## countdown ticks in the last 3 s; a slow clock tick for the Taschenuhr.
+var _rabbit_good: Array[AudioStreamWAV] = []
+var _rabbit_bad_a: AudioStreamWAV
+var _rabbit_bad_b: AudioStreamWAV
+var _condition_tick: AudioStreamWAV
+var _condition_end: AudioStreamWAV
+var _clock_tick: AudioStreamWAV
 var _fruit_1: AudioStreamWAV
 var _fruit_2: AudioStreamWAV
 var _clear_notes: Array[AudioStreamWAV] = []
@@ -53,12 +74,16 @@ func _ready() -> void:
 	_eat_2 = _tone(520.0, 0.12, "square", 0.55)
 	_eat_3 = _tone(880.0, 0.16, "square", 0.55)
 	_death = _sweep(420.0, 40.0, 1.15, "sawtooth", 0.55)
-	# Fear & Loathing pickup: a falling square sweep plus a low tritone drone
-	# — deliberately unlike the bright rising Word/Power sounds, so the risk
-	# item is audible as one. The end cue is a short rising chirp.
-	_fear_start_a = _sweep(700.0, 170.0, 0.55, "square", 0.45)
-	_fear_start_b = _tone(122.0, 0.7, "sawtooth", 0.4)
-	_fear_end = _sweep(180.0, 560.0, 0.3, "triangle", 0.45)
+	# Rabbit: a good condition is a bright rising triad (C-E-G-C), a bad one
+	# two slightly detuned falling square sweeps (the beat between them is
+	# the "verstimmt" part) — audible as good/bad before reading the card.
+	for f in [523.0, 659.0, 784.0, 1047.0]:
+		_rabbit_good.append(_tone(f, 0.11, "triangle", 0.45))
+	_rabbit_bad_a = _sweep(620.0, 150.0, 0.6, "square", 0.32)
+	_rabbit_bad_b = _sweep(641.0, 158.0, 0.6, "square", 0.32)
+	_condition_tick = _tone(1320.0, 0.05, "square", 0.32)
+	_condition_end = _sweep(300.0, 600.0, 0.22, "triangle", 0.4)
+	_clock_tick = _tone(1800.0, 0.025, "triangle", 0.28)
 	_fruit_1 = _tone(700.0, 0.08, "sine", 0.45)
 	_fruit_2 = _tone(1000.0, 0.1, "sine", 0.45)
 	for f in [523.0, 659.0, 784.0, 1047.0]:
@@ -67,6 +92,8 @@ func _ready() -> void:
 	_siren_frightened = _siren_loop(220.0, 40.0, 9.0, 0.2)
 	_arcade_music = _build_arcade_music()
 	_explorer_music = _build_explorer_music()
+	_layer_good = _build_layer_good()
+	_layer_bad = _build_layer_bad()
 
 	for i in range(8):
 		var p := AudioStreamPlayer.new()
@@ -83,6 +110,11 @@ func _ready() -> void:
 	_music_player.bus = "Master"
 	_music_player.volume_db = -9.0
 	add_child(_music_player)
+
+	_layer_player = AudioStreamPlayer.new()
+	_layer_player.bus = "Master"
+	_layer_player.volume_db = LAYER_SILENT_DB
+	add_child(_layer_player)
 
 
 func _free_player() -> AudioStreamPlayer:
@@ -113,13 +145,28 @@ func power() -> void:
 	_play(_power)
 
 
-func fear_start() -> void:
-	_play(_fear_start_a)
-	_play(_fear_start_b, 0.05)
+func rabbit_good() -> void:
+	for i in _rabbit_good.size():
+		_play(_rabbit_good[i], i * 0.07)
 
 
-func fear_end() -> void:
-	_play(_fear_end)
+func rabbit_bad() -> void:
+	_play(_rabbit_bad_a)
+	_play(_rabbit_bad_b)
+
+
+## One countdown tick (the last 3 s of a condition).
+func condition_tick() -> void:
+	_play(_condition_tick)
+
+
+func condition_end() -> void:
+	_play(_condition_end)
+
+
+## The Taschenuhr's slow ticking (once per second).
+func clock_tick() -> void:
+	_play(_clock_tick)
 
 
 func eat_enemy() -> void:
@@ -167,7 +214,7 @@ func play_arcade_music() -> void:
 ## (Manhattan) level — warm held chords, a laid-back sine bass and a soft
 ## brushed-shaker pulse, aiming for the mellow, jazzy Roudoudou / Air / The
 ## Herbaliser feel the Explorer run asked for. Call at the start of an
-## Explorer run (Main._start_explorer_run).
+## Explorer run (Main.begin_manhattan_game).
 func play_explorer_music() -> void:
 	_set_music("explorer", _explorer_music)
 
@@ -194,6 +241,80 @@ func music_state() -> String:
 func stop_all() -> void:
 	set_siren(false, false)
 	stop_music()
+	stop_condition_layer(true)
+
+
+## ---------------- condition music layer ----------------
+
+## Starts the layer of a good (true) or bad (false) condition with a fade-in.
+## A running layer of the other kind is swapped (a new rabbit replaces the
+## condition, spec 2.2). In sync with the arcade loop when that is playing.
+func start_condition_layer(good: bool) -> void:
+	var wanted := "good" if good else "bad"
+	var stream: AudioStreamWAV = _layer_good if good else _layer_bad
+	_layer_target = 1.0
+	if _layer_state == wanted and _layer_player.stream == stream:
+		return
+	_layer_state = wanted
+	_layer_player.stream = stream
+	_layer_gain = 0.0
+	_apply_layer_volume()
+	var from := 0.0
+	if _music_state == "arcade" and _music_player.playing:
+		from = fmod(_music_player.get_playback_position(), stream.get_length())
+	if _layer_player.is_inside_tree():
+		_layer_player.play(from)
+
+
+## Fades the layer out (`immediate`: cut at once, e.g. game over / stop_all).
+func stop_condition_layer(immediate: bool = false) -> void:
+	_layer_state = ""
+	_layer_target = 0.0
+	if immediate:
+		_layer_gain = 0.0
+		_apply_layer_volume()
+		_layer_player.stop()
+
+
+## "", "good" or "bad" — the layer that is wanted (a fading-out layer already
+## reports "").
+func condition_layer_state() -> String:
+	return _layer_state
+
+
+## Current loudness of the layer, 0..1 (follows the ramp).
+func condition_layer_gain() -> float:
+	return _layer_gain
+
+
+## True while the layer still sounds (also during its fade-out).
+func condition_layer_audible() -> bool:
+	return _layer_gain > 0.0 or _layer_target > 0.0
+
+
+func _process(delta: float) -> void:
+	_update_layer(delta)
+
+
+## The volume ramp: linear in gain, LAYER_FADE_IN_S up, LAYER_FADE_OUT_S
+## down; at 0 the player stops.
+func _update_layer(delta: float) -> void:
+	if is_equal_approx(_layer_gain, _layer_target):
+		return
+	if _layer_target > _layer_gain:
+		_layer_gain = minf(_layer_target, _layer_gain + delta / LAYER_FADE_IN_S)
+	else:
+		_layer_gain = maxf(_layer_target, _layer_gain - delta / LAYER_FADE_OUT_S)
+	_apply_layer_volume()
+	if _layer_gain <= 0.0 and _layer_target <= 0.0:
+		_layer_player.stop()
+
+
+func _apply_layer_volume() -> void:
+	if _layer_gain <= 0.001:
+		_layer_player.volume_db = LAYER_SILENT_DB
+	else:
+		_layer_player.volume_db = maxf(LAYER_VOLUME_DB + linear_to_db(_layer_gain), LAYER_SILENT_DB)
 
 
 func siren_state() -> String:
@@ -408,6 +529,61 @@ func _build_arcade_music() -> AudioStreamWAV:
 		{"waveform": "square", "volume": 0.32, "gate": 0.72, "attack": 0.003, "release_pow": 1.4, "steps": lead_steps},
 		{"waveform": "triangle", "volume": 0.28, "gate": 0.85, "attack": 0.005, "release_pow": 1.6, "steps": bass_steps},
 		{"waveform": "square", "volume": 0.10, "gate": 0.25, "attack": 0.001, "release_pow": 3.0, "steps": hat_steps},
+	]
+	return _compose_loop(voices, eighth)
+
+
+## Good-condition layer: a light, rising sine/triangle arpeggio two octaves
+## above the arcade chords (C – Am – F – G – Em – C – F – G, one chord per
+## four eighths, exactly the arcade loop's harmony), plus a soft high
+## shimmer on the off-beats — "the maze opens up".
+func _build_layer_good() -> AudioStreamWAV:
+	var eighth := 0.15
+	var chords := [
+		[1046.50, 1318.51, 1567.98, 2093.00], # C
+		[880.00, 1046.50, 1318.51, 1760.00],  # Am
+		[698.46, 880.00, 1046.50, 1396.91],   # F
+		[783.99, 987.77, 1174.66, 1567.98],   # G
+		[659.25, 783.99, 987.77, 1318.51],    # Em
+		[1046.50, 1318.51, 1567.98, 2093.00], # C
+		[698.46, 880.00, 1046.50, 1396.91],   # F
+		[783.99, 987.77, 1174.66, 1567.98],   # G
+	]
+	var arp_steps := []
+	for ch in chords:
+		for f in ch:
+			arp_steps.append(_step(f, 1.0))
+	var shimmer_steps := []
+	for i in 32:
+		shimmer_steps.append(_step(3135.96 if i % 4 == 2 else 0.0, 1.0))
+	var voices := [
+		{"waveform": "triangle", "volume": 0.26, "gate": 0.6, "attack": 0.004, "release_pow": 2.0, "steps": arp_steps},
+		{"waveform": "sine", "volume": 0.08, "gate": 0.5, "attack": 0.002, "release_pow": 3.0, "steps": shimmer_steps},
+	]
+	return _compose_loop(voices, eighth)
+
+
+## Bad-condition layer: a low square pulse on the tritone of the arcade
+## bass (F#), doubled by a slightly detuned sawtooth (the beat between them
+## is the "verstimmt" part), plus a falling minor-second sting every bar —
+## uneasy, but quieter than the lead so the game sounds stay readable.
+func _build_layer_bad() -> AudioStreamWAV:
+	var eighth := 0.15
+	var pulse_steps := []
+	var detune_steps := []
+	for i in 32:
+		var low := 92.50 if (i / 8) % 2 == 0 else 87.31 # F#2 / F2
+		pulse_steps.append(_step(low if i % 2 == 0 else 0.0, 1.0))
+		detune_steps.append(_step(low * 1.013 if i % 2 == 0 else 0.0, 1.0))
+	var sting_steps := []
+	for bar in 4:
+		sting_steps.append(_step(466.16, 1.0)) # Bb4
+		sting_steps.append(_step(440.00, 1.0)) # A4
+		sting_steps.append(_step(0.0, 6.0))
+	var voices := [
+		{"waveform": "square", "volume": 0.20, "gate": 0.7, "attack": 0.004, "release_pow": 1.6, "steps": pulse_steps},
+		{"waveform": "sawtooth", "volume": 0.14, "gate": 0.7, "attack": 0.004, "release_pow": 1.6, "steps": detune_steps},
+		{"waveform": "square", "volume": 0.10, "gate": 0.85, "attack": 0.01, "release_pow": 1.2, "steps": sting_steps},
 	]
 	return _compose_loop(voices, eighth)
 

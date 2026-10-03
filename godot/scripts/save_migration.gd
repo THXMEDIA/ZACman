@@ -17,14 +17,18 @@ extends Node
 ## so the migration is idempotent and a player can always go back.
 ##
 ## Tests never trigger it: the automatic run only happens in a real game
-## start (see should_run_on_startup()), and migrate() itself takes the two
-## folders as parameters, so tests run it against their own test folders.
+## start (see should_run_on_startup()) while SavePaths points at its default
+## root, and migrate() itself takes the two folders as parameters, so tests
+## run it against their own test folders (SaveIsolation, QA-W6).
+
+const SavePathsScript := preload("res://scripts/save_paths.gd")
 
 const NEW_PREFIX := "zapmaniac_"
 const OLD_PREFIX := "kugelschlucker_"
 ## Name of the user:// folder before the rename (old application/config/name).
 const OLD_APP_DIR_NAME := "ZACman"
-## The part of each save file name after the prefix.
+## The part of each save file name after the prefix (Speedrun, Leaderboard,
+## Main's high score, Settings).
 const FILE_SUFFIXES := [
 	"speedrun.json",
 	"leaderboards.json",
@@ -34,8 +38,8 @@ const FILE_SUFFIXES := [
 
 
 func _ready() -> void:
-	if should_run_on_startup():
-		migrate(OS.get_user_data_dir(), legacy_user_dir())
+	if should_run_on_startup() and SavePathsScript.is_default_root():
+		migrate(ProjectSettings.globalize_path(SavePathsScript.DEFAULT_ROOT), legacy_user_dir())
 
 
 ## The user:// folder the game used under its old name: a sibling of the
@@ -76,8 +80,8 @@ static func migrate(new_dir: String, old_dir: String) -> Array[String]:
 	return created
 
 
-## Copies via "<target>.tmp" + rename, so an interrupted copy never leaves a
-## half-written save under the real name.
+## Copies via "<target>.tmp" + rename (like SavePaths.write_atomic), so an
+## interrupted copy never leaves a half-written save under the real name.
 static func _copy(source: String, target: String) -> bool:
 	DirAccess.make_dir_recursive_absolute(target.get_base_dir())
 	var tmp := target + ".tmp"

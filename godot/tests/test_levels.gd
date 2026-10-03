@@ -52,6 +52,8 @@ func _initialize() -> void:
 		check(not seen_ids.has(lv.id), "duplicate level id %s" % lv.id)
 		seen_ids[lv.id] = true
 		check(L.by_id(lv.id).id == lv.id, "by_id(%s)" % lv.id)
+	# N4: an unknown id is no longer silently the first level
+	check(L.by_id("gibt-es-nicht").is_empty() and L.by_id("").is_empty(), "by_id(unknown) must return {}")
 	check(L.POOL.size() >= 6, "pool should contain the 4 classic + 2 new layout levels")
 	check(L.by_id("offen").loop_prob > L.by_id("klassik-2").loop_prob, "'offen' needs more loops than klassik-2")
 	check(L.by_id("durchbruch").breakthroughs >= 2, "'durchbruch' needs >= 2 doors")

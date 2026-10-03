@@ -30,9 +30,8 @@ func _initialize() -> void:
 
 			# Review findings GD-W4/Code-W9 ("beide Hälften hängen nur am
 			# Tunnel") are addressed per-level, not in the base algorithm's
-			# defaults: Levels.POOL gives most levels a raised loop_prob
-			# (see test_levels.gd's reference-route/lower-bound checks) and
-			# dedicated levels ("offen", "durchbruch") that deliberately
+			# defaults: the Klassik levels keep loop_prob 0.16, and two
+			# dedicated levels of Levels.POOL ("offen", "durchbruch") deliberately
 			# compare more loops vs. explicit mid-column breakthroughs — see
 			# test_levels.gd for the connectivity assertions specific to
 			# those. A default generate_maze() call (no opts, as used here)

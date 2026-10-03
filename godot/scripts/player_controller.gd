@@ -14,7 +14,18 @@ var yaw := 0.0
 var pitch := 0.0
 var input_enabled := true
 var move_input := Vector2.ZERO # x = strafe, y = forward, set externally by touch/AI bots
-var active_condition = null # a Kondition (see scripts/conditions/condition_base.gd) or null; set by Main.set_condition
+## The running Kondition (scripts/conditions/condition_base.gd) or null. Only
+## Main.start_condition/_end_condition set it — it always mirrors
+## Main.active_condition, the single source of the active state. Only the
+## movement vector goes through it; mouse look never does (red line E8e).
+var active_condition = null
+## true during the speedrun start intro and the wait for the first step:
+## mouse look works, walking does not (the clock and the legs start together,
+## see Main._update_start_hold).
+var movement_locked := false
+## UX-K1: the player's mouse sensitivity, a factor on MOUSE_SENSITIVITY
+## (Settings "mouse_sens", 0.3-3.0).
+var mouse_sensitivity_scale := 1.0
 
 
 func _ready() -> void:
@@ -56,20 +67,10 @@ func _ready() -> void:
 	camera.add_child(light)
 	light.position = Vector3(0, 0, 0)
 
-	# The Matrix-ASCII look used to be a screen-space post effect glued to
-	# the camera (a quad shaded with shaders/ascii_post.gdshader) that only
-	# turned distant geometry green/ASCII and showed the real, flatly-lit
-	# wall color up close — plus it sat exactly on the near-clip plane,
-	# which some GPUs/drivers clip away entirely. It's been replaced by
-	# matrix_rain.gdshader applied directly as the wall material (see
-	# CityTheme.wall_matrix_rain / MazeView._make_materials): the walls are
-	# now always scrolling green glyphs, at any distance, with nothing to
-	# set up here on the camera at all.
 
-
-## Word Mode power-up: while active the player passes straight through
-## walls (collision_mask 0 = collide with nothing). Restored to the normal
-## walls layer (2) when it ends.
+## Noclip (Matrix condition): while active the player passes straight
+## through walls (collision_mask 0 = collide with nothing). Restored to the
+## normal walls layer (2) when it ends; Main derives it (_refresh_noclip).
 func set_noclip(active: bool) -> void:
 	collision_mask = 0 if active else 2
 
@@ -90,17 +91,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x * MOUSE_SENSITIVITY
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENSITIVITY, -1.1, 1.1)
+		var sens := MOUSE_SENSITIVITY * mouse_sensitivity_scale
+		yaw -= event.relative.x * sens
+		pitch = clampf(pitch - event.relative.y * sens, -1.1, 1.1)
 		rotation.y = yaw
 		camera.rotation.x = pitch
 
 
-func _physics_process(delta: float) -> void:
-	if not input_enabled:
-		velocity = Vector3.ZERO
-		return
-
+## The raw movement input (keys + move_input), before any condition.
+func raw_move_input() -> Vector2:
 	var fwd := 0.0
 	var strafe := 0.0
 	if Input.is_action_pressed("move_forward"):
@@ -111,11 +110,22 @@ func _physics_process(delta: float) -> void:
 		strafe += 1.0
 	if Input.is_action_pressed("move_left"):
 		strafe -= 1.0
-	fwd += move_input.y
-	strafe += move_input.x
-	var v := Vector2(strafe, fwd)
+	return Vector2(strafe + move_input.x, fwd + move_input.y)
+
+
+func has_move_input() -> bool:
+	return raw_move_input().length() > 0.001
+
+
+func _physics_process(delta: float) -> void:
+	if not input_enabled or movement_locked:
+		velocity = Vector3.ZERO
+		return
+
+	var v := raw_move_input()
 	if active_condition != null:
 		v = active_condition.modify_input(v, delta)
+	# never faster than PLAYER_SPEED, whatever a condition did to the input
 	if v.length() > 1.0:
 		v = v.normalized()
 

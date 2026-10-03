@@ -1,30 +1,37 @@
 extends RefCounted
 ## GhostMesh — builds a small blocky "pixel-art" ghost (MultiMesh of cube
-## voxels forming a classic Pac-Man-ghost silhouette: rounded dome top,
-## rectangular body, zig-zag skirt) instead of the plain smooth sphere the
-## enemies used to be. Chunky/blocky by design — the same retro-pixel
-## aesthetic as matrix_rain.gdshader's wall look and word_mesh.gd's
+## voxels) instead of the plain smooth sphere the enemies used to be. The
+## silhouette is the studio's own "Schild mit Visier" (spec
+## docs/design/kaninchen-speedrun.md 1.1): horns on top, one visor slit, a
+## shield tapering to a point — deliberately no dome, no zig-zag skirt and
+## no eyes, so it does not copy the classic arcade ghost. Chunky/blocky by design — the same retro-pixel
+## aesthetic as the Matrix condition's code walls and word_mesh.gd's
 ## letterform objects, just applied to the enemies (per the user's "wie bei
 ## Space Invaders" request: blocky pixel sprites, not rounded 3D shapes).
 ##
 ## Static-only utility (no autoload, no instance state) — call
 ## GhostMeshScript.build(...) directly on the preloaded script.
 
-## Ghost silhouette as an 8-row x 7-column pixel grid, top row first —
-## dome top, solid body, then a 4-point zig-zag skirt at the bottom.
+## Ghost silhouette as a 9-row x 7-column pixel grid, top row first —
+## two horns, brow, the visor slit (row 4), solid body, then the shield
+## narrowing to a single-voxel point at the bottom.
 const PIXEL_ROWS := [
+	"#.....#",
+	"##.#.##",
+	"#######",
+	"#.....#",
+	"#######",
+	"#######",
 	".#####.",
-	"#######",
-	"#######",
-	"#######",
-	"#######",
-	"#######",
-	"#######",
-	"#.#.#.#",
+	"..###..",
+	"...#...",
 ]
 const COLS := 7
-const ROWS := 8
+const ROWS := 9
 const DEPTH_VOXELS := 2 # a couple of voxels deep so it reads as a solid from any angle, not a flat sprite
+## 9 rows instead of the old 8: a slightly bigger voxel keeps the ghost about
+## as tall as before (9 x 0.105 m vs. 8 x 0.095 m) and reads better at range.
+const DEFAULT_VOXEL_SIZE := 0.105
 
 
 ## Builds one ghost, voxels using `material` (so callers keep controlling
@@ -32,7 +39,7 @@ const DEPTH_VOXELS := 2 # a couple of voxels deep so it reads as a solid from an
 ## e.g. Enemy's frightened/eaten recolor just mutates the material in place,
 ## no rebuild needed). `options.voxel_size` scales the whole ghost.
 static func build(material: StandardMaterial3D, options: Dictionary = {}) -> MultiMeshInstance3D:
-	var voxel_size: float = float(options.get("voxel_size", 0.095))
+	var voxel_size: float = float(options.get("voxel_size", DEFAULT_VOXEL_SIZE))
 
 	var box := BoxMesh.new()
 	box.size = Vector3.ONE * voxel_size

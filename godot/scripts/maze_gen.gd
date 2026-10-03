@@ -249,7 +249,8 @@ func connectivity_check(maze: Maze) -> Dictionary:
 ## Same as neighbors_of/bfs/connectivity_check above, but the column-wrap
 ## tunnel neighbor is never counted as a connection — used to prove the
 ## maze's left and right halves are connected by the maze's own geometry
-## (see the mid-column breach carved above) and not merely by the single
+## (the optional mid-column breakthroughs, opts.breakthroughs — used by the
+## "durchbruch" level) and not merely by the single
 ## wrap-tunnel row, which `connectivity_check` would otherwise credit as a
 ## real path (see review findings GD-W4/Code-W9).
 func neighbors_of_no_wrap(maze: Maze, r: int, c: int) -> Array:
