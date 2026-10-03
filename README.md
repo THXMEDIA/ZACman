@@ -51,7 +51,8 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   — ein MultiMesh aus kleinen Würfeln in der eigenen Silhouette „Schild mit
   Visier“: Hörner, ein Sehschlitz, Spitze unten; keine Kuppel, kein
   Zackensaum, keine Augen. Farben je Level-Look aus `city_themes.gd`: Jäger
-  Rot, Abfänger Zitron, Streuner Violett (nur Lagune), Lauerer Bernstein,
+  Rot, Abfänger Zitron, Streuner Violett (in allen Leveln, damit Klassik IV
+  fünf unterscheidbare Farben hat), Lauerer Bernstein,
   Nachzügler Magenta; verängstigt Mint `#BDFCEF`) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
   einer Power-Kugel fliehen sie und lassen sich fressen.
 - **Minimap**: zeigt neben Wänden, Spieler und Gegnern jetzt auch die
@@ -74,16 +75,20 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   (`LOOK_*`, `GHOST_*`). Kugeln sind Creme-Würfel, die Power-Kugel eine mit
   2 Hz blinkende Raute. Keine Wolken, kein Himmel, kein Mario-Vista mehr im
   Speedrun (`ceil_sky_clouds = false`); Explorer-Level behalten ihren Look.
-  `MazeView.set_look()`/`register_look()` tauschen zur Laufzeit die
-  Materialien derselben Wand- und Boden-Instanzen (Grundlage für die
-  Konditions-Looks). Der Matrix-Regen-Shader (`matrix_rain.gdshader`) wird
-  zur Kondition.
+  Der Basis-Look steckt in `pacman_wall_base.gdshaderinc` /
+  `pacman_floor_base.gdshaderinc`, damit die Konditions-Shader exakt von ihm
+  aus überblenden. `MazeView.set_look()`/`register_look()` tauschen zur
+  Laufzeit Material und Shader-Parameter derselben Wand- und Boden-Instanzen
+  (nie ein zweiter Wandsatz). Der alte Matrix-Regen-Shader und der
+  Psychedelik-Effekt sind entfernt.
 - **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
-  "MATRIX-LEVEL" (die klassischen Speedrun-Level) und "EXPLORER-LEVEL"
+  "SPEEDRUN" (die Speedrun-Level) und "EXPLORER-LEVEL"
   (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
-  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Unter dem
-  Matrix-Level-Button wählt man die **Kondition** (Normal, Matrix Ghost,
-  Fear & Loathing). Den Testbuild-Button gibt es nicht mehr; das
+  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Eine
+  Konditionswahl gibt es nicht mehr (das weiße Kaninchen entscheidet, siehe
+  unten); dazu der Schalter **„Effekte reduzieren“** (auch im Pausemenü,
+  gespeichert in `kugelschlucker_settings.json`, `settings.gd`). Den
+  Testbuild-Button gibt es nicht mehr; das
   Debug-Overlay (FPS, Position, Zelle) schaltet **F3** ein, nur in
   Debug-Builds (`main.gd::_unhandled_input`). Der Startbildschirm ist inzwischen mit
   genug Buttons/Zeilen gewachsen, dass er in einem kleineren Fenster nicht
@@ -93,8 +98,14 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   z. B. der EXPLORER-LEVEL-Button garantiert erreichbar bleibt, notfalls
   per Scrollen.
 - **Speedrun-Unterstützung**: Live-Timer, Bestzeiten und Bestenlisten
-  **pro Level, Kondition und Modus** (`speedrun.gd`, `leaderboard.gd`;
-  Schlüssel `level|kondition[|modus]`, siehe `levels.gd::board_key`).
+  **pro Level, Brett und Modus** (`speedrun.gd`, `leaderboard.gd`;
+  Schlüssel `level|brett[|modus]`, siehe `levels.gd::board_key`). Die
+  Kondition ist nicht mehr Teil des Schlüssels; jeder Speedrun-Lauf zählt
+  vorläufig auf das Brett `woche` (`Levels.BOARD_WEEK`, Kaninchen der Woche).
+  Alte Bretter mit Konditions-Schlüsseln (`|none`, `|matrix_ghost`,
+  `|fear_and_loathing`) bleiben unverändert in der Datei, werden aber nicht
+  mehr angezeigt; die Migration samt Chaos- und Chat-Brett folgt in
+  Etappe 3.
   Modi: `solo`, `chat` (sobald ein Twitch-Befehl im Level gewirkt hat),
   `pvp` und `coop` (reserviert für den geplanten Mehrspieler, noch ohne
   Spielmodus). Alte Spielstände werden beim Laden migriert; Spielstände
@@ -102,8 +113,15 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Typ geprüft, geschrieben wird atomar über eine `.tmp`-Datei. Tests nutzen
   einen eigenen Speicherordner (`save_paths.gd`, `tests/save_isolation.gd`)
   und fassen echte Spielstände nicht an. Die Uhr läuft
-  auch in der Pause weiter; Effekt-Timer (Frightened, Word, Fear) bleiben
+  auch in der Pause weiter; Effekt-Timer (Frightened, Konditionen) bleiben
   in der Pause stehen (`main.gd`: `now` vs. `real_now`).
+  **Start-Einblendung**: Bei jedem Speedrun-Start (`begin_game`, auch nach
+  dem U-Bahn-Ausgang aus Manhattan; nicht zwischen Leveln) erscheint 2,5 s
+  lang „Follow the white rabbit. But beware“ in einem eigenen, zentrierten
+  Panel. Währenddessen kann man sich umsehen, aber nicht laufen; danach
+  wartet die Welt (Geister, Effekte, Uhr stehen), bis die erste
+  Bewegungseingabe kommt — erst dann startet die Uhr. Die Einblendung
+  kostet also keine Zeit.
 - **Level-Pool** (`godot/scripts/levels.gd`): sechs Speedrun-Level mit festem
   Seed, vier klassische plus „Offen“ (mehr Schleifen, weniger Sackgassen)
   und „Durchbruch“ (drei Türen in der geschlossenen Mittelspalte, die
@@ -112,8 +130,8 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   wiederholt. Die Zielzeit steht pro Level in `levels.gd` und wird von
   `tests/test_levels.gd` gegen eine „nächster Pellet“-Route und die
   physikalische Untergrenze geprüft. Wer sie unterbietet, bekommt ein
-  „★ Zielzeit geschafft“-Abzeichen (rein kosmetisch, nur für saubere
-  Solo-Läufe ohne Kondition).
+  „★ Zielzeit geschafft“-Abzeichen (rein kosmetisch, nur für Solo-Läufe
+  auf dem Wochenbrett, `Levels.BADGE_BOARDS`).
   Manhattan ist ein ruhiges Level ohne Uhr, Punkte und Bestenliste; die
   Kugeln sind nur Wegweiser zu den U-Bahn-Schildern, und die U-Bahn ist der
   Ausgang in einen Speedrun. Es ist ein von Hand nach dem echten Midtown-Straßenraster gebautes
@@ -135,12 +153,10 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   jedes Objekt besteht aus seinem eigenen englischen Namen als echtes
   extrudiertes 3D-Buchstabenmodell (Godots `TextMesh`) — eine Wand ist das
   Wort `WALL`, ein Geist das Wort `GHOST`, ein Taxi das Wort `TAXI`, ein
-  Fußgänger das Wort `PERSON`. In den normalen Matrix-Leveln ist das ein
-  zeitlich begrenzter Power-up-Effekt: einmal pro Level liegt ein
-  pulsierendes `WORD`-Icon versteckt; wer es einsammelt, bekommt für
-  12 Sekunden den Wort-Welt-Look *und* geht kollisionsfrei durch Wände
-  (`player_controller.gd::set_noclip`). Im **Manhattan-Bonuslevel** ist der
-  Wort-Welt-Look dauerhaft aktiv statt eines Power-ups — dort gibt es weder
+  Fußgänger das Wort `PERSON`. Den Wort-Welt-Look gibt es nur noch als
+  dauerhafte Welt im **Manhattan-Bonuslevel** (der Word-Mode-Pickup der
+  Speedrun-Level ist entfallen; `MazeView` baut die Wort-Wände nur für
+  dauerhaft wortgebaute Themes) — dort gibt es weder
   Power-ups noch Geister (ein ruhiger Explorer), dafür fahren Fahrzeuge und
   laufen Fußgänger gleichermaßen auf festen Straßen/Avenues hin und her
   (siehe unten); beide sind reine Hindernisse (schieben den Spieler weg),
@@ -179,7 +195,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   und warmem Steingrau statt in Neonakzenten. Boden, Umgebungsfarbe/-Nebel
   und Ambient-Licht sind entsprechend umgestellt
   (`main.gd::_apply_theme_environment`) und kehren beim Verlassen zur
-  normalen kühlen Blau-Palette der Matrix-Level zurück.
+  Palette der Speedrun-Level zurück.
   **Keine physische Deckenebene mehr** (`CityTheme.ceil_enabled = false`
   für Manhattan): die alte, bei fester `MazeView.WALL_H`-Höhe liegende
   Deckenebene hat reale Wolkenkratzer (bis zu ~76 Einheiten hoch) von unten
@@ -191,7 +207,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   jeden Blickstrahl von unten auf alles, was darüber liegt. Der neue
   `ceil_enabled`-Schalter lässt Manhattan ohne Deckenebene laufen (Himmel/
   Nebel/Hintergrundfarbe wirken direkt als offener Himmel), während die
-  Matrix-Level ihre physische Wolken-Decke unverändert behalten.
+  Speedrun-Level ihre physische Decke unverändert behalten.
   **Breitere Straßen** (`CityTheme.wall_footprint_scale = 0.55`): statt das
   Straßenraster selbst zu ändern (das hätte `MazeGen.cells_in_room()`s
   fest auf ein 2er-Perioden-Gitter angenommene Zellzählung projektweit
@@ -210,7 +226,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   einem Ausgang führen, statt das ganze Straßennetz gleichmäßig zu füllen —
   über eine Metro-Station verlässt man das Level wie zuvor.
 - **CityTheme-System für zukünftige Explorer-Level** (`godot/scripts/
-  city_theme.gd`, `city_themes.gd`): Manhattan und die normalen Matrix-Level
+  city_theme.gd`, `city_themes.gd`): Manhattan und die Speedrun-Level
   sind keine hartkodierten `if/else`-Zweige mehr in `maze_view.gd`, sondern
   zwei Instanzen einer `CityTheme`-Resource (Wand-Wort & -Palette, optionaler
   Wahrzeichen-Provider wie `manhattan_maze.gd`, Boden-/Decken-Material,
@@ -221,47 +237,69 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   `main.gd` müssen dafür nicht angefasst werden. Architektur-Hintergrund und
   Prioritäten dazu stehen im Claude-Projekt-Dokument "Explorer-Level-
   Erweiterung, Leaderboard & Konditionen".
-- **Konditionen-System** (`godot/scripts/conditions.gd`,
-  `scripts/conditions/`): auswählbare, laufweite Run-Modifikatoren im Sinne
-  eines Balatro-artigen "jeder Run ist anders" — unabhängig vom
-  levelinternen Word-Mode-Pickup. Aktuell registriert: **Matrix Ghost**
-  (dauerhaft kollisionsfreie, wort-gebaute Welt für den ganzen Run) und
-  **Fear & Loathing** (Steuerung wird laufend verrauscht und kippt in
-  unregelmäßigen Abständen komplett in die Umkehrung, ähnlich einem
-  Drogenrausch-Level). `Main.set_condition(id)` wählt/wechselt/entfernt eine
-  Kondition (`""` = keine); jede neue Kondition ist ein neues Skript unter
-  `scripts/conditions/` mit einem Registry-Eintrag — der Rest des Spiels
-  muss dafür nicht geändert werden.
-- **WORD-Pickup als weißes Pixel-Kaninchen, neues Fear & Loathing-Pickup**
-  (`godot/scripts/pixel_rabbit_mesh.gd`, `psychedelic_head_mesh.gd`,
-  `maze_view.gd`, `main.gd`, `shaders/matrix_rain.gdshader`): das WORD-
-  Pickup (normale Level; hebt Wandkollision auf und schaltet dauerhaft auf
-  den wort-gebauten Look) zeigt sich jetzt nicht mehr als das Wort "WORD",
-  sondern als kleines blockig-pixeliges weißes Kaninchen ("dem weißen
-  Kaninchen folgen") — dieselbe Voxel-Technik wie schon bei den Wolken
-  (`cloud_mesh.gd`). Neu dazugekommen ist ein zweites, selteneres Pickup:
-  **Fear & Loathing**, sichtbar als abstrakter, kaleidoskopisch
-  einfärbender Kopf (Totenkopf-Kugel, zwei überdimensionierte Augen, ein
-  Ring rotierender Farbkugeln — eine eigene, nicht von einem realen
-  Schauspieler oder einer bestimmten Filmfigur abgeleitete Gestalt) und für
-  `FEAR_MODE_DURATION` (10 s) zwei Dinge gleichzeitig: die Steuerung wird
-  wie bei der gleichnamigen Kondition (`fear_and_loathing.gd`, direkt
-  wiederverwendet statt dupliziert) laufend verrauscht/invertiert (nur
-  bei tatsächlicher Eingabe — wer stillsteht, steht wirklich still), und
-  der Matrix-Regen-Shader löst sich über einen neuen `psychedelic_amount`-
-  Uniform in eine wabernde Regenbogen-Halluzination auf
-  (`MazeView.set_psychedelic`). Die anfängliche zufällige Wandkollisions-
-  Umschaltung ist nach dem Review-Durchgang vom 2026-10-02 entfallen (siehe
-  unten, UX-K1/GD-W2) — als Ersatz bremsen jetzt alle Geister für die
-  Dauer des Effekts auf `FEAR_GHOST_SLOWDOWN` (70 %) ab, ein echter,
-  planbarer Vorteil statt eines reinen Zufallsrisikos ohne Gegenwert. Ein
-  vorher aktiv gewähltes Kondition (z. B. Matrix Ghost) wird beim Ende des
-  Effekts unverändert wiederhergestellt.
+- **Weißes Kaninchen und Konditionen** (Spezifikation
+  `docs/design/kaninchen-speedrun.md` 1.2 und 2.1–2.5; `white_rabbit.gd`,
+  `conditions.gd`, `scripts/conditions/`, `condition_looks.gd`,
+  `shaders/kond_*.gdshader*`):
+  - **Kaninchen**: genau eines pro Speedrun-Level ab Level 1, als weißes
+    Pixel-Kaninchen (`pixel_rabbit_mesh.gd`, Hasenweiß `#F2F2ED`). Es sitzt
+    deterministisch je Level-Seed in einer Sackgasse, deren BFS-Distanz zum
+    Start mindestens 40 % des Maximums beträgt (`WhiteRabbit.pick_cell`), ist
+    ab Levelstart auf der Minimap zu sehen und freiwillig: seine Zelle trägt
+    keine Kugel, es zählt nicht zum Levelabschluss. Wer es liegen lässt,
+    spielt einen voll deterministischen Lauf.
+  - **Konditionen** sind zeitlich begrenzte Effekte, die nur das Kaninchen
+    auslöst. Registry in `conditions.gd` mit `is_good`, `duration_s` (gut
+    10 s, schlecht 8 s) und `weight`; Grundverhältnis gut:schlecht 60:40,
+    innerhalb gleich verteilt (`Conditions.pick_condition(rng, p_good)`).
+    Pool: **Matrix** (gut; Wände ohne Kollision, Look „Durchlässiger Code“,
+    in den letzten 3 s blenden die Wände blinkend ein, am Ende steht der
+    Spieler sicher mit freier Kapsel in der nächsten offenen Zelle),
+    **Taschenuhr** (gut; Geister 50 % langsamer, leicht warmer Farbstich,
+    Uhren-Ticken), **Fear & Loathing** (schlecht; siehe unten, Look
+    „Kippbild“), **Stromausfall** (schlecht; Nebel mit ~2 Zellen Sicht,
+    Minimap aus, Kugeln und Geister leuchten weiter). Es gibt genau eine
+    aktive Kondition (`Main.active_condition`); Noclip, Geistertempo,
+    Minimap und Look werden daraus abgeleitet. Ein weiteres Kaninchen
+    ersetzt die laufende Kondition, nichts stapelt sich.
+  - **Fear & Loathing**: pro Aufnahme genau eine Manipulation, gezogen mit
+    dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: A/D getauscht,
+    Drift (25 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
+    150 ms Verzögerung auf WASD (fester Ringpuffer; beim Loslassen steht man
+    sofort). „Gekippt“ ist der Look, solange die Manipulation auf die
+    aktuelle Eingabe wirkt. **Rote Linie**: Maus, Blickrichtung und Kamera
+    werden nie manipuliert, keine Bewegung ohne Eingabe, kein Bildwackeln,
+    kein FOV-Pulsieren, nie schneller als `PLAYER_SPEED`.
+  - **Looks**: ein gemeinsamer Wand-/Boden-Shader (`kond_wall`/`kond_floor`
+    mit `look`, `transition`, `flip`, `reduce_fx`), über die Look-API auf
+    dieselben Instanzen gelegt. Übergang als 0,8-s-Welle vom Spieler aus, in
+    der Wellenfront zerfallen die Linien zu Zeichen in Hasenweiß; Rückweg
+    identisch. Kugeln, Power-Kugel und Geister behalten Farbe und Form
+    (in Matrix und Kippbild mit schwarzer Kontur). Main setzt Looks immer
+    erst nach dem Levelaufbau. „Effekte reduzieren“ beruhigt alle Looks
+    (dichtere Matrix-Wände, kein Blinken, langsameres Fließen); die
+    Spielwirkung bleibt gleich.
+  - **HUD und Ton**: Titelkarte oben (Name, Symbol, Restzeit-Balken; gut
+    grün, schlecht magenta), Aufnahme-Ton gut aufsteigend bzw. schlecht
+    verstimmt fallend, Tick-Töne in den letzten 3 s (alles synthetisch,
+    `audio_synth.gd`).
+  - **Kaninchen der Woche**: Das Ergebnis jedes Kaninchens (Kondition und
+    ggf. F&L-Manipulation) kommt aus einem eigenen `RandomNumberGenerator`
+    mit dem Seed `hash("<level-id>|<JJJJ>-W<ww>")` — Level-ID plus
+    ISO-Kalenderwoche nach der **lokalen Zeit des Spielers**
+    (`Time.get_datetime_dict_from_system(false)`; das Spiel hat keinen
+    Server und keine Zeitzonen-Datenbank, „diese Woche“ beginnt am Montag
+    des Spielers). Ein Neustart würfelt nicht neu. Nie globales
+    `randf()`/`randi()`. Für Etappe 3 vorbereitet: `Main._make_rabbit_rng`
+    (Chaos-Modus: `WhiteRabbit.chaos_rng()`) und `Main._rabbit_p_good`
+    (Chat-Gewichtung).
+  - Entfallen: Konditionswahl am Startscreen, Word-Mode-Pickup im Speedrun,
+    separates Fear-Pickup (`psychedelic_head_mesh.gd`), doppelte Punkte,
+    „erst ab Level 2“, Sinus-Rauschen und unangekündigte Steuerungsumkehr.
 - **Leaderboard** (`godot/scripts/leaderboard.gd`, Autoload `Leaderboard`):
-  lokale Bestenlisten, ein Board pro Kombination aus (Stadt/Level) ×
-  Kondition (`Leaderboard.board_key("manhattan", "matrix_ghost")` z. B.) —
-  eine Matrix-Ghost-Zeit ohne Wandkollision ist nicht mit einer normalen
-  Zeit vergleichbar, deshalb landen sie nie auf demselben Board. Persistiert
+  lokale Bestenlisten, ein Board pro Kombination aus Level × Brett × Modus
+  (`Leaderboard.board_key("klassik-1", "woche")` z. B.; Brett siehe
+  Speedrun-Unterstützung oben). Persistiert
   lokal als JSON (`user://kugelschlucker_leaderboards.json`), hinter einer
   kleinen Schnittstelle (`submit_time`/`get_top`) gekapselt, damit ein
   späteres Steamworks-Backend (GodotSteam Leaderboards, sobald das Projekt

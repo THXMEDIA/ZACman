@@ -8,7 +8,7 @@
 #     --script res://qa_screenshots.gd
 #   rm godot/qa_screenshots.gd
 #
-# Erzeugt: 01_start.png (Startmenü), 02_matrix.png (Matrix-Level kurz nach Start),
+# Erzeugt: 01_start.png (Startmenü), 02_matrix.png (Speedrun-Level kurz nach Start, mit Start-Einblendung),
 # 03_pause.png (Pause), 04_manhattan.png (Explorer-Level Manhattan).
 # Software-Rendering: Grafikqualität und Ton sind nicht repräsentativ.
 extends SceneTree
