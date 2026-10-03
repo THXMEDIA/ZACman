@@ -685,6 +685,7 @@ func _run_checks() -> void:
 	main.start_condition(ConditionsScript.get_condition("matrix"))
 	await get_tree().process_frame
 	_check("conditions: matrix turns on player noclip", main.player.collision_mask == 0)
+	_check("music layer: a good condition starts the good layer", Sfx.condition_layer_state() == "good" and Sfx.condition_layer_audible())
 	_check("conditions: the player's condition IS Main's (one source)", main.player.active_condition == main.active_condition and main.active_condition.id == "matrix")
 
 	# ---- GD-K2/Code-K1: noclip softlock fix. While noclip is on, walk the
@@ -694,12 +695,17 @@ func _run_checks() -> void:
 	main.start_condition(ConditionsScript.get_condition("fear_and_loathing"))
 	await get_tree().process_frame
 	_check("conditions: a new rabbit replaces the running condition (no stacking)", main.active_condition.id == "fear_and_loathing" and main.player.active_condition == main.active_condition)
+	_check("music layer: a bad condition swaps to the bad layer", Sfx.condition_layer_state() == "bad")
 	_check("conditions: replacing matrix turns noclip off", main.player.collision_mask == 2)
 	var relocated_cell: Vector2i = main.player.cell()
 	_check("noclip softlock fix: player relocated into the maze bounds", relocated_cell.x >= 0 and relocated_cell.x < main.maze.rows)
 	_check("noclip softlock fix: player relocated into an open cell, not a wall", MazeGen.is_open(main.maze, relocated_cell.x, relocated_cell.y), "cell=%s" % relocated_cell)
 	main._end_condition(false)
 	_check("conditions: ending clears it everywhere", main.active_condition == null and main.player.active_condition == null)
+	_check("music layer: ending the condition fades the layer out", Sfx.condition_layer_state() == "" and Sfx.condition_layer_audible())
+	for i in 70:
+		await get_tree().process_frame
+	_check("music layer: ... and it is silent after the ramp", not Sfx.condition_layer_audible())
 
 	Speedrun.reset_all()
 

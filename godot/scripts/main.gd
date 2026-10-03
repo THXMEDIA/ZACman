@@ -1272,6 +1272,7 @@ func start_condition(c, chat_line: String = "") -> void:
 		Sfx.rabbit_good()
 	else:
 		Sfx.rabbit_bad()
+	Sfx.start_condition_layer(c.is_good)
 	_refresh_noclip()
 	_apply_condition_visuals(0.0, c.duration_s)
 
@@ -1361,6 +1362,7 @@ func _end_condition(play_sound: bool) -> void:
 	active_condition = null
 	player.active_condition = null
 	c.on_end(self)
+	Sfx.stop_condition_layer()
 	if maze_view.normal_wall_mmi != null and maze_view.current_look != maze_view.LOOK_BASE:
 		maze_view.set_look(maze_view.LOOK_BASE)
 	if not playing_manhattan:
