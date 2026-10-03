@@ -16,7 +16,8 @@ godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
   shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Manhattan, Twitch, Chat-Abstimmung, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Twitch, Chat-Abstimmung, Bot-Simulation)
+tools/qa/          QA-Skripte: Screenshots (qa_*_shots.gd), Messung der Kaninchen-Wette (qa_rabbit_balance.gd)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
 tests/             Node-Tests für die JS-Referenzimplementierung
@@ -31,7 +32,12 @@ godot --path godot godot/scenes/Main.tscn              # direkt starten (mit Edi
 npm run test:godot                                     # alle Headless-Tests in Reihenfolge
 ```
 
-Steuerung: `WASD` laufen, Maus umschauen, `Esc` Pause.
+Steuerung: `WASD` laufen, Maus umschauen, `Esc` Pause (schließt auch die
+Bestenliste).
+
+Die Bot-Simulation und die Tests können jeden Zufall von `Main` über
+`Main.seed_randomness(s)` festlegen (Levelauswahl, Geister-Abbiegen im
+verängstigten Zustand, Chaos- und Chat-Kaninchen, Manhattan-Verkehr; N6).
 
 Die Bot-Simulation (`godot/tests/BotTest.tscn`) instanziiert die echte
 `Main.tscn`-Szene headless, steuert den Spieler über den echten
@@ -68,7 +74,9 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Zackensaum, keine Augen. Farben je Level-Look aus `city_themes.gd`: Jäger
   Rot, Abfänger Zitron, Streuner Violett (in allen Leveln, damit Klassik IV
   fünf unterscheidbare Farben hat), Lauerer Bernstein,
-  Nachzügler Magenta; verängstigt Mint `#BDFCEF`) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
+  Nachzügler Magenta; verängstigt Cerulean `#14A7CC` – klar getrennt von
+  Kugeln, Hasenweiß, Matrix-Grün und allen Geisterfarben, außerhalb des
+  Blaubereichs 215–250°, Begründung in `city_themes.gd`) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
   einer Power-Kugel fliehen sie und lassen sich fressen.
 - **Minimap**: zeigt neben Wänden, Spieler und Gegnern jetzt auch die
   verbleibenden Pellets/Power-Pellets (`hud.gd::_draw_minimap`, liest direkt
@@ -96,29 +104,34 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Laufzeit Material und Shader-Parameter derselben Wand- und Boden-Instanzen
   (nie ein zweiter Wandsatz). Der alte Matrix-Regen-Shader und der
   Psychedelik-Effekt sind entfernt.
-- **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
-  "SPEEDRUN" (die Speedrun-Level) und "EXPLORER-LEVEL"
-  (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
-  Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Eine
-  Konditionswahl gibt es nicht mehr (das weiße Kaninchen entscheidet, siehe
-  unten); dazu der Schalter **„Effekte reduzieren“** (auch im Pausemenü,
-  gespeichert in `zapmaniac_settings.json`, `settings.gd`). Den
-  Testbuild-Button gibt es nicht mehr; das
-  Debug-Overlay (FPS, Position, Zelle) schaltet **F3** ein, nur in
-  Debug-Builds (`main.gd::_unhandled_input`). Der Startbildschirm ist inzwischen mit
-  genug Buttons/Zeilen gewachsen, dass er in einem kleineren Fenster nicht
-  mehr sicher komplett hineinpasste — der Panel-Inhalt sitzt deshalb in
-  einem `ScrollContainer` innerhalb einer auf 5%-95% der Fensterhöhe
-  verankerten Spalte (`hud.gd::_overlay_panel(scrollable=true)`), sodass
-  z. B. der EXPLORER-LEVEL-Button garantiert erreichbar bleibt, notfalls
-  per Scrollen.
+- **Startbildschirm und Menüs** (`hud.gd`, Spezifikation 1.2 und 3): von
+  oben nach unten Titel, **Komfort-Block** („Effekte reduzieren“,
+  Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
+  Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
+  und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
+  **SPEEDRUN**, **BESTENLISTE**, **EXPLORER-LEVEL** (Manhattan, von Anfang an
+  spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
+  Spiel-HUD (Chips, Minimap, Energie) erscheint nur im laufenden Spiel; alle
+  Chips sind mindestens 170 px breit. Pause: WEITER / NEUSTART / HAUPTMENÜ
+  (im Speedrun mit Rückfrage „Lauf abbrechen?“; ein abgebrochener Lauf
+  zählt nirgends). Game over: NOCHMAL / HAUPTMENÜ / BESTENLISTE. Die
+  Einstellungen stehen in `zapmaniac_settings.json` (`settings.gd`,
+  Version 3). Das Debug-Overlay (FPS, Position, Zelle) schaltet **F3** ein,
+  nur in Debug-Builds (`main.gd::_unhandled_input`). Der Panel-Inhalt sitzt
+  in einem `ScrollContainer` (`hud.gd::_overlay_panel(scrollable=true)`),
+  damit die unteren Buttons auch in kleinen Fenstern erreichbar bleiben.
 - **Speedrun-Unterstützung**: Live-Timer, Bestzeiten und Bestenlisten
   **pro Level, Brett und Modus** (`speedrun.gd`, `leaderboard.gd`;
   Schlüssel `level|brett|modus`, z. B. `klassik-2|woche|solo`, siehe
   `levels.gd::board_key`). Die Kondition ist nicht Teil des Schlüssels.
   Details unter **Bretter** weiter unten. Spielstände tragen ein
   Versionsfeld (`SAVE_VERSION`, derzeit 3), Werte werden beim Laden auf
-  Typ geprüft, geschrieben wird atomar über eine `.tmp`-Datei. Tests nutzen
+  Typ geprüft, geschrieben wird atomar über eine `.tmp`-Datei: Schreibfehler
+  werden geprüft, bei jedem Fehler bleibt das Ziel unberührt. Eine
+  unlesbare oder typfalsche Datei (Speedrun, Bestenliste, Einstellungen,
+  Highscore) wird vor dem nächsten Überschreiben als
+  `<name>.corrupt-<unixzeit>` gesichert (`SavePaths.backup_corrupt`, W4;
+  Test `tests/test_save_safety.gd`). Tests nutzen
   einen eigenen Speicherordner (`save_paths.gd`, `tests/save_isolation.gd`)
   und fassen echte Spielstände nicht an. Die Uhr läuft
   auch in der Pause weiter; Effekt-Timer (Frightened, Konditionen) bleiben
@@ -127,9 +140,12 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   dem U-Bahn-Ausgang aus Manhattan; nicht zwischen Leveln) erscheint 2,5 s
   lang „Follow the white rabbit. But beware“ in einem eigenen, zentrierten
   Panel. Währenddessen kann man sich umsehen, aber nicht laufen; danach
-  wartet die Welt (Geister, Effekte, Uhr stehen), bis die erste
-  Bewegungseingabe kommt — erst dann startet die Uhr. Die Einblendung
-  kostet also keine Zeit.
+  wartet die Welt (Geister, Effekte, Uhr stehen) mit dem Hinweis „Die Uhr
+  startet mit deinem ersten Schritt“, bis die erste Bewegungseingabe kommt —
+  erst dann startet die Uhr, und erst im selben Moment werden die Beine
+  freigegeben (die Uhr startet exakt auf der Startposition). Die
+  Einblendung kostet also keine Zeit. Ab dem zweiten Start einer Sitzung
+  überspringt jede Taste die Einblendung.
 - **Level-Pool** (`godot/scripts/levels.gd`): sechs Speedrun-Level mit festem
   Seed, vier klassische plus „Offen“ (mehr Schleifen, weniger Sackgassen)
   und „Durchbruch“ (drei Türen in der geschlossenen Mittelspalte, die
@@ -161,19 +177,23 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     ein Cooldown pro Nutzer mit vielen Zuschauern wirkungslos wäre.
   - `!gut` und `!schlecht` stimmen über das weiße Kaninchen ab
     (Spezifikation 2.6, `chat_vote.gd`): eine Stimme pro Nutzer im
-    gleitenden 60-s-Fenster, die letzte zählt. Gut-Anteil = 60 % + 30
-    Prozentpunkte × (gut − schlecht) / (gut + schlecht), begrenzt auf
-    20–80 % (mit dieser Formel ist 30 % das Minimum); unter 3 verschiedenen
+    gleitenden 60-s-Fenster, die letzte zählt. Gut-Anteil p = 0,60 +
+    0,30·d − 0,10·d² mit d = (gut − schlecht) / (gut + schlecht) (Entscheidung
+    Studio Head; einstimmig gut 80 %, einstimmig schlecht 20 %), begrenzt auf
+    20–80 %; unter 3 verschiedenen
     Stimmen gilt 60 %. Gelesen wird bei der Kaninchen-Aufnahme. Hat der
     Chat den Anteil verschoben (≥ 3 Stimmen und ≠ 60 %), zieht ein
     Generator mit echtem Zufall mit dieser Gewichtung (weiter über
     `pick_condition`). Das ist der einzige Weg, auf dem der Chat ein Level
-    auch erschweren kann. Anzeige im Chat-Modus: Chip „Kaninchen: 72 %
-    gut“ mit grün/magenta Balken; die Titelkarte zeigt „Chat 72 % →
-    MATRIX“.
+    auch erschweren kann. Anzeige im Chat-Modus (nur bei verbundenem
+    Chat): ohne Verschiebung Chip „Kaninchen: Woche“ bzw. „Kaninchen:
+    Chaos“, mit Verschiebung „Kaninchen: 70 % gut“ mit grün/magenta Balken;
+    die Titelkarte zeigt „Chat 70 % → MATRIX“.
   - Hatte der Chat in einem Level eine Hand im Spiel (wirksames
     `!power`/`!fruit` oder verschobenes Kaninchen), zählt das Level auf das
-    Brett `chat`, nie auf `woche` oder `chaos` (`Main._mark_chat_assisted`).
+    Brett `chat`, nie auf `woche` oder `chaos` (`Main._mark_chat_assisted`),
+    und die Punktzahl des ganzen Laufs wird nicht als Highscore gespeichert
+    (`Main.run_chat_assisted`, Code-W8; Hinweis im Game-over-Bild).
 - **Word-Mode / das "Wort-Welt"-Aussehen** (`godot/scripts/word_mesh.gd`):
   jedes Objekt besteht aus seinem eigenen englischen Namen als echtes
   extrudiertes 3D-Buchstabenmodell (Godots `TextMesh`) — eine Wand ist das
@@ -266,8 +286,11 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   `docs/design/kaninchen-speedrun.md` 1.2 und 2.1–2.5; `white_rabbit.gd`,
   `conditions.gd`, `scripts/conditions/`, `condition_looks.gd`,
   `shaders/kond_*.gdshader*`):
-  - **Kaninchen**: genau eines pro Speedrun-Level ab Level 1, als weißes
-    Pixel-Kaninchen (`pixel_rabbit_mesh.gd`, Hasenweiß `#F2F2ED`). Es sitzt
+  - **Kaninchen**: genau eines pro Speedrun-Level ab Level 1, als sitzendes
+    Voxel-Kaninchen mit langen Ohren (`pixel_rabbit_mesh.gd`, Hasenweiß
+    `#F2F2ED`), das knapp über dem Boden schwebt, sich langsam dreht
+    (0,24 Hz) und einen schwachen Lichtkegel auf den Boden wirft; auf der
+    Minimap ein kleines Ohren-Symbol. Es sitzt
     deterministisch je Level-Seed in einer Sackgasse, deren BFS-Distanz zum
     Start mindestens 40 % des Maximums beträgt (`WhiteRabbit.pick_cell`), ist
     ab Levelstart auf der Minimap zu sehen und freiwillig: seine Zelle trägt
@@ -286,7 +309,13 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     Minimap aus, Kugeln und Geister leuchten weiter). Es gibt genau eine
     aktive Kondition (`Main.active_condition`); Noclip, Geistertempo,
     Minimap und Look werden daraus abgeleitet. Ein weiteres Kaninchen
-    ersetzt die laufende Kondition, nichts stapelt sich.
+    ersetzt die laufende Kondition, nichts stapelt sich. Ein Lebensverlust
+    beendet die laufende Kondition (Entscheidung Studio Head): danach
+    Kollision an, Spieler auf der Startzelle mit Blick in den längsten Gang.
+    Endet Matrix im Geisterhaus, wird der Spieler hinausgesetzt. Während
+    einer Kondition wird pro Frame nichts neu angelegt: Basis-Umgebung beim
+    Levelstart gecacht, Shader-Parameter und Umgebung nur bei Änderung
+    (`Main.env_blend_count`/`look_param_count` für Tests).
   - **Fear & Loathing**: pro Aufnahme genau eine Manipulation, gezogen mit
     dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: A/D getauscht,
     Drift (25 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
@@ -301,13 +330,21 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     der Wellenfront zerfallen die Linien zu Zeichen in Hasenweiß; Rückweg
     identisch. Kugeln, Power-Kugel und Geister behalten Farbe und Form
     (in Matrix und Kippbild mit schwarzer Kontur). Main setzt Looks immer
-    erst nach dem Levelaufbau. „Effekte reduzieren“ beruhigt alle Looks
-    (dichtere Matrix-Wände, kein Blinken, langsameres Fließen); die
-    Spielwirkung bleibt gleich.
-  - **HUD und Ton**: Titelkarte oben (Name, Symbol, Restzeit-Balken; gut
-    grün, schlecht magenta), Aufnahme-Ton gut aufsteigend bzw. schlecht
-    verstimmt fallend, Tick-Töne in den letzten 3 s (alles synthetisch,
-    `audio_synth.gd`).
+    erst nach dem Levelaufbau. „Effekte reduzieren“ beruhigt alle Looks:
+    Matrix bleibt durchlässig (Dichte vor der Kamera 0,3, höchstens 0,8),
+    nur der Regen wird ruhiger, kein Blinken; das Kippbild kippt die Welt
+    nicht mehr, ein 6-px-Rahmen und das Symbol der Titelkarte zeigen die
+    Manipulation; die Fließrichtung blendet immer weich über. Die
+    Spielwirkung bleibt gleich. Matrix-Glyphenköpfe sind grün `#4DFF88`.
+    Shader ziehen alle Ableitungen (`fwidth`) vor nicht-uniforme
+    Verzweigungen; Transitions-Glyphen werden nur während eines Übergangs
+    gerechnet.
+  - **HUD und Ton**: Titelkarte oben (Symbol, Name, zweite Zeile 15 px
+    weiß, Chat-Zeile 12 px, rechts „GUT ▲“/„SCHLECHT ▼“ und Restsekunden,
+    Restzeit-Balken, der in den letzten 3 s mit 1 Hz pulsiert; gut grün,
+    schlecht magenta), Aufnahme-Ton gut aufsteigend bzw. schlecht verstimmt
+    fallend, Tick-Töne in den letzten 3 s; das Uhrticken der Taschenuhr setzt
+    dann aus (alles synthetisch, `audio_synth.gd`).
   - **Kaninchen der Woche**: Das Ergebnis jedes Kaninchens (Kondition und
     ggf. F&L-Manipulation) kommt aus einem eigenen `RandomNumberGenerator`
     mit dem Seed `hash("<level-id>|<JJJJ>-W<ww>")` — Level-ID plus
@@ -333,6 +370,8 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   - Bretter: `woche` (Kaninchen der Woche, Standard), `chaos`
     (Chaos-Modus) und `chat` (der Chat hatte eine Hand im Level, siehe
     Twitch). Vorrang: `chat` vor `chaos` vor `woche` (`Main.board_id`).
+    Woche oder Chaos wird beim Levelstart festgelegt (`Main.level_board`,
+    N2); ein Umschalten mitten im Level ändert nichts mehr.
   - Modi: `solo`, `pvp` und `coop` (reserviert für den geplanten
     Mehrspieler). Chat ist seit Etappe 3 ein Brett, kein Modus mehr.
     Unbekannte Level, Bretter oder Modi werden nicht geschrieben
@@ -347,10 +386,15 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   - **Chaos-Modus**: Schalter am Startscreen (gespeichert in
     `zapmaniac_settings.json`, Version 2), echter Zufall für jedes
     Kaninchen, eigenes Brett `chaos`, Badge CHAOS.
-  - **Bestenliste**: Button BESTENLISTE am Startscreen; Tabs Woche, Chaos,
-    Chat, Level-Umschalter, Top 10. Auf dem Wochenbrett steht bei jeder
-    Zeit die Kalenderwoche, oben die Allzeit-Bestzeit mit Woche und die
-    Bestzeit der laufenden Woche. Alle Einträge heißen noch „Player“.
+  - **Bestenliste**: Button BESTENLISTE am Startscreen und im Game over;
+    Tabs Woche, Chaos, Chat, Umschalter „Diese Woche / Allzeit“ (aktiver
+    Reiter in Akzentfarbe mit Unterstrich), Level-Umschalter, Top 10 in einer
+    Tabelle fester Höhe. Spalten: Platz, Zeit, Kaninchen (genommene
+    Kondition als Kürzel MTX/UHR/F&L/STROM, OHNE = ohne Kaninchen, – =
+    unbekannt), KW (Wochenbrett), Datum. Jeder Eintrag speichert dafür
+    `cond` und `date` (Metadaten, nicht im Schlüssel). Oben die
+    Allzeit-Bestzeit mit Woche und die Bestzeit der laufenden Woche. Esc
+    oder ZURÜCK führt dorthin zurück, wo die Liste geöffnet wurde.
   - **Migration auf Version 3** (beim Laden, idempotent): Bretter mit
     Konditions-Schlüsseln (`|none`, `|matrix_ghost`, `|fear_and_loathing`,
     mit oder ohne Modus) sowie die alten Manhattan- und
