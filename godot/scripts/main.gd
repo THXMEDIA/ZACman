@@ -28,6 +28,14 @@ const MATRIX_BLINK_HZ := 1.5
 ## evaded by backing off into a side passage, or run into.
 const ENEMY_HIT_RADIUS := 0.85
 const HIGHSCORE_FILE := "kugelschlucker_highscore.txt" # under SavePaths.root (tests redirect it)
+## Code-W8: global cooldown (game clock) for each helping chat command. 20 s
+## is about three Frightened windows (FRIGHTENED_DURATION 7 s): chat !power
+## can never chain Frightened back to back or keep resetting the eat combo,
+## covers at most about a third of the level time, and still fires 5–11 times
+## in a level of the pool (target times 115–225 s), so the chat stays a
+## visible helper. Global, not per user — a per-user cooldown would be
+## bypassed by any chat with more than a handful of viewers.
+const CHAT_COMMAND_COOLDOWN_S := 20.0
 
 const LEVELS := [
 	{"rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed_base": 10000},
@@ -100,6 +108,7 @@ const ConditionLooksScript := preload("res://scripts/condition_looks.gd")
 const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
 const SettingsScript := preload("res://scripts/settings.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
+const ChatVoteScript := preload("res://scripts/chat_vote.gd")
 
 ## Ghost colors come from the level look (MazeView.ghost_palette(), see
 ## city_themes.gd GHOST_* — no green, no cyan, never the level's gradient).
@@ -137,6 +146,12 @@ var level_start_real := 0.0
 ## time then goes to the "chat" board, never to woche/chaos (Levels.BOARDS).
 var level_chat_assisted := false
 var playing_manhattan := false
+## Twitch votes on the rabbit (!gut / !schlecht, spec 2.6), on `real_now`.
+var chat_vote = ChatVoteScript.new()
+## command -> game-clock time until which it is ignored (Code-W8 cooldown);
+## cleared at every run start.
+var _chat_cooldown_until := {}
+var _chat_hud_next_update := 0.0
 
 ## ---- Speedrun start hold (spec 2.1) ----
 ## true from begin_game() until the first movement input after the start
@@ -341,6 +356,7 @@ func begin_game(forced_level_id: String = "") -> void:
 	playing_manhattan = false
 	level_index = 0
 	played_ids.clear()
+	_chat_cooldown_until.clear()
 	hud.hide_all_panels()
 	if forced_level_id != "":
 		start_level(LevelsScript.by_id(forced_level_id))
@@ -735,31 +751,36 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 		Twitch.connect_to_channel(channel)
 	else:
 		Twitch.disconnect_chat()
+		chat_vote.clear()
 		hud.set_twitch_status("Aus — für ernsthafte Speedruns ausgeschaltet lassen.")
 
 
 func _on_twitch_connection_changed(is_connected: bool) -> void:
 	if is_connected:
-		hud.set_twitch_status("Verbunden mit #%s — !power und !fruit sind aktiv." % Twitch.channel)
+		hud.set_twitch_status("Verbunden mit #%s — !power, !fruit, !gut und !schlecht sind aktiv." % Twitch.channel)
 	elif Twitch.enabled:
 		hud.set_twitch_status("Verbindung getrennt.")
 
 
 ## Viewer chat commands, opt-in only (see Twitch.enabled / the start-screen
-## toggle). Deliberately small and harmless: they can only help the player
-## (early power pellet, early fruit), never take away input or end the run.
-## A command that takes effect moves the level's time to the "chat" best time
-## and leaderboard (Levels.MODES), so it can never touch the solo records.
-func _on_twitch_command(_user: String, command: String, _args: String) -> void:
+## toggle). !power / !fruit can only help the player (early power pellet,
+## early fruit), never take away input or end the run; each has a global
+## cooldown (CHAT_COMMAND_COOLDOWN_S). !gut / !schlecht are votes on the next
+## rabbit (spec 2.6) and are counted at any time, also between levels.
+## A helping command that takes effect moves the level's time to the "chat"
+## board (_mark_chat_assisted), so it can never touch woche/chaos records.
+func _on_twitch_command(user: String, command: String, _args: String) -> void:
+	if command == "gut" or command == "schlecht":
+		chat_vote.vote(user, command == "gut", real_now)
+		_update_chat_hud(true)
+		return
 	if not (running and not paused) or playing_manhattan or start_hold:
 		return
-	# GD-K3/Code-W7: any chat command that actually did something marks the
-	# run currently being timed as assisted — see level_complete_sequence /
-	# manhattan_complete_sequence, which then skip writing the time to
-	# Speedrun.best_times / Leaderboard so a viewer's (or the streamer's own
-	# phone's) !power can't trivialize or falsify a recorded run.
+	if now < float(_chat_cooldown_until.get(command, -1.0)):
+		return
 	match command:
 		"power":
+			_chat_cooldown_until[command] = now + CHAT_COMMAND_COOLDOWN_S
 			_mark_chat_assisted()
 			frightened_until = now + FRIGHTENED_DURATION
 			combo_count = 0
@@ -770,6 +791,7 @@ func _on_twitch_command(_user: String, command: String, _args: String) -> void:
 					enemy.mode = "frightened"
 		"fruit":
 			if not fruit_spawned:
+				_chat_cooldown_until[command] = now + CHAT_COMMAND_COOLDOWN_S
 				_mark_chat_assisted()
 				fruit_spawned = true
 				maze_view.spawn_fruit(now)
@@ -963,6 +985,7 @@ func _process(delta: float) -> void:
 		# The speedrun clock keeps running in the pause (see `real_now`); it
 		# stands at 0 while the start hold lasts (level_start_real follows).
 		hud.set_timer(real_now - level_start_real)
+	_update_chat_hud()
 	if not (running and not paused) or start_hold:
 		if running and maze != null:
 			hud.update_minimap(maze, player, enemies, now < frightened_until, maze_view)
@@ -1177,27 +1200,62 @@ func _make_rabbit_rng(lid: String) -> RandomNumberGenerator:
 	return WhiteRabbitScript.week_rng(lid, rabbit_week)
 
 
-## Share of good conditions for the next rabbit. Etappe 3: the chat weighting
-## (spec 2.6) feeds in here.
+## Share of good conditions for the next rabbit: the chat's share while
+## Twitch is on (spec 2.6 — 60 % until 3 different viewers voted), otherwise
+## the base 60 %.
 func _rabbit_p_good() -> float:
+	if Twitch.enabled:
+		return chat_vote.p_good(real_now)
 	return ConditionsScript.P_GOOD_BASE
 
 
+## Did the chat shift the ratio for a rabbit picked up now (>= 3 voters and a
+## share other than 60 %)?
+func _chat_shifts_rabbit() -> bool:
+	return Twitch.enabled and chat_vote.shifted(real_now)
+
+
+## The rabbit was picked up. Normally its result comes from the level's
+## generator (Kaninchen der Woche, or Chaos). If the chat shifted the ratio,
+## a generator with real randomness draws with the chat's weighting instead,
+## the level moves to the "chat" board and the title card says
+## "Chat 72 % → MATRIX" (spec 2.6). Always through pick_condition.
 func _on_rabbit_picked() -> void:
 	if rabbit_rng == null:
 		rabbit_rng = _make_rabbit_rng(level_id)
-	var id: String = ConditionsScript.pick_condition(rabbit_rng, _rabbit_p_good())
+	var p := _rabbit_p_good()
+	var rng: RandomNumberGenerator = rabbit_rng
+	var chat_line := ""
+	var chat_shifted := _chat_shifts_rabbit()
+	if chat_shifted:
+		rng = WhiteRabbitScript.chaos_rng()
+		_mark_chat_assisted()
+	var id: String = ConditionsScript.pick_condition(rng, p)
 	var c = ConditionsScript.get_condition(id)
 	if c == null:
 		return
-	c.roll(rabbit_rng)
-	start_condition(c)
+	c.roll(rng)
+	if chat_shifted:
+		chat_line = "Chat %d %% → %s" % [ChatVoteScript.percent(p), c.display_name.to_upper()]
+	start_condition(c, chat_line)
+
+
+## HUD chat chip "Kaninchen: 72 % gut" — only in chat mode (Twitch on) and
+## in a speedrun level. Votes expire, so it is refreshed a few times a second.
+func _update_chat_hud(force: bool = false) -> void:
+	if not force and real_now < _chat_hud_next_update:
+		return
+	_chat_hud_next_update = real_now + 0.25
+	var show_it: bool = Twitch.enabled and running and not playing_manhattan and level_id != ""
+	hud.set_chat_share_visible(show_it)
+	if show_it:
+		hud.set_chat_share(_rabbit_p_good(), chat_vote.voters(real_now), ChatVoteScript.MIN_VOTERS)
 
 
 ## Starts `c` as THE active condition. A running one is replaced, never
 ## stacked (spec 2.2). The look is switched here, after the level is built —
 ## never from the condition's on_start (Code-W1).
-func start_condition(c) -> void:
+func start_condition(c, chat_line: String = "") -> void:
 	if active_condition != null:
 		_end_condition(false)
 	active_condition = c
@@ -1209,7 +1267,7 @@ func start_condition(c) -> void:
 	if c.look_id != "" and maze_view.has_look(c.look_id):
 		maze_view.set_look(c.look_id)
 		maze_view.set_look_param("reduce_fx", 1.0 if reduce_fx else 0.0)
-	hud.show_condition_card(c)
+	hud.show_condition_card(c, chat_line)
 	if c.is_good:
 		Sfx.rabbit_good()
 	else:

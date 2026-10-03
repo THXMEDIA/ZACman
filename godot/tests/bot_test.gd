@@ -46,6 +46,7 @@ func _ready() -> void:
 	await _run_condition_checks()
 	await _run_intro_checks()
 	await _run_board_checks()
+	await _run_chat_vote_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -1294,3 +1295,117 @@ func _run_board_checks() -> void:
 	_check("bestenliste: level switcher and chat tab", main.hud.lb_level_label.text == "Klassik II" and main.hud.leaderboard_lines().size() == 1)
 	main.hud.show_only(main.hud.start_panel)
 	_check("bestenliste: back to the start screen", main.hud.start_panel.visible and not main.hud.leaderboard_panel.visible)
+
+
+## ---------------- Twitch chat: rabbit vote and cooldown (spec 2.6, Code-W8) ----------------
+
+func _votes(good: int, bad: int) -> void:
+	for i in good:
+		Twitch.chat_command.emit("fan%d" % i, "gut", "")
+	for i in bad:
+		Twitch.chat_command.emit("troll%d" % i, "schlecht", "")
+
+
+func _run_chat_vote_checks() -> void:
+	Speedrun.reset_all()
+	Leaderboard.reset_all()
+	main.chat_vote.clear()
+	Twitch.enabled = true # chat mode without a real connection (no network here)
+
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main._update_chat_hud(true)
+	_check("chat bar: shown in chat mode, base 60 % without votes", main.hud.chat_chip.visible and main.hud.chat_share_label.text.begins_with("Kaninchen: 60 % gut"), main.hud.chat_share_label.text)
+	_votes(7, 3)
+	_check("chat bar: 7 gut / 3 schlecht -> 'Kaninchen: 72 % gut'", main.hud.chat_share_label.text == "Kaninchen: 72 % gut", main.hud.chat_share_label.text)
+	_check("chat: votes alone do not touch the board", main.board_id() == WOCHE)
+	await _take_rabbit()
+	var c = main.active_condition
+	_check("chat shift: the rabbit pickup moves the level to the chat board", main.board_id() == "chat" and main.level_chat_assisted)
+	_check("chat shift: title card 'Chat 72 % → <KONDITION>'", c != null and main.hud.condition_chat_label.visible and main.hud.condition_chat_label.text == "Chat 72 %% → %s" % c.display_name.to_upper(), main.hud.condition_chat_label.text)
+	await _clear_level_fast()
+	_check("chat run: lands on the chat board, never on woche/chaos", Leaderboard.get_top("klassik-1", "chat").size() == 1 and Leaderboard.get_top("klassik-1", WOCHE).size() == 0 and Leaderboard.get_top("klassik-1", "chaos").size() == 0 and Speedrun.best_for("klassik-1", WOCHE) == -1.0)
+	await get_tree().create_timer(2.0).timeout
+
+	main.set_chaos_mode(true)
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	await _take_rabbit()
+	_check("chat shift in Chaos mode: chat board, not chaos", main.board_id() == "chat")
+	await _clear_level_fast()
+	_check("chat shift in Chaos mode: time on chat, nothing on chaos/woche", Leaderboard.get_top("klassik-2", "chat").size() == 1 and Leaderboard.get_top("klassik-2", "chaos").size() == 0 and Leaderboard.get_top("klassik-2", WOCHE).size() == 0)
+	await get_tree().create_timer(2.0).timeout
+	main.set_chaos_mode(false)
+
+	# many shifted rabbits: the chat's weighting with real randomness
+	main.chat_vote.clear()
+	_votes(10, 0) # 80 % gut
+	var good_n := 0
+	var seen := {}
+	for i in 30:
+		main.begin_game("klassik-3")
+		await get_tree().process_frame
+		await _take_rabbit()
+		if main.active_condition.is_good:
+			good_n += 1
+		seen[_condition_signature()] = true
+	_check("chat shift: drawn with real randomness (several results)", seen.size() >= 2, str(seen.keys()))
+	_check("chat shift: 80 % gut weighting shows (>= 15 of 30 good)", good_n >= 15, "good=%d" % good_n)
+	main._end_condition(false)
+
+	# not shifted: under 3 voters, or a tie -> Kaninchen der Woche, weekly board
+	Twitch.enabled = false
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await _take_rabbit()
+	var week_sig := _condition_signature()
+	Twitch.enabled = true
+	main.chat_vote.clear()
+	_votes(2, 0)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await _take_rabbit()
+	_check("2 voters: not shifted -> week result, weekly board, no chat line", _condition_signature() == week_sig and main.board_id() == WOCHE and not main.hud.condition_chat_label.visible)
+	main.chat_vote.clear()
+	_votes(2, 2)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await _take_rabbit()
+	_check("tie 2:2 (60 %): not shifted -> week result, weekly board", _condition_signature() == week_sig and main.board_id() == WOCHE)
+	main._end_condition(false)
+
+	# Code-W8: global cooldown for !power / !fruit
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.frightened_until = 0.0
+	Twitch.chat_command.emit("v0", "power", "")
+	var first_ok: bool = main.frightened_until > main.now
+	main.frightened_until = 0.0
+	for i in 19:
+		Twitch.chat_command.emit("v%d" % (i + 1), "power", "")
+	_check("cooldown: 20x !power at once -> one effect", first_ok and main.frightened_until == 0.0)
+	main.now += main.CHAT_COMMAND_COOLDOWN_S - 0.5
+	Twitch.chat_command.emit("v1", "power", "")
+	_check("cooldown: still blocked shortly before 20 s", main.frightened_until == 0.0)
+	main.now += 0.6
+	Twitch.chat_command.emit("v1", "power", "")
+	_check("cooldown: !power works again after 20 s", main.frightened_until > main.now)
+	main.fruit_spawned = false
+	Twitch.chat_command.emit("v2", "fruit", "")
+	var fruit_first: bool = main.fruit_spawned
+	main.fruit_spawned = false
+	Twitch.chat_command.emit("v3", "fruit", "")
+	_check("cooldown: !fruit has its own 20 s cooldown", fruit_first and not main.fruit_spawned)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.frightened_until = 0.0
+	Twitch.chat_command.emit("v4", "power", "")
+	_check("cooldown: a new run starts without cooldown", main.frightened_until > main.now)
+
+	main.begin_manhattan_game()
+	await get_tree().process_frame
+	main._update_chat_hud(true)
+	_check("chat bar: hidden in Manhattan", not main.hud.chat_chip.visible)
+	Twitch.enabled = false
+	main.chat_vote.clear()
+	main.end_game()

@@ -73,6 +73,8 @@ var condition_card: PanelContainer
 var condition_icon: Control
 var condition_name_label: Label
 var condition_sub_label: Label
+## "Chat 72 % → MATRIX" when the chat shifted the rabbit (spec 2.6).
+var condition_chat_label: Label
 var condition_bar: ProgressBar
 var condition_fill: StyleBoxFlat
 var condition_icon_kind := ""
@@ -720,6 +722,11 @@ func _build_condition_card() -> void:
 	condition_sub_label.add_theme_font_size_override("font_size", 11)
 	condition_sub_label.add_theme_color_override("font_color", Color(0.8, 0.84, 0.9))
 	col.add_child(condition_sub_label)
+	condition_chat_label = Label.new()
+	condition_chat_label.add_theme_font_size_override("font_size", 13)
+	condition_chat_label.add_theme_color_override("font_color", BOARD_COLORS.chat)
+	condition_chat_label.visible = false
+	col.add_child(condition_chat_label)
 	condition_bar = ProgressBar.new()
 	condition_bar.custom_minimum_size = Vector2(200, 6)
 	condition_bar.show_percentage = false
@@ -734,12 +741,15 @@ func _build_condition_card() -> void:
 	col.add_child(condition_bar)
 
 
-func show_condition_card(c) -> void:
+func show_condition_card(c, chat_line: String = "") -> void:
 	condition_color = COND_GOOD if c.is_good else COND_BAD
 	condition_icon_kind = c.icon
 	condition_name_label.text = c.display_name.to_upper()
 	condition_name_label.add_theme_color_override("font_color", condition_color)
 	condition_sub_label.text = c.subtitle()
+	condition_sub_label.visible = condition_sub_label.text != ""
+	condition_chat_label.text = chat_line
+	condition_chat_label.visible = chat_line != ""
 	condition_fill.bg_color = condition_color
 	condition_bar.value = 1.0
 	var sb := _panel_style()
