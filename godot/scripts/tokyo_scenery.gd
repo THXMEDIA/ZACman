@@ -41,7 +41,7 @@ const LAMPS := [
 ]
 const LAMP_Y := 4.6
 const LAMP_LIGHT_RANGE := 9.0
-const LAMP_LIGHT_ENERGY := 1.5
+const LAMP_LIGHT_ENERGY := 2.4
 
 
 static func load_sign_font() -> Font:

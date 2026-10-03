@@ -296,8 +296,8 @@ static func tokyo() -> Resource:
 	t.pellet_trail_provider_script = TokyoMazeScript
 
 	t.floor_color = TokyoStyle.ASPHALT
-	t.floor_roughness = 0.14 # wet, glossy; SSR fine-tuning and puddle mask: M2
-	t.floor_metallic = 0.25
+	t.floor_roughness = 0.24 # wet, glossy; SSR fine-tuning and puddle mask: M2
+	t.floor_metallic = 0.0
 	t.ceil_enabled = false
 
 	t.env_bg_color = TokyoStyle.SKY
