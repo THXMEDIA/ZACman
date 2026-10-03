@@ -7,12 +7,22 @@ extends Node
 ##   godot --headless --path . res://tests/BotTest.tscn
 ## Exits with code 0 if every check passes, 1 otherwise.
 
+const SaveIsolation := preload("res://tests/save_isolation.gd")
+
 var main
 var failures := 0
 var checks := 0
+var _real_saves := {}
 
 
 func _ready() -> void:
+	# QA-W6: Speedrun/Leaderboard/high score go to their own test folder for
+	# the whole simulation. The autoloads already read the real files at
+	# startup (read only), so they reload from the test folder here, before
+	# Main exists.
+	_real_saves = SaveIsolation.begin()
+	Speedrun.reload()
+	Leaderboard.reload()
 	var main_scene: PackedScene = load("res://scenes/Main.tscn")
 	main = main_scene.instantiate()
 	add_child(main)
@@ -20,6 +30,10 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	await _run_checks()
+
+	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
+	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
+	_check("test isolation: real save files unchanged after the simulation", SaveIsolation.end(_real_saves))
 
 	print("")
 	if failures == 0:

@@ -4,19 +4,25 @@ extends SceneTree
 ##   godot --headless --path . --script res://tests/test_speedrun.gd
 ## Exits with code 0 on success, 1 on any failure.
 ##
-## Starts by wiping the real save file so this run doesn't inherit state
-## left over from a normal play session or from BotTest.tscn (which also
-## exercises Speedrun.record_level_time via Main's level-clear flow).
+## Runs against its own, empty save folder (SaveIsolation, QA-W6): the real
+## save file is never read, overwritten or deleted, and the test checks that.
 
-const SAVE_PATH := "user://kugelschlucker_speedrun.json"
+const SaveIsolation := preload("res://tests/save_isolation.gd")
+const SavePathsScript := preload("res://scripts/save_paths.gd")
+
+var SAVE_PATH := ""
 
 
 func _initialize() -> void:
 	var failures := 0
 	var checks := 0
 
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(SAVE_PATH)
+	var real_saves := SaveIsolation.begin()
+	SAVE_PATH = SavePathsScript.path("kugelschlucker_speedrun.json")
+	checks += 1
+	if not SAVE_PATH.begins_with(SavePathsScript.TEST_ROOT):
+		failures += 1
+		print("FAIL the test should use the test save folder, got %s" % SAVE_PATH)
 
 	# --- format_time -------------------------------------------------
 	var fmt_cases := [
@@ -149,9 +155,78 @@ func _initialize() -> void:
 		print("FAIL migration must keep bonus_unlocked")
 	sr4.free()
 
-	# Leave no trace for the next real play session / BotTest run.
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(SAVE_PATH)
+	# --- Code-W3: version field and type checks ---------------------------
+	var sr5 = speedrun_script.new()
+	sr5.record_level_time("klassik-1", 50.0)
+	var vf := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var saved = JSON.parse_string(vf.get_as_text())
+	vf.close()
+	checks += 1
+	if typeof(saved) != TYPE_DICTIONARY or saved.get("version", 0) != speedrun_script.SAVE_VERSION:
+		failures += 1
+		print("FAIL a written save should carry version %d, got %s" % [speedrun_script.SAVE_VERSION, str(saved).left(120)])
+	checks += 1
+	if sr5.save_path() != SAVE_PATH or FileAccess.file_exists(SAVE_PATH + ".tmp"):
+		failures += 1
+		print("FAIL the save should land at the test path without a leftover .tmp file")
+	sr5.free()
+
+	_write(SAVE_PATH, JSON.stringify({"best_times": {
+		"klassik-1|none": null,
+		"klassik-2|none": "schnell",
+		"klassik-3|none": -5.0,
+		"klassik-4|none": 0.0,
+		"offen|none": 88.0,
+		"1": [1, 2],
+	}, "bonus_unlocked": "yes"}))
+	var dirty = speedrun_script.new()
+	checks += 1
+	if dirty.best_for("klassik-1") != -1.0 or dirty.best_for("klassik-2") != -1.0 or dirty.best_for("klassik-3") != -1.0 or dirty.best_for("klassik-4") != -1.0 or dirty.best_for("offen") != 88.0:
+		failures += 1
+		print("FAIL only valid times (> 0) should survive loading: %s" % [dirty.best_times])
+	checks += 1
+	if dirty.is_bonus_unlocked():
+		failures += 1
+		print("FAIL a non-bool bonus_unlocked must not unlock the badge")
+	var rd: Dictionary = dirty.record_level_time("klassik-1", 200.0)
+	checks += 1
+	if not rd.is_new_best or dirty.best_for("klassik-1") != 200.0:
+		failures += 1
+		print("FAIL record_level_time should work after loading typo'd values: %s" % [rd])
+	dirty.free()
+
+	for broken in ['{"version": 2, "best_times": {"klassik-1|none": 4', '"just a string"', '{"version": "zwei", "best_times": 3}']:
+		_write(SAVE_PATH, broken)
+		var b = speedrun_script.new()
+		var rb: Dictionary = b.record_level_time("klassik-1", 150.0)
+		checks += 1
+		if not rb.is_new_best or b.best_for("klassik-1") != 150.0:
+			failures += 1
+			print("FAIL a broken save (%s) should load as empty and still record times" % broken.left(30))
+		b.free()
+
+	var future := JSON.stringify({"version": speedrun_script.SAVE_VERSION + 1, "best_times": {"klassik-1|none": 10.0}})
+	_write(SAVE_PATH, future)
+	var fut = speedrun_script.new()
+	fut.record_level_time("klassik-1", 50.0)
+	fut.free()
+	var ff := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var after_future := ff.get_as_text()
+	ff.close()
+	checks += 1
+	if after_future != future:
+		failures += 1
+		print("FAIL a newer-version save must not be overwritten")
+
+	# --- QA-W6: real save untouched; test folder cleaned up --------------
+	checks += 1
+	if not SaveIsolation.end(real_saves):
+		failures += 1
+		print("FAIL the test changed the real save files")
+	checks += 1
+	if DirAccess.dir_exists_absolute(SavePathsScript.TEST_ROOT) or not SavePathsScript.is_default_root():
+		failures += 1
+		print("FAIL the test save folder should be removed and the root reset")
 
 	print("")
 	if failures == 0:
@@ -160,3 +235,9 @@ func _initialize() -> void:
 	else:
 		print("%d/%d SPEEDRUN CHECKS FAILED" % [failures, checks])
 		quit(1)
+
+
+func _write(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(text)
+	f.close()

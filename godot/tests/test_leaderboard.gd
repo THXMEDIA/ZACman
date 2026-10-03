@@ -9,11 +9,21 @@ extends SceneTree
 ##   godot --headless --path . --script res://tests/test_leaderboard.gd
 ## Exits with code 0 on success, 1 on any failure.
 
+const SaveIsolation := preload("res://tests/save_isolation.gd")
+
+
 func _initialize() -> void:
 	var failures := 0
 	var checks := 0
 
+	# QA-W6: own save folder for the whole run; the real file stays untouched.
+	var real_saves := SaveIsolation.begin()
+
 	var Leaderboard = load("res://scripts/leaderboard.gd").new()
+	checks += 1
+	if not Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT):
+		failures += 1
+		print("FAIL the test should write to the test save folder, got %s" % Leaderboard.save_path())
 	Leaderboard.reset_all()
 
 	# --- board_key: "" normalizes to "none", different (city,cond) pairs
@@ -120,7 +130,7 @@ func _initialize() -> void:
 
 	# --- boards saved before the level pool are migrated ---
 	Leaderboard.reset_all()
-	var f := FileAccess.open(Leaderboard.SAVE_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(Leaderboard.save_path(), FileAccess.WRITE)
 	f.store_string(JSON.stringify({
 		"normal-1|none": [{"name": "Old", "time": 80.0}],
 		"normal-3|matrix_ghost": [{"name": "Old", "time": 90.0}],
@@ -148,6 +158,95 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL board should cap at MAX_ENTRIES_PER_BOARD (%d), got %d" % [Leaderboard.MAX_ENTRIES_PER_BOARD, capped.size()])
 
+	# --- Code-W3: version field, type checks, no orphans ------------------
+	var lb_script = load("res://scripts/leaderboard.gd")
+	checks += 1
+	var vf := FileAccess.open(Leaderboard.save_path(), FileAccess.READ)
+	var saved = JSON.parse_string(vf.get_as_text())
+	vf.close()
+	if typeof(saved) != TYPE_DICTIONARY or saved.get("version", 0) != lb_script.SAVE_VERSION or typeof(saved.get("boards")) != TYPE_DICTIONARY:
+		failures += 1
+		print("FAIL a written save should be {version: %d, boards: {...}}, got %s" % [lb_script.SAVE_VERSION, str(saved).left(120)])
+	checks += 1
+	if FileAccess.file_exists(Leaderboard.save_path() + ".tmp"):
+		failures += 1
+		print("FAIL the atomic write must not leave its .tmp file behind")
+
+	_write(Leaderboard.save_path(), JSON.stringify({
+		"klassik-1|none": [
+			{"name": "Ok", "time": 90.0},
+			{"name": "NoTime"},
+			{"time": 50.0},
+			{"name": "Neg", "time": -3.0},
+			{"name": "Str", "time": "fast"},
+			{"name": 7, "time": 40.0},
+			"garbage",
+			null,
+		],
+		"klassik-2|none": "not a board",
+		"normal-7|none": [{"name": "Orphan", "time": 60.0}],
+		"normal-0|none": [{"name": "Old", "time": 70.0}],
+	}))
+	var dirty = lb_script.new()
+	var top1: Array = dirty.get_top("klassik-1", "")
+	checks += 1
+	if top1.size() != 2 or top1[0].name != "Old" or top1[1].name != "Ok":
+		failures += 1
+		print("FAIL only well-formed entries should survive (and normal-0 merge into klassik-1), got %s" % [top1])
+	checks += 1
+	if dirty.get_top("klassik-8", "").size() != 0 or dirty._boards.has("klassik-8|none"):
+		failures += 1
+		print("FAIL normal-7 must not become an orphan klassik-8 board")
+	checks += 1
+	if dirty.loaded_version != 1:
+		failures += 1
+		print("FAIL an unversioned file should load as version 1, got %d" % dirty.loaded_version)
+	var r_dirty: Dictionary = dirty.submit_time("klassik-1", "", 80.0, "After")
+	checks += 1
+	if r_dirty.rank != 2:
+		failures += 1
+		print("FAIL submit_time should keep working after loading a dirty board: %s" % [r_dirty])
+	dirty.free()
+	var reread = lb_script.new()
+	var reread_top: Array = reread.get_top("klassik-1", "") # loads lazily, before loaded_version is read
+	checks += 1
+	if reread.loaded_version != lb_script.SAVE_VERSION or reread_top.size() != 3:
+		failures += 1
+		print("FAIL the re-saved file should be version %d with 3 klassik-1 entries" % lb_script.SAVE_VERSION)
+	reread.free()
+
+	# truncated JSON and wrong top-level type: start empty, still accept times
+	for broken in ['{"version": 2, "boards": {"klassik-1|none": [{"name": "A", "ti', '[1, 2, 3]', '{"version": 2, "boards": 5}']:
+		_write(Leaderboard.save_path(), broken)
+		var b = lb_script.new()
+		checks += 1
+		var rb: Dictionary = b.submit_time("klassik-1", "", 99.0, "B")
+		if b.get_top("klassik-1", "").size() != 1 or rb.rank != 1:
+			failures += 1
+			print("FAIL a broken file (%s) should load as empty and still take a time" % broken.left(30))
+		b.free()
+
+	# a file from a newer game version: not loaded, never overwritten
+	var future := JSON.stringify({"version": lb_script.SAVE_VERSION + 1, "boards": {"klassik-1|none": [{"name": "F", "time": 10.0}]}})
+	_write(Leaderboard.save_path(), future)
+	var fut = lb_script.new()
+	fut.submit_time("klassik-1", "", 50.0, "Now")
+	fut.free()
+	var ff := FileAccess.open(Leaderboard.save_path(), FileAccess.READ)
+	var after_future := ff.get_as_text()
+	ff.close()
+	checks += 1
+	if after_future != future:
+		failures += 1
+		print("FAIL a newer-version save must not be overwritten")
+	Leaderboard.free()
+
+	# --- QA-W6: the real save file was never touched ----------------------
+	checks += 1
+	if not SaveIsolation.end(real_saves):
+		failures += 1
+		print("FAIL the test changed the real save files")
+
 	print("")
 	if failures == 0:
 		print("ALL %d LEADERBOARD CHECKS PASSED" % checks)
@@ -155,3 +254,9 @@ func _initialize() -> void:
 	else:
 		print("%d/%d LEADERBOARD CHECKS FAILED" % [failures, checks])
 		quit(1)
+
+
+func _write(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(text)
+	f.close()

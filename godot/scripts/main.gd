@@ -21,7 +21,7 @@ const FEAR_FIRST_LEVEL := 1 # levels already cleared in the run before Fear pick
 ## vorbei können") — a ghost in the way now has to be eaten (frightened),
 ## evaded by backing off into a side passage, or run into.
 const ENEMY_HIT_RADIUS := 0.85
-const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
+const HIGHSCORE_FILE := "kugelschlucker_highscore.txt" # under SavePaths.root (tests redirect it)
 
 const LEVELS := [
 	{"rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed_base": 10000},
@@ -90,6 +90,7 @@ const MANHATTAN_BIKE_COLOR := Color(0.35, 0.85, 0.45)
 const LevelsScript := preload("res://scripts/levels.gd")
 const CityThemesScript := preload("res://scripts/city_themes.gd")
 const ConditionsScript := preload("res://scripts/conditions.gd")
+const SavePathsScript := preload("res://scripts/save_paths.gd")
 
 const ENEMY_PALETTE := [
 	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
@@ -1086,9 +1087,10 @@ func set_condition(id: String) -> void:
 ## ---------------- high score persistence ----------------
 
 func _load_highscore() -> int:
-	if not FileAccess.file_exists(HIGHSCORE_PATH):
+	var path: String = SavePathsScript.path(HIGHSCORE_FILE)
+	if not FileAccess.file_exists(path):
 		return 0
-	var f := FileAccess.open(HIGHSCORE_PATH, FileAccess.READ)
+	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return 0
 	var v := f.get_as_text().strip_edges()
@@ -1097,8 +1099,4 @@ func _load_highscore() -> int:
 
 
 func _save_highscore(v: int) -> void:
-	var f := FileAccess.open(HIGHSCORE_PATH, FileAccess.WRITE)
-	if f == null:
-		return
-	f.store_string(str(v))
-	f.close()
+	SavePathsScript.write_atomic(SavePathsScript.path(HIGHSCORE_FILE), str(v))
