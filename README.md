@@ -1,4 +1,4 @@
-# ZACman (Kugelschlucker)
+# ZAPmaniac
 
 Ein First-Person-3D-Labyrinthspiel im Geiste von Pac-Man: durch ein
 Labyrinth laufen, Kugeln schlucken, Power-Kugeln nutzen und leuchtenden
@@ -38,6 +38,18 @@ Die Bot-Simulation (`godot/tests/BotTest.tscn`) instanziiert die echte
 `Input`-Singleton und prüft Kollisionen, Gegner-KI-Zustände, Pickup-Logik,
 Level-Übergänge, den Speedrun-/Bonuslevel-Unlock und die Twitch-Chat-Befehle
 im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
+
+**Spielstände nach der Umbenennung (ZACman → ZAPmaniac, 03.10.2026):**
+Der neue Projektname verschiebt den `user://`-Ordner
+(`…/app_userdata/ZACman` → `…/app_userdata/ZAPmaniac`), die Dateien heißen
+jetzt `zapmaniac_*` statt `kugelschlucker_*`. Das Autoload `SaveMigration`
+(`godot/scripts/save_migration.gd`, steht als erstes in der Autoload-Liste)
+kopiert beim ersten echten Spielstart einmalig und still jede fehlende
+`zapmaniac_*`-Datei aus ihrem Vorgänger — erst `kugelschlucker_*` im selben
+Ordner, dann im alten Ordner `ZACman`. Vorhandene neue Dateien werden nie
+überschrieben, alte nie gelöscht. In Tests (headless, `--script`, Szenen
+unter `res://tests/`/`res://tools/`) läuft sie nie automatisch;
+`godot/tests/test_save_migration.gd` prüft sie mit eigenen Testordnern.
 
 ## Spiel-Design
 
@@ -264,7 +276,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Kondition (`Leaderboard.board_key("manhattan", "matrix_ghost")` z. B.) —
   eine Matrix-Ghost-Zeit ohne Wandkollision ist nicht mit einer normalen
   Zeit vergleichbar, deshalb landen sie nie auf demselben Board. Persistiert
-  lokal als JSON (`user://kugelschlucker_leaderboards.json`), hinter einer
+  lokal als JSON (`user://zapmaniac_leaderboards.json`), hinter einer
   kleinen Schnittstelle (`submit_time`/`get_top`) gekapselt, damit ein
   späteres Steamworks-Backend (GodotSteam Leaderboards, sobald das Projekt
   eine Steamworks-App-ID hat — siehe `docs/STEAM_ROADMAP.md`) die

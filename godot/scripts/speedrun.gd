@@ -5,7 +5,7 @@ extends Node
 ## across scenes (the future Manhattan bonus level reads is_bonus_unlocked()
 ## the same way Main does).
 
-const SAVE_PATH := "user://kugelschlucker_speedrun.json"
+const SAVE_PATH := "user://zapmaniac_speedrun.json"
 
 const LevelsScript := preload("res://scripts/levels.gd")
 

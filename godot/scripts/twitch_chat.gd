@@ -112,7 +112,7 @@ func _handle_line(line: String) -> void:
 ## it isn't a channel chat message (PRIVMSG). No network/state involved, so
 ## this is directly unit-testable.
 ## Example input:
-##   :alice!alice@alice.tmi.twitch.tv PRIVMSG #zacman :!power let's go
+##   :alice!alice@alice.tmi.twitch.tv PRIVMSG #zapmaniac :!power let's go
 static func parse_irc_line(line: String) -> Dictionary:
 	if not line.begins_with(":"):
 		return {}

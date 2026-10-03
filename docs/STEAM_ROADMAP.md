@@ -1,6 +1,6 @@
 # Weg zu Steam
 
-ZACman läuft jetzt als natives Godot-4-Projekt (`godot/`) — das ist der
+ZAPmaniac läuft jetzt als natives Godot-4-Projekt (`godot/`) — das ist der
 Steam-Zielpfad, nicht mehr der Electron-Wrapper aus einer früheren Version
 dieses Dokuments. `web/index.html` bleibt als browserspielbarer Prototyp
 erhalten, ist aber nicht mehr der Ausgangspunkt für den Steam-Build.

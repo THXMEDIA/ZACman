@@ -15,9 +15,9 @@ func _initialize() -> void:
 
 	# --- parse_irc_line -------------------------------------------------
 	checks += 1
-	var ok_line := ":alice!alice@alice.tmi.twitch.tv PRIVMSG #zacman :!power let's go"
+	var ok_line := ":alice!alice@alice.tmi.twitch.tv PRIVMSG #zapmaniac :!power let's go"
 	var parsed: Dictionary = twitch.parse_irc_line(ok_line)
-	if parsed.get("user") != "alice" or parsed.get("channel") != "zacman" or parsed.get("message") != "!power let's go":
+	if parsed.get("user") != "alice" or parsed.get("channel") != "zapmaniac" or parsed.get("message") != "!power let's go":
 		failures += 1
 		print("FAIL parse_irc_line PRIVMSG: %s" % [parsed])
 
@@ -39,7 +39,7 @@ func _initialize() -> void:
 		print("FAIL parse_irc_line should reject lines without a ':' prefix")
 
 	checks += 1
-	var no_user_line := ":bob!bob@bob.tmi.twitch.tv PRIVMSG #zacman :just chatting, no command here"
+	var no_user_line := ":bob!bob@bob.tmi.twitch.tv PRIVMSG #zapmaniac :just chatting, no command here"
 	var parsed2: Dictionary = twitch.parse_irc_line(no_user_line)
 	if parsed2.get("message") != "just chatting, no command here":
 		failures += 1

@@ -1,4 +1,4 @@
-# QA-Playtester: Zusätze für ZACman
+# QA-Playtester: Zusätze für ZAPmaniac
 
 - Godot 4.3 (siehe `godot/project.godot`). Binärdatei: `https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip`
 - Vor den Tests einmal `godot --headless --path godot --import`.

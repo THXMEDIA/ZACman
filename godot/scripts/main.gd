@@ -21,7 +21,7 @@ const FEAR_FIRST_LEVEL := 1 # levels already cleared in the run before Fear pick
 ## vorbei können") — a ghost in the way now has to be eaten (frightened),
 ## evaded by backing off into a side passage, or run into.
 const ENEMY_HIT_RADIUS := 0.85
-const HIGHSCORE_PATH := "user://kugelschlucker_highscore.txt"
+const HIGHSCORE_PATH := "user://zapmaniac_highscore.txt"
 
 const LEVELS := [
 	{"rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed_base": 10000},

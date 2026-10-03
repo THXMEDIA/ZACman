@@ -8,7 +8,7 @@ extends SceneTree
 ## left over from a normal play session or from BotTest.tscn (which also
 ## exercises Speedrun.record_level_time via Main's level-clear flow).
 
-const SAVE_PATH := "user://kugelschlucker_speedrun.json"
+const SAVE_PATH := "user://zapmaniac_speedrun.json"
 
 
 func _initialize() -> void:

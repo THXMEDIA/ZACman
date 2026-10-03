@@ -15,7 +15,7 @@ extends Node
 
 const LevelsScript := preload("res://scripts/levels.gd")
 
-const SAVE_PATH := "user://kugelschlucker_leaderboards.json"
+const SAVE_PATH := "user://zapmaniac_leaderboards.json"
 const MAX_ENTRIES_PER_BOARD := 20
 const DEFAULT_PLAYER_NAME := "Player"
 

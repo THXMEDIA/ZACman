@@ -1,4 +1,4 @@
-// Core maze logic for "Kugelschlucker" — tested standalone before embedding in the artifact.
+// Core maze logic for "ZAPmaniac" — tested standalone before embedding in the artifact.
 // Grid convention: rows x cols, both ODD. Cells at (r,c) with r odd AND c odd are "rooms".
 // Cells with r even or c even are potential walls between rooms (or fixed walls on the border).
 // 0 = open, 1 = wall.
