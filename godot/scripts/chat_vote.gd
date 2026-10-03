@@ -4,14 +4,17 @@ extends RefCounted
 ## Viewers vote with !gut and !schlecht. One vote per user in a sliding
 ## 60-s window; a user's latest vote counts (it replaces their earlier one
 ## and restarts their 60 s). The rabbit reads the share at the moment it is
-## picked up:
+## picked up (Entscheidung Studio Head, 03.10.2026 review):
 ##
-##   good share = 60 % + 30 points × (gut − schlecht) / (gut + schlecht),
-##                clamped to 20–80 %; under 3 different voters 60 %.
+##   d          = (gut − schlecht) / (gut + schlecht)        (−1 … +1)
+##   good share = 0.60 + 0.30·d − 0.10·d²,  clamped to 20–80 %;
+##                under 3 different voters 60 %.
 ##
-## (With this formula the share can only go down to 30 % — all voters on
-## !schlecht — so the 20 % floor never bites; it is kept as the spec's
-## guard rail in case the spread is ever changed.)
+## The quadratic term makes the formula reach both ends: a unanimous
+## !gut chat gives 80 %, a unanimous !schlecht chat 20 % (the old linear
+## 60 % + 30 points × d could only go down to 30 %). Near a tie it still moves
+## like the linear one (slope 0.30 at d = 0), so a small majority shifts a
+## little and only a clear majority shifts a lot.
 ##
 ## Pure logic, no nodes and no clock of its own: the caller passes the time
 ## (Main uses its never-stopping real clock), so tests can drive it directly.
@@ -20,6 +23,7 @@ const WINDOW_S := 60.0
 const MIN_VOTERS := 3
 const P_BASE := 0.6
 const SPREAD := 0.3
+const CURVE := 0.1
 const P_MIN := 0.2
 const P_MAX := 0.8
 
@@ -82,9 +86,10 @@ static func share_for(good: int, bad: int) -> float:
 	var n := good + bad
 	if n < MIN_VOTERS:
 		return P_BASE
-	return clampf(P_BASE + SPREAD * float(good - bad) / float(n), P_MIN, P_MAX)
+	var d := float(good - bad) / float(n)
+	return clampf(P_BASE + SPREAD * d - CURVE * d * d, P_MIN, P_MAX)
 
 
-## "72 %" style percentage used by the HUD ("Kaninchen: 72 % gut").
+## "70 %" style percentage used by the HUD ("Kaninchen: 70 % gut").
 static func percent(p: float) -> int:
 	return roundi(p * 100.0)

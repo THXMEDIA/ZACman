@@ -114,11 +114,14 @@ static func ids() -> Array:
 	return out
 
 
+## The pool entry of `id`, or {} for an unknown id (N4: never silently the
+## first level — callers check is_empty(), Main.begin_game falls back to a
+## random level with a warning).
 static func by_id(id: String) -> Dictionary:
 	for lv in POOL:
 		if lv.id == id:
 			return lv
-	return POOL[0]
+	return {}
 
 
 static func index_of(id: String) -> int:

@@ -86,6 +86,26 @@ func _initialize() -> void:
 	var f2 = Fear.new()
 	_check("F&L: the old sine noise / unannounced inversion is gone", not ("NOISE_AMOUNT" in f2) and not ("_inverted" in f2))
 
+	# --- Taschenuhr: the clock is silent in the last 3 s (GD review), so the
+	# end ticks of every condition stay audible ---
+	var tu = Conditions.get_condition("taschenuhr")
+	tu.play_sound = false
+	var ticks_by_second := []
+	var remaining := 10.0
+	var last := 0
+	while remaining > 0.0:
+		tu.on_process(0.05, null, remaining)
+		remaining -= 0.05
+		if tu.ticks_played != last:
+			ticks_by_second.append(snappedf(remaining + 0.05, 0.05))
+			last = tu.ticks_played
+	var late := false
+	for t in ticks_by_second:
+		if t <= 3.0 + 1e-6:
+			late = true
+	_check("Taschenuhr: clock ticks during the first 7 s", tu.ticks_played >= 6, str(ticks_by_second))
+	_check("Taschenuhr: no clock tick in the last 3 s", not late, str(ticks_by_second))
+
 	# --- base class is a no-op ---
 	var base_condition = load("res://scripts/conditions/condition_base.gd").new()
 	_check("condition_base: modify_input passes input through", base_condition.modify_input(Vector2(0.3, 0.7), 0.1) == Vector2(0.3, 0.7))
