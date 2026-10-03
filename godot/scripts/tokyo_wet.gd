@@ -156,7 +156,8 @@ static func build_reflection_layer(maze, seed: int, force: bool = false) -> Mesh
 	mi.mesh = plane
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = Vector3((maze.cols - 1) * TokyoScenery.CELL * 0.5, 0.004, (maze.rows - 1) * TokyoScenery.CELL * 0.5)
+	# above the road paint (0.012 m), so the zebras mirror too
+	mi.position = Vector3((maze.cols - 1) * TokyoScenery.CELL * 0.5, 0.016, (maze.rows - 1) * TokyoScenery.CELL * 0.5)
 	return mi
 
 

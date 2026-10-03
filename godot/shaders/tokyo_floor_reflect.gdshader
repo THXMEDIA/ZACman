@@ -17,9 +17,9 @@ uniform float puddle_threshold = 0.6;
 uniform float gutter_amount = 0.32;
 uniform vec2 road_x = vec2(41.0, 51.0);
 uniform vec2 road_z = vec2(41.0, 51.0);
-uniform float strength = 0.75;
-uniform float asphalt_mul = 0.42; // half-wet asphalt reflects less than a puddle
-uniform float streak = 0.07; // vertical smear (screen fraction)
+uniform float strength = 1.15;
+uniform float asphalt_mul = 0.5; // half-wet asphalt reflects less than a puddle
+uniform float streak = 0.09; // vertical smear (screen fraction)
 
 varying vec3 wpos;
 

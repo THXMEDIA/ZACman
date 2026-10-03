@@ -589,7 +589,7 @@ func _build_people() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = WALKER_SHADER
 	mat.set_shader_parameter("walker_color", Style.PASSERBY)
-	mat.set_shader_parameter("energy", 0.75)
+	mat.set_shader_parameter("energy", 0.5)
 	walker_mmi = _mmi("Passanten", mm, mat)
 	for i in total:
 		p_freq_set[i] = -1.0
@@ -644,7 +644,7 @@ func _mirror(p: Vector2, m: Vector2) -> Vector2:
 ## zebra of the arm for straight crossings, near the corners for diagonals.
 func _anchors(k: int, target: int, rng: RandomNumberGenerator) -> Array:
 	var corner_mirror := [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]
-	var jit := rng.randf_range(-0.9, 0.9)
+	var jit := rng.randf_range(-1.3, 1.3)
 	var a: Vector2
 	var b: Vector2
 	if k ^ target == 1:
@@ -667,9 +667,10 @@ func _anchors(k: int, target: int, rng: RandomNumberGenerator) -> Array:
 			a = b
 			b = tmp2
 	else:
-		var off := Vector2(jit, -jit) * 0.8
-		a = _mirror(Vector2(41.6, 41.6) + off, corner_mirror[k])
-		b = _mirror(Vector2(50.4, 50.4) + off, corner_mirror[k])
+		# spread the diagonal walkers over the whole field, not one lane
+		var off := Vector2(1.0, -1.0) * rng.randf_range(-3.2, 3.2)
+		a = _mirror(Vector2(41.8, 41.8) + off * 0.5, corner_mirror[k])
+		b = _mirror(Vector2(50.2, 50.2) + off * 0.5, corner_mirror[k])
 	return [a, b]
 
 
@@ -864,8 +865,9 @@ func _build_lights() -> void:
 	for i in fl.pos.size():
 		var p: Color = fl.pos[i]
 		var c: Color = fl.col[i]
-		var big: bool = p.a > 1.0
-		_rain_pos.append(Color(p.r, p.g, p.b, 0.004 if big else 0.03))
+		var big: bool = p.a > 1.0 and fl.prio[i] > 12.0 # the big screen
+		var green: bool = c.g > c.r * 1.5 # the subway: only the drops right at the exit
+		_rain_pos.append(Color(p.r, p.g, p.b, 0.004 if big else (0.25 if green else 0.03)))
 		_rain_col.append(Color(c.r, c.g, c.b, 0.0) * (1.6 if big else 1.0))
 		_rain_prio.append(fl.prio[i])
 	_static_rain_n = _rain_pos.size()
@@ -916,6 +918,8 @@ func _build_lights() -> void:
 	smat.set_shader_parameter("puddle_tex", Wet.bake_puddle_mask(seed_value))
 	if maze_view != null and maze_view.maze != null:
 		smat.set_shader_parameter("map_size", Vector2(maze_view.maze.cols, maze_view.maze.rows) * CELL)
+		smat.set_shader_parameter("maze_cells", Vector2(maze_view.maze.cols, maze_view.maze.rows))
+		smat.set_shader_parameter("maze_tex", maze_view.maze_tex)
 	streak_mmi = _mmi("Lichtstreifen", sm, smat)
 
 	# static entries: sodium lamps (halo + cone down to the floor)
@@ -933,9 +937,9 @@ func _build_lights() -> void:
 	var mpos := Vector3(mcell.y * CELL, 0.0, mcell.x * CELL)
 	var g: Color = Style.METRO
 	hm.set_instance_transform(_lamp_count, Transform3D(Basis().scaled(Vector3.ONE * 6.0), mpos + Vector3(0, 1.5, -0.4)))
-	hm.set_instance_custom_data(_lamp_count, Color(g.r * 0.32, g.g * 0.32, g.b * 0.32, 0.5))
-	cm.set_instance_transform(_lamp_count, Figures.cone_transform(mpos + Vector3(0, 3.3, -0.6), mpos + Vector3(0, 0.0, 4.2), 2.6))
-	cm.set_instance_custom_data(_lamp_count, Color(g.r * 0.09, g.g * 0.09, g.b * 0.09, 0.5))
+	hm.set_instance_custom_data(_lamp_count, Color(g.r * 0.85, g.g * 0.85, g.b * 0.85, 0.5))
+	cm.set_instance_transform(_lamp_count, Figures.cone_transform(mpos + Vector3(0, 3.0, -0.7), mpos + Vector3(0, 0.0, 3.6), 2.4))
+	cm.set_instance_custom_data(_lamp_count, Color(g.r * 0.5, g.g * 0.5, g.b * 0.5, 0.5))
 
 
 ## Car lights: halos, beams and streaks follow the car transform.

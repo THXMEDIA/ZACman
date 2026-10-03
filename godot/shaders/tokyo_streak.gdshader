@@ -11,6 +11,10 @@ shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled, skip_vertex_transform;
 
 uniform sampler2D puddle_tex : filter_linear, repeat_disable;
+// cell map (R = wall, MazeView.maze_tex): a reflection whose light is hidden
+// behind a building from the mirror point is not drawn
+uniform sampler2D maze_tex : filter_nearest, repeat_disable;
+uniform vec2 maze_cells = vec2(47.0, 47.0);
 uniform vec2 map_size = vec2(94.0, 94.0); // world size of the mask (m)
 uniform float cell = 2.0;
 uniform float streak_len = 9.0;
@@ -20,6 +24,14 @@ varying vec3 v_col;
 varying vec2 v_uv;
 varying vec3 v_wp;
 varying float v_kind;
+
+float wall_at(vec2 xz) {
+	vec2 c = floor((xz + cell * 0.5) / cell);
+	if (c.x < 0.0 || c.y < 0.0 || c.x >= maze_cells.x || c.y >= maze_cells.y) {
+		return 1.0;
+	}
+	return textureLod(maze_tex, (c + 0.5) / maze_cells, 0.0).r;
+}
 
 void vertex() {
 	vec3 L = MODEL_MATRIX[3].xyz;
@@ -40,10 +52,18 @@ void vertex() {
 		vec2 side = vec2(-dir.y, dir.x);
 		// along: -1 towards the camera (long), +1 away (short)
 		float along = VERTEX.z * 2.0; // plane mesh: z in -0.5..0.5
-		float len = along < 0.0 ? min(streak_len, dl * 0.8) : 0.8;
+		// long smears at eye height, short ones seen from above
+		float len = along < 0.0 ? min(streak_len, dl * 0.6) * clamp(1.4 / max(cam.y, 0.1), 0.2, 1.0) : 0.8;
 		vec2 xz = P0.xz + dir * along * len + side * VERTEX.x * a;
 		wp = vec3(xz.x, 0.02, xz.y);
 		v_col *= smoothstep(0.5, 4.0, dl);
+		// occlusion: walk from the mirror point to the light over the cell map
+		float blocked = 0.0;
+		for (int k = 1; k <= 6; k++) {
+			blocked = max(blocked, wall_at(mix(P0.xz, L.xz, float(k) / 7.0)));
+		}
+		blocked = max(blocked, wall_at(P0.xz));
+		v_col *= 1.0 - blocked;
 	} else {
 		// beam pool: unit plane scaled along the car's forward (-Z)
 		vec3 fwd = -normalize(MODEL_MATRIX[2].xyz);

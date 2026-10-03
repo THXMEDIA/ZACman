@@ -126,7 +126,7 @@ static func car_mesh(body: Color, head: Color, tail: Color) -> ArrayMesh:
 ## that does not fit the instance (umbrella or not).
 static func walker_mesh(col: Color) -> ArrayMesh:
 	var t := Tubes.new()
-	var th := 0.026
+	var th := 0.021
 	var f := Vector3(0, 0, -1)
 	var r := Vector3(1, 0, 0)
 	var u := Vector3.UP

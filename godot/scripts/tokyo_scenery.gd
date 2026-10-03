@@ -191,6 +191,8 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	var paint_mat := ShaderMaterial.new()
 	paint_mat.shader = PAINT_SHADER
 	paint_mat.set_shader_parameter("paint_color", Style.PAINT)
+	paint_mat.set_shader_parameter("puddle_tex", load("res://scripts/tokyo_wet.gd").bake_puddle_mask(seed))
+	paint_mat.set_shader_parameter("map_size", Vector2(maze.cols, maze.rows) * CELL)
 	root.add_child(paint.to_instance("Fahrbahnfarbe", paint_mat))
 	var shop_mat := ShaderMaterial.new()
 	shop_mat.shader = SHOP_SHADER

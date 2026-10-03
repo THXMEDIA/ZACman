@@ -57,7 +57,10 @@ func _initialize() -> void:
 	_check("subway: pulses below 3 Hz (halo and cone)", metro_hz > 0.0 and metro_hz < 3.0 and life.cone_mmi.multimesh.get_instance_custom_data(TokyoLife.TokyoScenery.LAMPS.size()).a < 3.0, str(metro_hz))
 	var walker_lum := _lum(Style.PASSERBY) * float(life.walker_mmi.material_override.get_shader_parameter("energy"))
 	var line_lum := _lum(Style.WHITE) * Style.WHITE_ENERGY
-	_check("people: about half as bright as the building lines", walker_lum > line_lum * 0.25 and walker_lum < line_lum * 0.6, "%.2f vs %.2f" % [walker_lum, line_lum])
+	# compared on screen: after the theme's filmic tonemap and sRGB encoding
+	var white: float = load("res://scripts/city_themes.gd").get_theme("tokyo").env_tonemap_white
+	var ratio := _display(walker_lum, white) / _display(line_lum, white)
+	_check("people: about half as bright as the building lines (on screen)", ratio > 0.4 and ratio < 0.65, "%.2f (linear %.2f vs %.2f)" % [ratio, walker_lum, line_lum])
 
 	# ---- draw-call budget (statics + dynamics) ----
 	var geo := []
@@ -269,6 +272,22 @@ func _count_nodes(n: Node) -> int:
 	for ch in n.get_children():
 		k += _count_nodes(ch)
 	return k
+
+
+## Godot's filmic tonemap (Environment.TONE_MAPPER_FILMIC) plus sRGB encoding.
+func _display(x: float, white: float) -> float:
+	var t := _filmic(x) / _filmic(white)
+	return 1.055 * pow(t, 1.0 / 2.4) - 0.055 if t > 0.0031308 else 12.92 * t
+
+
+func _filmic(x: float) -> float:
+	var a := 0.15
+	var b := 0.5
+	var c := 0.1
+	var d := 0.2
+	var e := 0.02
+	var f := 0.3
+	return ((x * (a * x + c * b) + d * e) / (x * (a * x + b) + d * f)) - e / f
 
 
 func _lum(c: Color) -> float:

@@ -36,10 +36,10 @@ uniform float streak_gain = 2.6;
 uniform float fake_refl = 1.0; // 1 without SSR, lower with SSR (Forward+)
 
 uniform vec3 shop_color : source_color = vec3(1.0, 0.54, 0.13);
-uniform float shop_gain = 0.10;
+uniform float shop_gain = 0.085;
 uniform vec3 sky_color : source_color = vec3(0.11, 0.075, 0.047);
-uniform float sky_gain = 0.55;
-uniform float floor_lift = 0.006;
+uniform float sky_gain = 0.8;
+uniform float floor_lift = 0.009;
 
 varying vec3 wpos;
 

@@ -5,7 +5,7 @@
 shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
 
-uniform float gain = 1.0;
+uniform float gain = 3.0;
 
 varying vec3 v_col;
 
