@@ -14,7 +14,7 @@ bleibt spielbar, wird aber nicht mehr parallel weiterentwickelt.
 ```
 godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
-  shaders/          ascii_post.gdshader — Matrix-ASCII-Bildschirmeffekt
+  shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; matrix_rain, mario_vista (nicht mehr im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
   tests/            Headless-Tests (Labyrinth, Speedrun, Manhattan, Twitch, Bot-Simulation)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
@@ -48,9 +48,11 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   JS-Logik (`core/maze-core.js`) — beide sind unabhängig voneinander auf
   Konnektivität getestet.
 - **Gegner**: vier bis fünf blockige Pixel-Geister (`godot/scripts/ghost_mesh.gd`
-  — ein MultiMesh aus kleinen Würfeln, das die klassische Pac-Man-Geist-Silhouette
-  nachbildet, im selben chunky Retro-Look wie der ASCII-Shader und die
-  Wort-Mesh-Objekte) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
+  — ein MultiMesh aus kleinen Würfeln in der eigenen Silhouette „Schild mit
+  Visier“: Hörner, ein Sehschlitz, Spitze unten; keine Kuppel, kein
+  Zackensaum, keine Augen. Farben je Level-Look aus `city_themes.gd`: Jäger
+  Rot, Abfänger Zitron, Streuner Violett (nur Lagune), Lauerer Bernstein,
+  Nachzügler Magenta; verängstigt Mint `#BDFCEF`) mit BFS-Pfadsuche zum Spieler; im "Frightened"-Modus nach
   einer Power-Kugel fliehen sie und lassen sich fressen.
 - **Minimap**: zeigt neben Wänden, Spieler und Gegnern jetzt auch die
   verbleibenden Pellets/Power-Pellets (`hud.gd::_draw_minimap`, liest direkt
@@ -60,30 +62,22 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   beendet, sobald `remaining_pickups() <= 0` ist.
 - **Sound**: komplett synthetisch (Godot: zur Ladezeit gerenderte PCM-Buffer
   aus Oszillator + Hüllkurve; Web: Web-Audio-Oszillatoren) — keine Samples.
-- **Matrix-ASCII-Look**: die Wände der Matrix-Level sind direkt mit
-  `godot/shaders/matrix_rain.gdshader` geshadet (`CityTheme.wall_matrix_rain`,
-  angewendet in `MazeView._make_materials`) — durchlaufende, zufällige grüne
-  Zeichen (8x8-Bitmuster, kein Font-Asset nötig), die von oben nach unten
-  scrollen wie ein Terminal, mit eigenem Tempo/Phase je Spalte. Immer und in
-  jeder Entfernung voll sichtbar, nicht nur ab einer gewissen Distanz — ein
-  Materialeffekt, kein Screen-Space-Blend. Sehr feines Raster (48x90 Zeichen
-  pro Wandfläche), damit es nicht blockig wirkt.
-- **Boden/Himmel-Mashup** (bewusster Stilbruch zu den grünen Matrix-Wänden):
-  brauner Erdboden, blauer "Himmel" als Deckenfarbe mit verstreuten weißen
-  Voxel-Wolken im Super-Mario-/Minecraft-Pixel-Look (`godot/scripts/
-  cloud_mesh.gd`, gesteuert über `CityTheme.ceil_sky_clouds`). Sowohl die
-  Wolken als auch die Himmel-Deckenebene selbst schweben dafür bei
-  `WALL_H * 1.5` statt direkt auf Höhe der Wandoberkanten (`MazeView.
-  CLOUD_HEIGHT_MULT`) — vorher hingen die Wolken quasi auf den Mauern statt
-  sichtbar darüber; ein zusätzlicher fester Mindestabstand
-  (`CLOUD_MIN_WALL_CLEARANCE`, 0.6 Einheiten über den Wandoberkanten) sorgt
-  dafür, dass auch eine ungewöhnlich große (zufällig skalierte) Wolke nie
-  näher an die Mauern heranrutscht. An beiden
-  Enden des seitlichen Wrap-Tunnels (`maze.tunnel_row`) steht statt des
-  blauen Himmels eine gemalte Super-Mario-artige Kulisse
-  (`godot/shaders/mario_vista.gdshader`: Hügel, Büsche, Sonne, bewusst in
-  warmen statt blauen Tönen) — sonst würde der Tunnelausgang einfach ins
-  flache Himmelblau auslaufen.
+- **Speedrun-Look „Lagune“** (Spezifikation `docs/design/kaninchen-speedrun.md`
+  1.1, umgesetzt aus dem Art-Prototyp `tools/art/speedrun_proto/pacman_v2.patch`):
+  dunkle Kanäle, türkise Leuchtkante `#1EF2C8` oben an jeder Wand, Verlauf
+  zum Sockel je Level (`Levels.POOL[].look`: „lagune“ `#0B7FA8` oder „riff“
+  `#1FBF5A`), Sockelstriche im 0,5-m-Takt, senkrechte Linien nur an freien
+  Wandenden (Nachbar-Maske als MultiMesh-Custom-Data), beleuchteter Boden
+  mit 2-m-Raster und Kreuzungsrahmen, CRT-Overlay (270 Zeilen, Vignette).
+  Shader: `godot/shaders/pacman_wall.gdshader`, `pacman_floor.gdshader`,
+  `crt_overlay.gdshader`; Farben als Konstanten in `city_themes.gd`
+  (`LOOK_*`, `GHOST_*`). Kugeln sind Creme-Würfel, die Power-Kugel eine mit
+  2 Hz blinkende Raute. Keine Wolken, kein Himmel, kein Mario-Vista mehr im
+  Speedrun (`ceil_sky_clouds = false`); Explorer-Level behalten ihren Look.
+  `MazeView.set_look()`/`register_look()` tauschen zur Laufzeit die
+  Materialien derselben Wand- und Boden-Instanzen (Grundlage für die
+  Konditions-Looks). Der Matrix-Regen-Shader (`matrix_rain.gdshader`) wird
+  zur Kondition.
 - **Startbildschirm-Auswahl**: zwei gleichberechtigte Modus-Buttons,
   "MATRIX-LEVEL" (die klassischen Speedrun-Level) und "EXPLORER-LEVEL"
   (Manhattan) — beide von Anfang an spielbar, nicht mehr hinter einem
@@ -103,7 +97,11 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Schlüssel `level|kondition[|modus]`, siehe `levels.gd::board_key`).
   Modi: `solo`, `chat` (sobald ein Twitch-Befehl im Level gewirkt hat),
   `pvp` und `coop` (reserviert für den geplanten Mehrspieler, noch ohne
-  Spielmodus). Alte Spielstände werden beim Laden migriert. Die Uhr läuft
+  Spielmodus). Alte Spielstände werden beim Laden migriert; Spielstände
+  tragen ein Versionsfeld (`SAVE_VERSION`), Werte werden beim Laden auf
+  Typ geprüft, geschrieben wird atomar über eine `.tmp`-Datei. Tests nutzen
+  einen eigenen Speicherordner (`save_paths.gd`, `tests/save_isolation.gd`)
+  und fassen echte Spielstände nicht an. Die Uhr läuft
   auch in der Pause weiter; Effekt-Timer (Frightened, Word, Fear) bleiben
   in der Pause stehen (`main.gd`: `now` vs. `real_now`).
 - **Level-Pool** (`godot/scripts/levels.gd`): sechs Speedrun-Level mit festem
