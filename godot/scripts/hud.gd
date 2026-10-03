@@ -62,7 +62,7 @@ var lb_level_index := 0
 var lb_title_label: Label
 var lb_level_label: Label
 var lb_info_label: Label
-var lb_rows: VBoxContainer
+var lb_rows: GridContainer
 var lb_tabs := {}
 ## The ISO week the HUD treats as "this week" (Main sets it; tests force it).
 var current_week := Vector2i(0, 0)
@@ -392,6 +392,9 @@ func _build_start_panel() -> void:
 	chaos_start.text = "Chaos-Modus: echter Zufall beim Kaninchen (eigenes Brett)"
 	chaos_start.toggled.connect(func(pressed: bool): chaos_toggled.emit(pressed))
 	box.add_child(chaos_start)
+	var lb_btn := _make_button("BESTENLISTE")
+	lb_btn.pressed.connect(func(): show_leaderboard())
+	box.add_child(lb_btn)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still
@@ -411,10 +414,6 @@ func _build_start_panel() -> void:
 
 	reduce_fx_start = _make_reduce_fx_toggle()
 	box.add_child(reduce_fx_start)
-
-	var lb_btn := _make_button("BESTENLISTE")
-	lb_btn.pressed.connect(func(): show_leaderboard())
-	box.add_child(lb_btn)
 
 
 ## "Effekte reduzieren" (spec 1.2) — no settings menu yet, so the same switch
@@ -502,9 +501,12 @@ func _build_leaderboard_panel() -> void:
 	lb_info_label = _subtitle_label("")
 	lb_info_label.add_theme_font_size_override("font_size", 13)
 	box.add_child(lb_info_label)
-	lb_rows = VBoxContainer.new()
-	lb_rows.add_theme_constant_override("separation", 2)
-	box.add_child(lb_rows)
+	var rows_center := CenterContainer.new()
+	box.add_child(rows_center)
+	lb_rows = GridContainer.new()
+	lb_rows.add_theme_constant_override("h_separation", 18)
+	lb_rows.add_theme_constant_override("v_separation", 2)
+	rows_center.add_child(lb_rows)
 	var back := _make_button("ZURÜCK")
 	back.pressed.connect(func(): show_only(start_panel))
 	box.add_child(back)
@@ -529,19 +531,27 @@ func _step_lb_level(d: int) -> void:
 	refresh_leaderboard()
 
 
-## The lines of the current board/level (also read by tests): every row
-## "1.  1:23.45   KW 40   Player" (no week off the weekly board).
-func leaderboard_lines() -> Array:
+## The rows of the current board/level, top 10: [rank, time, (week,) name]
+## — the week column only on the weekly board.
+func leaderboard_rows() -> Array:
 	var lv: Dictionary = LevelsScript.POOL[lb_level_index]
 	var out := []
 	var top: Array = Leaderboard.get_top(lv.id, lb_board, 10)
 	for i in top.size():
 		var e: Dictionary = top[i]
-		var line := "%2d.  %s" % [i + 1, Speedrun.format_time(e.time)]
+		var row := ["%d." % (i + 1), Speedrun.format_time(e.time)]
 		if lb_board == LevelsScript.BOARD_WEEK:
-			line += "   %s" % WhiteRabbitScript.week_display(e.get("week", ""), _week_now())
-		line += "   %s" % e.name
-		out.append(line)
+			row.append(WhiteRabbitScript.week_display(e.get("week", ""), _week_now()))
+		row.append(e.name)
+		out.append(row)
+	return out
+
+
+## The same rows as text lines ("1.  1:23.45  KW 40  Player"), for tests.
+func leaderboard_lines() -> Array:
+	var out := []
+	for row in leaderboard_rows():
+		out.append("  ".join(PackedStringArray(row)))
 	return out
 
 
@@ -577,16 +587,21 @@ func refresh_leaderboard() -> void:
 			info = "Der Chat hat mitgeholfen oder das Kaninchen gewichtet"
 	lb_info_label.text = info
 	for ch in lb_rows.get_children():
+		lb_rows.remove_child(ch)
 		ch.queue_free()
-	var lines := leaderboard_lines()
-	if lines.is_empty():
-		lines = ["Noch keine Einträge."]
-	for line in lines:
-		var l := Label.new()
-		l.text = line
-		l.add_theme_font_size_override("font_size", 14)
-		l.add_theme_color_override("font_color", RABBIT_WHITE)
-		lb_rows.add_child(l)
+	var rows := leaderboard_rows()
+	lb_rows.columns = 4 if lb_board == LevelsScript.BOARD_WEEK else 3
+	if rows.is_empty():
+		lb_rows.columns = 1
+		rows = [["Noch keine Einträge."]]
+	for row in rows:
+		for col in row.size():
+			var l := Label.new()
+			l.text = row[col]
+			l.add_theme_font_size_override("font_size", 14)
+			l.add_theme_color_override("font_color", PELLET_COLOR if col == 1 else (MUTED if col == 2 and row.size() == 4 else RABBIT_WHITE))
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if col <= 1 else HORIZONTAL_ALIGNMENT_LEFT
+			lb_rows.add_child(l)
 
 
 func _build_gameover_panel() -> void:
