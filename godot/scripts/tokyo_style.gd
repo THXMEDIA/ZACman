@@ -12,6 +12,7 @@ extends RefCounted
 const SKY := Color("060504")
 const MASS := Color("030304")
 const ASPHALT := Color("0b0a0c")
+const SIDEWALK := Color("100e0f") # sidewalks, plaza, alleys: a hair lighter than the road
 const FOG := Color("1c130c")
 const AMBER := Color("ff9a2e") # world, sodium
 const WHITE := Color("f2efe8") # world, cold white

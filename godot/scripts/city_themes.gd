@@ -8,6 +8,7 @@ extends RefCounted
 const ManhattanMazeScript := preload("res://scripts/manhattan_maze.gd")
 const CityThemeScript := preload("res://scripts/city_theme.gd")
 const TokyoMazeScript := preload("res://scripts/tokyo_maze.gd")
+const TokyoWetScript := preload("res://scripts/tokyo_wet.gd")
 const TokyoSceneryScript := preload("res://scripts/tokyo_scenery.gd")
 const TokyoStyle := preload("res://scripts/tokyo_style.gd")
 
@@ -296,8 +297,12 @@ static func tokyo() -> Resource:
 	t.pellet_trail_provider_script = TokyoMazeScript
 
 	t.floor_color = TokyoStyle.ASPHALT
-	t.floor_roughness = 0.24 # wet, glossy; SSR fine-tuning and puddle mask: M2
+	t.floor_roughness = 0.24 # only for a floor without the shader below
 	t.floor_metallic = 0.0
+	# M2: wet floor shader — baked puddle mask, roughness mask for SSR,
+	# light pools and reflection streaks (tokyo_floor.gdshader, tokyo_wet.gd).
+	t.floor_shader_path = "res://shaders/tokyo_floor.gdshader"
+	t.floor_setup_script = TokyoWetScript
 	t.ceil_enabled = false
 
 	t.env_bg_color = TokyoStyle.SKY

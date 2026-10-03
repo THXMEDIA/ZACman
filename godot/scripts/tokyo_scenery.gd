@@ -197,6 +197,12 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	shop_mat.set_shader_parameter("glow_color", Style.SHOP)
 	shop_mat.set_shader_parameter("energy", 0.24)
 	root.add_child(shop.to_instance("Ladenfronten", shop_mat))
+	# Wet-floor reflection without SSR (Compatibility renderer); with SSR
+	# (Forward+) there is none, SSR reflects the real scene (tokyo_wet.gd).
+	# Loaded at runtime: tokyo_wet.gd preloads this script.
+	var refl = load("res://scripts/tokyo_wet.gd").build_reflection_layer(maze, seed)
+	if refl != null:
+		root.add_child(refl)
 
 	root.set_meta("line_segments", lines.segment_count())
 	root.set_meta("line_signature", lines.signature())

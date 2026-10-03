@@ -148,9 +148,7 @@ func _initialize() -> void:
 	_check("view: Tokyo scenery built", mv.scenery_root != null and mv.scenery_root.get_meta("line_segments", 0) > 500, str(mv.scenery_root.get_meta("line_segments", 0) if mv.scenery_root != null else -1))
 
 	# ---- draw-call budget of the statics ----
-	var pellet_nodes := {}
-	for m in mv.pellet_meshes:
-		pellet_nodes[m] = true
+	var pellet_nodes := {mv.pellet_mmi: true}
 	var geo := []
 	var lights := []
 	_collect(mv, geo, lights, pellet_nodes)

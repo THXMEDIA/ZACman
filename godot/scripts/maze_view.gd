@@ -25,7 +25,11 @@ var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "
 var city_theme # CityTheme — the resolved visual/gameplay bundle for `theme` (see city_theme.gd)
 var pellet_cells: Array = [] # Array[Vector2i]
 var pellet_alive: Array = [] # Array[bool], parallel to pellet_cells
-var pellet_meshes: Array = [] # Array[MeshInstance3D], parallel to pellet_cells
+## All pellets of a level are ONE MultiMesh (one draw call, docs/design/
+## tokyo-explorer.md M2): instance i is pellet_cells[i]; an eaten pellet's
+## instance is collapsed to a zero-size transform (no node per pellet).
+var pellet_mmi: MultiMeshInstance3D = null
+var pellet_multimesh: MultiMesh = null
 var power_cells: Array = [] # Array[Vector2i]
 var power_nodes: Array = [] # Array[MeshInstance3D]
 var power_alive: Array = [] # Array[bool]
@@ -116,7 +120,8 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 		child.queue_free()
 	pellet_cells.clear()
 	pellet_alive.clear()
-	pellet_meshes.clear()
+	pellet_mmi = null
+	pellet_multimesh = null
 	power_cells.clear()
 	power_nodes.clear()
 	power_alive.clear()
@@ -475,6 +480,8 @@ func _build_floor_ceiling() -> void:
 		fsm.set_shader_parameter("maze_size", Vector2(maze.cols, maze.rows))
 		fsm.set_shader_parameter("floor_albedo", city_theme.floor_color)
 		_apply_level_look(fsm)
+		if city_theme.floor_setup_script != null:
+			city_theme.floor_setup_script.setup_floor(fsm, maze, scenery_seed)
 		floor_mesh.material_override = fsm
 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
 	add_child(floor_mesh)
@@ -855,13 +862,18 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 			pellet_cells.erase(rabbit_cell)
 
 	var sphere: Mesh = _pickup_mesh(city_theme.pellet_shape, city_theme.pellet_size, pellet_material)
-	for cell in pellet_cells:
-		var mesh := MeshInstance3D.new()
-		mesh.mesh = sphere
-		mesh.position = Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
-		add_child(mesh)
-		pellet_meshes.append(mesh)
+	pellet_multimesh = MultiMesh.new()
+	pellet_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	pellet_multimesh.mesh = sphere
+	pellet_multimesh.instance_count = pellet_cells.size()
+	for i in pellet_cells.size():
+		var cell: Vector2i = pellet_cells[i]
+		pellet_multimesh.set_instance_transform(i, Transform3D(Basis(), Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)))
 		pellet_alive.append(true)
+	pellet_mmi = MultiMeshInstance3D.new()
+	pellet_mmi.name = "Kugeln"
+	pellet_mmi.multimesh = pellet_multimesh
+	add_child(pellet_mmi)
 
 	var power_sphere: Mesh = _pickup_mesh(city_theme.power_shape, city_theme.power_size, power_material)
 	for cell in power_cells:
@@ -882,6 +894,29 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 
 	if rabbit_cell.x >= 0:
 		_build_rabbit_mesh(rabbit_cell)
+
+
+## Collapses pellet i's instance (zero scale): gone from the screen without
+## touching the other instances or the draw call.
+func _hide_pellet(i: int) -> void:
+	var p := pellet_position(i)
+	pellet_multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), p))
+
+
+## World position of pellet i (its cell center at the theme's pellet height).
+func pellet_position(i: int) -> Vector3:
+	var cell: Vector2i = pellet_cells[i]
+	return Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
+
+
+## Whether pellet i is still drawn (not eaten; an eaten one is collapsed).
+func pellet_visible(i: int) -> bool:
+	return pellet_multimesh != null and pellet_alive[i]
+
+
+## The one mesh every pellet instance uses (sphere or cube of the theme).
+func pellet_mesh() -> Mesh:
+	return pellet_multimesh.mesh if pellet_multimesh != null else null
 
 
 func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
@@ -961,7 +996,7 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 		var d := Vector2(cell.y * CELL - pos.x, cell.x * CELL - pos.z).length()
 		if d < 0.42:
 			pellet_alive[i] = false
-			pellet_meshes[i].visible = false
+			_hide_pellet(i)
 			result.pellet = true
 
 	for i in power_cells.size():

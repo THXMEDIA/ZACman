@@ -861,7 +861,7 @@ func _run_look_checks() -> void:
 	if overlay_ok:
 		var crt: Shader = overlay.get_child(0).material.shader
 		_check("look: CRT overlay has 270 lines per image height, no TIME (no flicker)", crt.code.find("line_count = 270.0") != -1 and crt.code.find("TIME") == -1)
-	_check("look: pellets are cream cubes at ~0.4 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is BoxMesh and absf(mv.pellet_meshes[0].position.y - 0.42) < 0.01 and ct.pellet_color.is_equal_approx(Color("fff0c8")))
+	_check("look: pellets are cream cubes at ~0.4 m", mv.pellet_cells.size() > 0 and mv.pellet_mesh() is BoxMesh and absf(mv.pellet_position(0).y - 0.42) < 0.01 and ct.pellet_color.is_equal_approx(Color("fff0c8")))
 	_check("look: power pellet is a diamond blinking below 3 Hz", mv.power_nodes.size() > 0 and mv.power_nodes[0].mesh is BoxMesh and absf(mv.power_nodes[0].rotation.x) > 0.1 and ct.power_blink_hz > 0.0 and ct.power_blink_hz < 3.0)
 	_check("look: minimap walls #128F7C", ct.minimap_wall_color.is_equal_approx(Color("128f7c")))
 	_check("look: no wall line in the blue hue range 215-250 deg (all looks + minimap)", _theme_line_colors_not_blue(ct))
@@ -937,7 +937,7 @@ func _run_look_checks() -> void:
 	_check("manhattan unchanged: floor color", mv.floor_mesh.material_override.albedo_color.is_equal_approx(man.floor_color))
 	_check("manhattan unchanged: no level look", mv.level_look_id == "" and mv.level_look.is_empty())
 	_check("manhattan unchanged: environment", main.world_env.environment.background_color.is_equal_approx(man.env_bg_color) and main.world_env.environment.fog_light_color.is_equal_approx(man.env_fog_color))
-	_check("manhattan unchanged: pellets are the original spheres at 0.32 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is SphereMesh and is_equal_approx(mv.pellet_meshes[0].mesh.radius, 0.11) and is_equal_approx(mv.pellet_meshes[0].position.y, 0.32))
+	_check("manhattan unchanged: pellets are the original spheres at 0.32 m", mv.pellet_cells.size() > 0 and mv.pellet_mesh() is SphereMesh and is_equal_approx(mv.pellet_mesh().radius, 0.11) and is_equal_approx(mv.pellet_position(0).y, 0.32))
 	_check("manhattan unchanged: original minimap and pickup colors", man.minimap_wall_color == defaults.minimap_wall_color and man.minimap_bg_color == defaults.minimap_bg_color and man.pellet_color == defaults.pellet_color)
 
 

@@ -209,6 +209,10 @@ var scenery_builder_script: Script = null
 ## MazeView's generic metro trails over the odd/odd room cells); null = the
 ## generic trails. Only used with pellets_follow_metro_trails.
 var pellet_trail_provider_script: Script = null
+## A script with a static `setup_floor(material: ShaderMaterial, maze, seed:
+## int)` that MazeView calls once the floor_shader_path material exists
+## (Tokyo: baked puddle mask, the lights the wet floor reflects); null = none.
+var floor_setup_script: Script = null
 
 ## ---- Gameplay ----
 ## Manhattan-style "calm explorer" levels have no power pellets, no white
