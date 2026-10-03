@@ -50,6 +50,7 @@ const RABBIT_HOVER := 0.22
 const RABBIT_BOB := 0.05
 const RABBIT_BOB_HZ := 0.4
 const RABBIT_TURN_RAD_S := 1.5 # one turn in ~4.2 s = 0.24 Hz
+const RABBIT_SCALE := 1.3 # ears up to ~1.5 m: reads from down the corridor
 
 var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
@@ -638,6 +639,7 @@ func _build_rabbit_mesh(cell: Vector2i) -> void:
 	root.position = Vector3(cell.y * CELL, 0.0, cell.x * CELL)
 	var figure := PixelRabbitMeshScript.build({"color": RABBIT_COLOR})
 	figure.name = "Figure"
+	figure.scale = Vector3.ONE * RABBIT_SCALE
 	figure.position.y = RABBIT_HOVER
 	root.add_child(figure)
 	rabbit_material = PixelRabbitMeshScript.body_material(figure)

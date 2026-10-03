@@ -98,7 +98,7 @@ static func build(options: Dictionary = {}) -> Node3D:
 	mat.albedo_color = color
 	mat.emission_enabled = true
 	mat.emission = color
-	mat.emission_energy_multiplier = 0.55
+	mat.emission_energy_multiplier = 0.85
 	mat.roughness = 0.7
 
 	var eye_mat := StandardMaterial3D.new()

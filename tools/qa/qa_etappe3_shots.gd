@@ -92,8 +92,9 @@ func _run() -> void:
 	await _shot("e02_hud_chaos")
 	main.set_chaos_mode(false)
 
-	# 3. chat mode: the rabbit share chip (7 gut / 3 schlecht -> 72 %)
+	# 3. chat mode: the rabbit share chip (7 gut / 3 schlecht -> 70 %)
 	twitch.enabled = true
+	twitch._connected = true # the chip needs a connected chat (N5); no network here
 	main.begin_game("klassik-2")
 	_calm()
 	for i in 7:
@@ -103,7 +104,7 @@ func _run() -> void:
 	await _frames(30)
 	await _shot("e03_chat_balken")
 
-	# 4. pick the rabbit up: title card "Chat 72 % → ..."
+	# 4. pick the rabbit up: title card "Chat 70 % → ..."
 	var rn = main.maze_view.rabbit_node
 	main.player.global_position = Vector3(rn.position.x, main.player.global_position.y, rn.position.z)
 	await _frames(3)
@@ -113,6 +114,7 @@ func _run() -> void:
 	await _shot("e04_titelkarte_chat")
 	main._end_condition(false)
 	twitch.enabled = false
+	twitch._connected = false
 	main.chat_vote.clear()
 
 	# 5./6. Bestenliste: weekly board with weeks, chaos board
