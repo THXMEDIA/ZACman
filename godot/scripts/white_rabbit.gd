@@ -51,6 +51,21 @@ static func week_label(week: Vector2i) -> String:
 	return "%d-W%02d" % [week.x, week.y]
 
 
+## Short German display of a stored week label ("2026-W40"): "KW 40", or
+## "KW 52/2025" when it is not the year of `current` (Vector2i.ZERO = the
+## current local week). "" or a malformed label (a time from before weeks
+## were stored) -> "KW ?".
+static func week_display(label: String, current: Vector2i = Vector2i.ZERO) -> String:
+	var parts := label.split("-W")
+	if parts.size() != 2 or not parts[0].is_valid_int() or not parts[1].is_valid_int():
+		return "KW ?"
+	var cur := current if current.x > 0 else current_iso_week()
+	var year := parts[0].to_int()
+	if year == cur.x:
+		return "KW %d" % parts[1].to_int()
+	return "KW %d/%d" % [parts[1].to_int(), year]
+
+
 ## The seed of a level's rabbit in a given week: hash of "level_id|YYYY-Www".
 static func week_seed(level_id: String, week: Vector2i) -> int:
 	return ("%s|%s" % [level_id, week_label(week)]).hash()
@@ -63,7 +78,8 @@ static func week_rng(level_id: String, week: Vector2i) -> RandomNumberGenerator:
 	return rng
 
 
-## A generator with real randomness (Chaos mode, Etappe 3).
+## A generator with real randomness (a random seed): Chaos mode, and a rabbit
+## whose good/bad ratio the Twitch chat shifted (spec 2.5/2.6).
 static func chaos_rng() -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()

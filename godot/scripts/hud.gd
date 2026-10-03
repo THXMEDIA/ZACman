@@ -8,6 +8,7 @@ signal resume_pressed
 signal restart_pressed
 signal manhattan_pressed
 signal reduce_fx_toggled(on: bool)
+signal chaos_toggled(on: bool)
 signal twitch_toggled(is_enabled: bool, channel: String)
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
@@ -20,6 +21,12 @@ const DANGER := Color(1.0, 0.231, 0.365)
 const COND_GOOD := Color("3ce37a")
 const COND_BAD := Color("ff3cc8")
 const RABBIT_WHITE := Color("f2f2ed")
+## Board badge colors (spec 2.5): the weekly board neutral, Chaos amber,
+## Chat violet (Twitch-ish) — none of them the good/bad condition colors.
+const BOARD_COLORS := {"woche": Color(1.0, 0.82, 0.4), "chaos": Color("ffa41f"), "chat": Color("b78cff")}
+const MUTED := Color(0.56, 0.64, 0.78)
+const LevelsScript := preload("res://scripts/levels.gd")
+const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
 
 var score_label: Label
 var level_label: Label
@@ -38,7 +45,27 @@ var levelclear_label: Label
 var levelclear_sub: Label
 
 var pause_note_label: Label
-var mode_label: Label
+## Board chip (BRETT): "KW 40" on the weekly board, "CHAOS", "CHAT".
+var board_label: Label
+var board_chip: Control
+## Chat mode (Twitch on): the rabbit's current good share (spec 2.6).
+var chat_chip: PanelContainer
+var chat_share_label: Label
+var chat_share_bar: Control
+var chat_share := 0.6
+var chat_share_voters := 0
+var chaos_start: CheckBox
+## Bestenliste (start screen): board tabs, level switcher, top entries.
+var leaderboard_panel: PanelContainer
+var lb_board := "woche"
+var lb_level_index := 0
+var lb_title_label: Label
+var lb_level_label: Label
+var lb_info_label: Label
+var lb_rows: VBoxContainer
+var lb_tabs := {}
+## The ISO week the HUD treats as "this week" (Main sets it; tests force it).
+var current_week := Vector2i(0, 0)
 var reduce_fx_start: CheckBox
 var reduce_fx_pause: CheckBox
 ## Condition title card (top, under the power bar) and the start intro.
@@ -79,6 +106,7 @@ func _ready() -> void:
 	_build_start_panel()
 	_build_pause_panel()
 	_build_gameover_panel()
+	_build_leaderboard_panel()
 	_build_levelclear_label()
 	_build_condition_card()
 	_build_start_intro()
@@ -111,9 +139,11 @@ func _build_hud_bar() -> void:
 	level_label = _make_chip(left, "LEVEL", "1")
 	timer_label = _make_chip(left, "ZEIT", "0:00.00")
 	best_label = _make_chip(left, "BESTZEIT", "--:--")
-	mode_label = _make_chip(left, "MODUS", "")
-	mode_label.get_parent().get_parent().visible = false
+	board_label = _make_chip(left, "BRETT", "")
+	board_chip = board_label.get_parent().get_parent()
+	board_chip.visible = false
 	timed_chips = [score_label.get_parent().get_parent(), timer_label.get_parent().get_parent(), best_label.get_parent().get_parent()]
+	_build_chat_chip(left)
 
 	# Debug overlay (FPS / player position / cell) — hidden unless
 	# set_debug_overlay(true) is called (F3 in debug builds, see main.gd).
@@ -206,14 +236,60 @@ func _build_power_timer() -> void:
 func set_explorer_hud(is_explorer: bool) -> void:
 	for chip in timed_chips:
 		chip.visible = not is_explorer
-	set_mode_badge("")
+	if is_explorer:
+		set_board_badge("")
+		set_chat_share_visible(false)
 
 
-## Shows a run-mode badge under the best time ("CHAT" once a chat command took
-## effect in this level — its time goes to the chat board). "" hides it.
-func set_mode_badge(text: String) -> void:
-	mode_label.text = text
-	mode_label.get_parent().get_parent().visible = text != ""
+## Board badge under the best time (spec 2.5): on the weekly board the week
+## of its rabbits ("KW 40"), otherwise "CHAOS" or "CHAT" in their own color.
+## "" hides it (Manhattan).
+func set_board_badge(board: String, week_text: String = "") -> void:
+	board_chip.visible = board != ""
+	if board == "":
+		board_label.text = ""
+		return
+	board_label.text = ("WOCHE · %s" % week_text) if board == LevelsScript.BOARD_WEEK else board.to_upper()
+	board_label.add_theme_color_override("font_color", BOARD_COLORS.get(board, PELLET_COLOR))
+
+
+## Chat mode chip (spec 2.6): "Kaninchen: 72 % gut" with a small green /
+## magenta bar; under 3 different voters the base share applies, the chip
+## then says how many voted.
+func _build_chat_chip(parent: Control) -> void:
+	chat_chip = PanelContainer.new()
+	chat_chip.add_theme_stylebox_override("panel", _panel_style())
+	chat_chip.visible = false
+	parent.add_child(chat_chip)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	chat_chip.add_child(col)
+	chat_share_label = Label.new()
+	chat_share_label.add_theme_font_size_override("font_size", 13)
+	chat_share_label.add_theme_color_override("font_color", RABBIT_WHITE)
+	col.add_child(chat_share_label)
+	chat_share_bar = Control.new()
+	chat_share_bar.custom_minimum_size = Vector2(150, 6)
+	chat_share_bar.draw.connect(func():
+		var w := chat_share_bar.size.x * clampf(chat_share, 0.0, 1.0)
+		chat_share_bar.draw_rect(Rect2(0, 0, w, chat_share_bar.size.y), COND_GOOD)
+		chat_share_bar.draw_rect(Rect2(w, 0, chat_share_bar.size.x - w, chat_share_bar.size.y), COND_BAD))
+	col.add_child(chat_share_bar)
+
+
+func set_chat_share_visible(on: bool) -> void:
+	chat_chip.visible = on
+
+
+## `share` 0..1 (good), `voters` = different voters in the 60-s window.
+func set_chat_share(share: float, voters: int, min_voters: int) -> void:
+	chat_share = share
+	chat_share_voters = voters
+	var text := "Kaninchen: %d %% gut" % roundi(share * 100.0)
+	if voters < min_voters:
+		text += "  (Chat: %d/%d Stimmen)" % [voters, min_voters]
+	chat_share_label.text = text
+	chat_share_bar.queue_redraw()
 
 
 ## Shows/hides the DEBUG chip in the top HUD bar (F3 in debug builds).
@@ -288,7 +364,7 @@ func _build_start_panel() -> void:
 	twitch_row.add_theme_constant_override("separation", 8)
 	box.add_child(twitch_row)
 	twitch_toggle = CheckBox.new()
-	twitch_toggle.text = "Twitch-Chat-Effekte (!power, !fruit)"
+	twitch_toggle.text = "Twitch-Chat (!power, !fruit, !gut, !schlecht)"
 	twitch_row.add_child(twitch_toggle)
 	twitch_channel_edit = LineEdit.new()
 	twitch_channel_edit.placeholder_text = "twitch-kanal"
@@ -296,7 +372,7 @@ func _build_start_panel() -> void:
 	twitch_row.add_child(twitch_channel_edit)
 	twitch_toggle.toggled.connect(func(pressed: bool): twitch_toggled.emit(pressed, twitch_channel_edit.text))
 
-	twitch_status_label = _subtitle_label("Aus — fuer ernsthafte Speedruns ausgeschaltet lassen.")
+	twitch_status_label = _subtitle_label("Aus — für ernsthafte Speedruns ausgeschaltet lassen.")
 	twitch_status_label.add_theme_font_size_override("font_size", 11)
 	box.add_child(twitch_status_label)
 
@@ -307,9 +383,13 @@ func _build_start_panel() -> void:
 	var btn := _make_button("SPEEDRUN")
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
-	var speedrun_sub := _subtitle_label("Zufälliges Level, Geister, Zeitjagd. In jedem Level sitzt ein weißes Kaninchen: freiwillig, mit einer Kondition der Woche – gut oder schlecht. Bestzeiten pro Level und Modus (Solo, Chat).")
+	var speedrun_sub := _subtitle_label("Zufälliges Level, Geister, Zeitjagd. In jedem Level sitzt ein weißes Kaninchen: freiwillig, mit einer Kondition der Woche – gut oder schlecht. Bestzeiten pro Level und Brett (Woche, Chaos, Chat).")
 	speedrun_sub.add_theme_font_size_override("font_size", 11)
 	box.add_child(speedrun_sub)
+	chaos_start = CheckBox.new()
+	chaos_start.text = "Chaos-Modus: echter Zufall beim Kaninchen (eigenes Brett)"
+	chaos_start.toggled.connect(func(pressed: bool): chaos_toggled.emit(pressed))
+	box.add_child(chaos_start)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still
@@ -330,6 +410,10 @@ func _build_start_panel() -> void:
 	reduce_fx_start = _make_reduce_fx_toggle()
 	box.add_child(reduce_fx_start)
 
+	var lb_btn := _make_button("BESTENLISTE")
+	lb_btn.pressed.connect(func(): show_leaderboard())
+	box.add_child(lb_btn)
+
 
 ## "Effekte reduzieren" (spec 1.2) — no settings menu yet, so the same switch
 ## sits on the start screen and in the pause menu; both stay in sync.
@@ -338,6 +422,11 @@ func _make_reduce_fx_toggle() -> CheckBox:
 	cb.text = "Effekte reduzieren (ruhigere Konditions-Looks)"
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
 	return cb
+
+
+func set_chaos_mode(on: bool) -> void:
+	if chaos_start != null:
+		chaos_start.set_pressed_no_signal(on)
 
 
 func set_reduce_fx(on: bool) -> void:
@@ -361,6 +450,141 @@ func _build_pause_panel() -> void:
 	box.add_child(restart_btn)
 	reduce_fx_pause = _make_reduce_fx_toggle()
 	box.add_child(reduce_fx_pause)
+
+
+## ---------------- Bestenliste (spec 2.5) ----------------
+
+## Start screen -> BESTENLISTE: one board (Woche / Chaos / Chat) of one level
+## at a time, top 10 fastest first. On the weekly board every time names its
+## calendar week, the header names the all-time best with its week and the
+## best of the current week. Old condition boards (archive) are never shown.
+func _build_leaderboard_panel() -> void:
+	leaderboard_panel = _overlay_panel()
+	leaderboard_panel.visible = false
+	var box: VBoxContainer = leaderboard_panel.get_child(0)
+	box.add_theme_constant_override("separation", 10)
+	lb_title_label = _title_label("BESTENLISTE")
+	box.add_child(lb_title_label)
+	var tabs := HBoxContainer.new()
+	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	tabs.add_theme_constant_override("separation", 6)
+	box.add_child(tabs)
+	for b in LevelsScript.BOARDS:
+		var t := Button.new()
+		t.text = LevelsScript.BOARD_LABELS[b].to_upper()
+		t.toggle_mode = true
+		t.custom_minimum_size = Vector2(96, 32)
+		t.pressed.connect(func(): _set_lb_board(b))
+		tabs.add_child(t)
+		lb_tabs[b] = t
+	var lvl_row := HBoxContainer.new()
+	lvl_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	lvl_row.add_theme_constant_override("separation", 10)
+	box.add_child(lvl_row)
+	var prev := Button.new()
+	prev.text = "<"
+	prev.custom_minimum_size = Vector2(36, 30)
+	prev.pressed.connect(func(): _step_lb_level(-1))
+	lvl_row.add_child(prev)
+	lb_level_label = Label.new()
+	lb_level_label.custom_minimum_size = Vector2(170, 0)
+	lb_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lb_level_label.add_theme_font_size_override("font_size", 18)
+	lb_level_label.add_theme_color_override("font_color", PELLET_COLOR)
+	lvl_row.add_child(lb_level_label)
+	var nxt := Button.new()
+	nxt.text = ">"
+	nxt.custom_minimum_size = Vector2(36, 30)
+	nxt.pressed.connect(func(): _step_lb_level(1))
+	lvl_row.add_child(nxt)
+	lb_info_label = _subtitle_label("")
+	lb_info_label.add_theme_font_size_override("font_size", 13)
+	box.add_child(lb_info_label)
+	lb_rows = VBoxContainer.new()
+	lb_rows.add_theme_constant_override("separation", 2)
+	box.add_child(lb_rows)
+	var back := _make_button("ZURÜCK")
+	back.pressed.connect(func(): show_only(start_panel))
+	box.add_child(back)
+
+
+func show_leaderboard(board: String = "", level_id: String = "") -> void:
+	if board != "":
+		lb_board = board
+	if level_id != "":
+		lb_level_index = maxi(LevelsScript.index_of(level_id), 0)
+	refresh_leaderboard()
+	show_only(leaderboard_panel)
+
+
+func _set_lb_board(board: String) -> void:
+	lb_board = board
+	refresh_leaderboard()
+
+
+func _step_lb_level(d: int) -> void:
+	lb_level_index = posmod(lb_level_index + d, LevelsScript.POOL.size())
+	refresh_leaderboard()
+
+
+## The lines of the current board/level (also read by tests): every row
+## "1.  1:23.45   KW 40   Player" (no week off the weekly board).
+func leaderboard_lines() -> Array:
+	var lv: Dictionary = LevelsScript.POOL[lb_level_index]
+	var out := []
+	var top: Array = Leaderboard.get_top(lv.id, lb_board, 10)
+	for i in top.size():
+		var e: Dictionary = top[i]
+		var line := "%2d.  %s" % [i + 1, Speedrun.format_time(e.time)]
+		if lb_board == LevelsScript.BOARD_WEEK:
+			line += "   %s" % WhiteRabbitScript.week_display(e.get("week", ""), _week_now())
+		line += "   %s" % e.name
+		out.append(line)
+	return out
+
+
+func _week_now() -> Vector2i:
+	return current_week if current_week.x > 0 else WhiteRabbitScript.current_iso_week()
+
+
+func refresh_leaderboard() -> void:
+	if leaderboard_panel == null:
+		return
+	var lv: Dictionary = LevelsScript.POOL[lb_level_index]
+	for b in lb_tabs:
+		lb_tabs[b].set_pressed_no_signal(b == lb_board)
+	lb_level_label.text = lv.name
+	var info := ""
+	match lb_board:
+		LevelsScript.BOARD_WEEK:
+			var best: Dictionary = Speedrun.best_entry(lv.id, lb_board)
+			if best.is_empty():
+				info = "Kaninchen der Woche · noch keine Zeit"
+			else:
+				info = "Allzeit-Bestzeit %s · %s" % [Speedrun.format_time(best.time), WhiteRabbitScript.week_display(best.get("week", ""), _week_now())]
+			var this_week := WhiteRabbitScript.week_label(_week_now())
+			var week_best := -1.0
+			for e in Leaderboard.get_top(lv.id, lb_board):
+				if e.get("week", "") == this_week:
+					week_best = e.time
+					break
+			info += "\nDiese Woche (%s): %s" % [WhiteRabbitScript.week_display(this_week, _week_now()), Speedrun.format_time(week_best) if week_best > 0.0 else "noch keine Zeit"]
+		LevelsScript.BOARD_CHAOS:
+			info = "Chaos-Modus: echter Zufall beim Kaninchen"
+		LevelsScript.BOARD_CHAT:
+			info = "Der Chat hat mitgeholfen oder das Kaninchen gewichtet"
+	lb_info_label.text = info
+	for ch in lb_rows.get_children():
+		ch.queue_free()
+	var lines := leaderboard_lines()
+	if lines.is_empty():
+		lines = ["Noch keine Einträge."]
+	for line in lines:
+		var l := Label.new()
+		l.text = line
+		l.add_theme_font_size_override("font_size", 14)
+		l.add_theme_color_override("font_color", RABBIT_WHITE)
+		lb_rows.add_child(l)
 
 
 func _build_gameover_panel() -> void:
@@ -644,7 +868,7 @@ func _panel_box(panel: PanelContainer) -> VBoxContainer:
 
 
 func show_only(panel: Control) -> void:
-	for p in [start_panel, pause_panel, gameover_panel]:
+	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel]:
 		p.visible = p == panel
 
 
@@ -652,6 +876,7 @@ func hide_all_panels() -> void:
 	start_panel.visible = false
 	pause_panel.visible = false
 	gameover_panel.visible = false
+	leaderboard_panel.visible = false
 
 
 func set_score(v: int) -> void:
@@ -711,8 +936,13 @@ func set_timer(seconds: float) -> void:
 	timer_label.text = Speedrun.format_time(seconds)
 
 
-func set_best_time(seconds: float) -> void:
-	best_label.text = Speedrun.format_time(seconds)
+## Best time of the board the level counts on; on the weekly board with the
+## week it was set in ("1:23.45 · KW 39").
+func set_best_time(seconds: float, week_text: String = "") -> void:
+	var text := Speedrun.format_time(seconds)
+	if seconds >= 0.0 and week_text != "":
+		text += " · " + week_text
+	best_label.text = text
 
 
 ## Minimap: fed a maze + player + enemies + maze_view (for the pellets —

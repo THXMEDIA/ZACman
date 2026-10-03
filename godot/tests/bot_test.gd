@@ -45,6 +45,7 @@ func _ready() -> void:
 	await _run_rabbit_checks()
 	await _run_condition_checks()
 	await _run_intro_checks()
+	await _run_board_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -345,8 +346,11 @@ func _run_checks() -> void:
 	_check("fast clear earns the target-time badge", Speedrun.is_bonus_unlocked())
 	_check("fast clear records a klassik-1 best time on the week board", Speedrun.best_for("klassik-1", WOCHE) >= 0.0 and Speedrun.best_for("klassik-1", WOCHE) < 10.0, "best=%s" % Speedrun.best_for("klassik-1", WOCHE))
 	_check("fast clear lands on the klassik-1 solo leaderboard (board woche)", Leaderboard.get_top("klassik-1", WOCHE).size() == 1)
-	_check("fast clear leaves the chat board empty", Leaderboard.get_top("klassik-1", WOCHE, 5, "chat").size() == 0)
-	_check("board key: the condition is no longer part of it", Leaderboard.board_key("klassik-1", main.board_id()) == "klassik-1|woche")
+	_check("fast clear leaves the chat and chaos boards empty", Leaderboard.get_top("klassik-1", "chat").size() == 0 and Leaderboard.get_top("klassik-1", "chaos").size() == 0)
+	_check("board key: level|brett|modus, no condition", Leaderboard.board_key("klassik-1", main.board_id(), main.run_mode()) == "klassik-1|woche|solo")
+	_check("week board: the best time names its ISO week", Speedrun.best_entry("klassik-1", WOCHE).get("week", "") == "2026-W40" and Leaderboard.get_top("klassik-1", WOCHE)[0].week == "2026-W40")
+	_check("week board: HUD best time shows the week", main.hud.best_label.text.ends_with("KW 40"), main.hud.best_label.text)
+	_check("week board: HUD board badge shows the week", main.hud.board_chip.visible and main.hud.board_label.text == "WOCHE · KW 40", main.hud.board_label.text)
 	await get_tree().create_timer(2.0).timeout # let the level-clear banner finish so begin_game() below isn't fighting an in-flight await
 
 	# ---- Manhattan bonus level: reuses the normal systems against the real-Midtown grid ----
@@ -431,15 +435,15 @@ func _run_checks() -> void:
 	# and recorded on its own "chat" leaderboard/best-time board, never mixed
 	# into the solo one, so a viewer can't trivialize or falsify a clean
 	# (solo) time ----
-	_check("twitch !power/!fruit mark this run as chat-assisted", main.level_chat_assisted == true and main.run_mode() == "chat")
+	_check("twitch !power/!fruit put this level on the chat board", main.level_chat_assisted == true and main.board_id() == "chat" and main.run_mode() == "solo")
 	var cleared_level_id: String = main.level_id
-	var solo_best_before: float = Speedrun.best_for(cleared_level_id, main.board_id(), "solo")
-	var solo_board_count_before: int = Leaderboard.get_top(cleared_level_id, main.board_id(), 50, "solo").size()
+	var week_best_before: float = Speedrun.best_for(cleared_level_id, WOCHE)
+	var week_board_count_before: int = Leaderboard.get_top(cleared_level_id, WOCHE, 50).size()
 	main.level_complete_sequence()
-	_check("chat-assisted clear: solo best time NOT touched", Speedrun.best_for(cleared_level_id, main.board_id(), "solo") == solo_best_before, "before=%s after=%s" % [solo_best_before, Speedrun.best_for(cleared_level_id, main.board_id(), "solo")])
-	_check("chat-assisted clear: solo leaderboard NOT updated", Leaderboard.get_top(cleared_level_id, main.board_id(), 50, "solo").size() == solo_board_count_before)
-	_check("chat-assisted clear: recorded on its own chat board instead", Speedrun.best_for(cleared_level_id, main.board_id(), "chat") >= 0.0)
-	_check("chat-assisted clear: banner names the chat board", main.hud.levelclear_sub.text.find(load("res://scripts/levels.gd").MODE_LABELS["chat"]) != -1, main.hud.levelclear_sub.text)
+	_check("chat-assisted clear: weekly best time NOT touched", Speedrun.best_for(cleared_level_id, WOCHE) == week_best_before, "before=%s after=%s" % [week_best_before, Speedrun.best_for(cleared_level_id, WOCHE)])
+	_check("chat-assisted clear: weekly leaderboard NOT updated", Leaderboard.get_top(cleared_level_id, WOCHE, 50).size() == week_board_count_before)
+	_check("chat-assisted clear: recorded on the chat board instead", Speedrun.best_for(cleared_level_id, "chat") >= 0.0)
+	_check("chat-assisted clear: banner names the chat board", main.hud.levelclear_sub.text.find("Chat-Bestenliste") != -1, main.hud.levelclear_sub.text)
 	await get_tree().create_timer(2.4).timeout # let the banner/level-advance sequence finish before the next scenario
 
 	# ---- noclip can no longer lock the player out of the maze ----
@@ -480,11 +484,11 @@ func _run_checks() -> void:
 	Leaderboard.reset_all()
 	main.begin_game("klassik-1")
 	await get_tree().process_frame
-	_check("chat: a plain level starts in solo mode", main.run_mode() == "solo" and main.level_chat_assisted == false)
+	_check("chat: a plain level starts on the weekly board", main.board_id() == WOCHE and main.level_chat_assisted == false)
 	Twitch.chat_command.emit("viewer", "power", "")
 	await get_tree().process_frame
-	_check("chat: a !power that took effect marks the level as chat", main.run_mode() == "chat")
-	_check("chat: the HUD shows the CHAT badge", main.hud.mode_label.text == "CHAT" and main.hud.mode_label.get_parent().get_parent().visible)
+	_check("chat: a !power that took effect moves the level to the chat board", main.board_id() == "chat")
+	_check("chat: the HUD shows the CHAT badge", main.hud.board_label.text == "CHAT" and main.hud.board_chip.visible)
 	main.level_start_real = main.real_now - 5.0
 	for cell in main.maze_view.pellet_cells:
 		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
@@ -493,12 +497,12 @@ func _run_checks() -> void:
 		var cnode = main.maze_view.power_nodes[i]
 		main.player.global_position = Vector3(cnode.position.x, main.player.global_position.y, cnode.position.z)
 		await get_tree().process_frame
-	_check("chat: the time lands on the chat leaderboard", Leaderboard.get_top("klassik-1", WOCHE, 5, "chat").size() == 1)
-	_check("chat: the solo leaderboard stays empty", Leaderboard.get_top("klassik-1", WOCHE, 5, "solo").size() == 0)
-	_check("chat: the solo best time stays empty", Speedrun.best_for("klassik-1", WOCHE) == -1.0 and Speedrun.best_for("klassik-1", WOCHE, "chat") >= 0.0)
+	_check("chat: the time lands on the chat leaderboard", Leaderboard.get_top("klassik-1", "chat").size() == 1)
+	_check("chat: the weekly and chaos leaderboards stay empty", Leaderboard.get_top("klassik-1", WOCHE).size() == 0 and Leaderboard.get_top("klassik-1", "chaos").size() == 0)
+	_check("chat: the weekly best time stays empty", Speedrun.best_for("klassik-1", WOCHE) == -1.0 and Speedrun.best_for("klassik-1", "chat") >= 0.0)
 	_check("chat: a chat run does not earn the target-time badge", not Speedrun.is_bonus_unlocked())
 	await get_tree().create_timer(2.0).timeout
-	_check("chat: the next level starts clean (solo again)", main.run_mode() == "solo")
+	_check("chat: the next level starts clean (weekly board again)", main.board_id() == WOCHE)
 
 	# ---- a run with a rabbit condition stays on the week board (the
 	# condition is no longer part of the key, spec 2.5) ----
@@ -514,7 +518,7 @@ func _run_checks() -> void:
 		main.player.global_position = Vector3(cnode2.position.x, main.player.global_position.y, cnode2.position.z)
 		await get_tree().process_frame
 	_check("condition run: the time lands on the week board", Leaderboard.get_top("klassik-1", WOCHE, 5).size() == 1)
-	_check("condition run: no condition board is written", Leaderboard.get_top("klassik-1", "taschenuhr", 5).size() == 0 and Leaderboard.get_top("klassik-1", "", 5).size() == 0)
+	_check("condition run: no condition board is written", Leaderboard._boards.keys().all(func(k): return load("res://scripts/levels.gd").is_valid_board_key(k)), str(Leaderboard._boards.keys()))
 	_check("condition run: the level clear ended the condition", main.active_condition == null)
 	await get_tree().create_timer(2.0).timeout
 	Speedrun.reset_all()
@@ -1207,3 +1211,86 @@ func _run_intro_checks() -> void:
 	main.next_level()
 	_check("next_level: no intro between levels", not main.start_hold and not main.hud.is_start_intro_visible())
 	main.skip_start_intro = true
+
+
+## ---------------- Boards, Chaos mode, Bestenliste (spec 2.5, Etappe 3) ----------------
+
+## Eats every pellet and power pellet of the current level within a few
+## frames, pretending 5 s passed (well under every target time).
+func _clear_level_fast() -> void:
+	main.invuln_until = main.now + 999.0
+	main.level_start_real = main.real_now - 5.0
+	for cell in main.maze_view.pellet_cells:
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+	for i in main.maze_view.power_cells.size():
+		var n = main.maze_view.power_nodes[i]
+		main.player.global_position = Vector3(n.position.x, main.player.global_position.y, n.position.z)
+		await get_tree().process_frame
+
+
+func _run_board_checks() -> void:
+	Speedrun.reset_all()
+	Leaderboard.reset_all()
+	main.hud.show_only(main.hud.start_panel)
+	_check("chaos: switch on the start screen, off by default", main.hud.chaos_start != null and main.hud.chaos_start.is_visible_in_tree() and not main.hud.chaos_start.button_pressed and not main.chaos_mode)
+	main.hud.chaos_start.button_pressed = true # through the real toggle signal
+	_check("chaos: the switch turns Chaos mode on and is stored", main.chaos_mode and SettingsScript.load_settings().chaos)
+	_check("chaos: storing it keeps the other setting", SettingsScript.load_settings().reduce_fx == main.reduce_fx)
+
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("chaos: the level counts on the chaos board", main.board_id() == "chaos" and main.board_week_label() == "")
+	_check("chaos: HUD badge CHAOS", main.hud.board_chip.visible and main.hud.board_label.text == "CHAOS", main.hud.board_label.text)
+	var sigs := {}
+	for i in 16:
+		main.begin_game("klassik-1")
+		await get_tree().process_frame
+		await _take_rabbit()
+		sigs[_condition_signature()] = true
+	_check("chaos: real randomness — a restart can give another rabbit result", sigs.size() >= 2, str(sigs.keys()))
+	main._end_condition(false)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await _clear_level_fast()
+	_check("chaos: the time lands on the chaos board only", Leaderboard.get_top("klassik-1", "chaos").size() == 1 and Leaderboard.get_top("klassik-1", WOCHE).size() == 0 and Leaderboard.get_top("klassik-1", "chat").size() == 0)
+	_check("chaos: no week stored, no target-time badge", Speedrun.best_entry("klassik-1", "chaos").get("week", "x") == "" and not Speedrun.is_bonus_unlocked())
+	await get_tree().create_timer(2.0).timeout
+
+	# chat beats chaos: a chat-touched level never lands on woche/chaos
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	Twitch.chat_command.emit("viewer", "power", "")
+	await get_tree().process_frame
+	_check("chaos + chat: the level moves to the chat board", main.board_id() == "chat" and main.hud.board_label.text == "CHAT")
+	await _clear_level_fast()
+	_check("chaos + chat: time on the chat board, not on chaos", Leaderboard.get_top("klassik-2", "chat").size() == 1 and Leaderboard.get_top("klassik-2", "chaos").size() == 0)
+	await get_tree().create_timer(2.0).timeout
+	main.set_chaos_mode(false)
+	_check("chaos: switching off is stored too", not SettingsScript.load_settings().chaos and not main.hud.chaos_start.button_pressed)
+
+	# weekly board: badge also with a Matrix rabbit (studio head decision)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.start_condition(ConditionsScript.get_condition("matrix"))
+	await _clear_level_fast()
+	_check("badge: a weekly solo run with Matrix earns the target-time badge", Speedrun.is_bonus_unlocked() and Speedrun.best_entry("klassik-1", WOCHE).get("week", "") == "2026-W40")
+	await get_tree().create_timer(2.0).timeout
+
+	# Bestenliste on the start screen
+	main.end_game()
+	main.hud.show_only(main.hud.start_panel)
+	main.hud.show_leaderboard(WOCHE, "klassik-1")
+	await get_tree().process_frame
+	var lines: Array = main.hud.leaderboard_lines()
+	_check("bestenliste: panel open, weekly board of klassik-1", main.hud.leaderboard_panel.visible and not main.hud.start_panel.visible and main.hud.lb_level_label.text == "Klassik I")
+	_check("bestenliste: every weekly time names its calendar week", lines.size() == 1 and lines[0].find("KW 40") != -1, str(lines))
+	_check("bestenliste: header names the all-time best with its week and this week's best", main.hud.lb_info_label.text.find("Allzeit-Bestzeit") != -1 and main.hud.lb_info_label.text.find("KW 40") != -1 and main.hud.lb_info_label.text.find("Diese Woche") != -1, main.hud.lb_info_label.text)
+	main.hud._set_lb_board("chaos")
+	var chaos_lines: Array = main.hud.leaderboard_lines()
+	_check("bestenliste: chaos tab shows the chaos board, without week", chaos_lines.size() == 1 and chaos_lines[0].find("KW") == -1 and main.hud.lb_tabs["chaos"].button_pressed, str(chaos_lines))
+	main.hud._set_lb_board("chat")
+	main.hud._step_lb_level(1)
+	_check("bestenliste: level switcher and chat tab", main.hud.lb_level_label.text == "Klassik II" and main.hud.leaderboard_lines().size() == 1)
+	main.hud.show_only(main.hud.start_panel)
+	_check("bestenliste: back to the start screen", main.hud.start_panel.visible and not main.hud.leaderboard_panel.visible)

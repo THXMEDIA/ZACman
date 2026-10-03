@@ -53,6 +53,13 @@ func _initialize() -> void:
 		firsts[Conditions.pick_condition(WR.week_rng("klassik-1", Vector2i(2026, wk)))] = true
 	_check("week rng: over the weeks of a year several conditions come up", firsts.size() >= 3, str(firsts.keys()))
 	_check("week label", WR.week_label(Vector2i(2026, 4)) == "2026-W04")
+	var cur: Vector2i = Vector2i(2026, 40)
+	_check("week display: same year -> 'KW 4'", WR.week_display("2026-W04", cur) == "KW 4", WR.week_display("2026-W04", cur))
+	_check("week display: other year -> 'KW 52/2025'", WR.week_display("2025-W52", cur) == "KW 52/2025")
+	_check("week display: unknown week -> 'KW ?'", WR.week_display("", cur) == "KW ?" and WR.week_display("kaputt", cur) == "KW ?")
+	var c1: RandomNumberGenerator = WR.chaos_rng()
+	var c2: RandomNumberGenerator = WR.chaos_rng()
+	_check("chaos rng: random seeds (two generators differ)", c1.seed != c2.seed)
 
 	# --- position: every pool level ---
 	for lv in Levels.POOL:

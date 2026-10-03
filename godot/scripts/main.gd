@@ -132,8 +132,9 @@ var fruit_spawned := false
 var now := 0.0
 var real_now := 0.0
 var level_start_real := 0.0
-## true once a Twitch chat command took effect during the current level; the
-## level's time then goes to the "chat" best time / leaderboard (Levels.MODES).
+## true once the Twitch chat had a hand in the current level (a !power/!fruit
+## took effect, or the chat shifted the rabbit's good/bad ratio); the level's
+## time then goes to the "chat" board, never to woche/chaos (Levels.BOARDS).
 var level_chat_assisted := false
 var playing_manhattan := false
 
@@ -166,6 +167,9 @@ var rabbit_week_override := Vector2i(0, 0)
 
 ## "Effekte reduzieren" (spec 1.2), persisted via Settings.
 var reduce_fx := false
+## Chaos mode (spec 2.5, start screen switch, persisted via Settings): real
+## randomness for every rabbit, own board "chaos".
+var chaos_mode := false
 
 ## Debug overlay (FPS, player position, cell): toggled with F3, debug builds only.
 var debug_mode := false
@@ -186,7 +190,9 @@ var world_env: WorldEnvironment
 func _ready() -> void:
 	level_rng.randomize()
 	high_score = _load_highscore()
-	reduce_fx = SettingsScript.load_settings().reduce_fx
+	var settings := SettingsScript.load_settings()
+	reduce_fx = settings.reduce_fx
+	chaos_mode = settings.chaos
 	_build_environment()
 	_build_player()
 	_build_hud()
@@ -201,6 +207,7 @@ func _ready() -> void:
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.set_reduce_fx(reduce_fx)
+	hud.set_chaos_mode(chaos_mode)
 	hud.show_only(hud.start_panel)
 
 
@@ -255,6 +262,7 @@ func _build_hud() -> void:
 	hud.restart_pressed.connect(_on_restart_pressed)
 	hud.manhattan_pressed.connect(_on_manhattan_pressed)
 	hud.reduce_fx_toggled.connect(_on_reduce_fx_toggled)
+	hud.chaos_toggled.connect(set_chaos_mode)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
 	Twitch.chat_command.connect(_on_twitch_command)
 	Twitch.connection_state_changed.connect(_on_twitch_connection_changed)
@@ -320,7 +328,7 @@ func start_level(level: Dictionary) -> void:
 	hud.set_level(level_index + 1)
 	hud.set_score(score)
 	hud.set_lives(lives)
-	hud.set_best_time(Speedrun.best_for(level_id, board_id(), "solo"))
+	_refresh_board_hud()
 	level_start_real = real_now
 
 
@@ -667,10 +675,23 @@ func _on_reduce_fx_toggled(on: bool) -> void:
 ## "Effekte reduzieren": stored right away and applied to a running look.
 func set_reduce_fx(on: bool) -> void:
 	reduce_fx = on
-	SettingsScript.save_settings({"reduce_fx": on})
+	_save_settings()
 	hud.set_reduce_fx(on)
 	if maze_view != null and maze_view.normal_wall_mmi != null:
 		maze_view.set_look_param("reduce_fx", 1.0 if on else 0.0)
+
+
+## Chaos mode (start screen switch): stored right away; takes effect with the
+## next level start (a running level keeps the generator and board it began
+## with — the switch is only on the start screen anyway).
+func set_chaos_mode(on: bool) -> void:
+	chaos_mode = on
+	_save_settings()
+	hud.set_chaos_mode(on)
+
+
+func _save_settings() -> void:
+	SettingsScript.save_settings({"reduce_fx": reduce_fx, "chaos": chaos_mode})
 
 
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
@@ -714,7 +735,7 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 		Twitch.connect_to_channel(channel)
 	else:
 		Twitch.disconnect_chat()
-		hud.set_twitch_status("Aus — fuer ernsthafte Speedruns ausgeschaltet lassen.")
+		hud.set_twitch_status("Aus — für ernsthafte Speedruns ausgeschaltet lassen.")
 
 
 func _on_twitch_connection_changed(is_connected: bool) -> void:
@@ -754,25 +775,53 @@ func _on_twitch_command(_user: String, command: String, _args: String) -> void:
 				maze_view.spawn_fruit(now)
 
 
+## The chat had a hand in this level: from now on its time counts on the
+## "chat" board (spec 2.6), never on woche/chaos.
 func _mark_chat_assisted() -> void:
 	if level_chat_assisted:
 		return
 	level_chat_assisted = true
-	hud.set_best_time(Speedrun.best_for(level_id, board_id(), "chat"))
-	hud.set_mode_badge("CHAT")
+	_refresh_board_hud()
 
 
-## The mode of the current level's records: "chat" once a chat command took
-## effect, otherwise "solo" (pvp / coop are reserved for multiplayer).
+## The mode of the current level's records. Always "solo" until multiplayer
+## exists (pvp / coop are reserved); chat help is a board, not a mode.
 func run_mode() -> String:
-	return "chat" if level_chat_assisted else "solo"
+	return "solo"
 
 
-## The board of the current level's records. The condition is no longer part
-## of the key (spec 2.5); until Etappe 3 adds "chaos"/"chat" it is always the
-## weekly rabbit board.
+## The board of the current level's records (spec 2.5): "chat" as soon as the
+## chat had a hand in the level, otherwise "chaos" in Chaos mode, otherwise
+## the weekly rabbit board. The condition is not part of the key.
 func board_id() -> String:
+	if level_chat_assisted:
+		return LevelsScript.BOARD_CHAT
+	if chaos_mode:
+		return LevelsScript.BOARD_CHAOS
 	return LevelsScript.BOARD_WEEK
+
+
+## The ISO week of the current level's rabbits as stored with a time
+## ("2026-W40"); "" off the weekly board.
+func board_week_label() -> String:
+	if board_id() != LevelsScript.BOARD_WEEK:
+		return ""
+	return WhiteRabbitScript.week_label(rabbit_week)
+
+
+## HUD: board badge ("KW 40" / "CHAOS" / "CHAT") and the best time of the
+## board the level currently counts on (with its week on the weekly board).
+func _refresh_board_hud() -> void:
+	if level_id == "":
+		return
+	var board := board_id()
+	hud.current_week = rabbit_week
+	hud.set_board_badge(board, WhiteRabbitScript.week_display(WhiteRabbitScript.week_label(rabbit_week), rabbit_week))
+	var best: Dictionary = Speedrun.best_entry(level_id, board, run_mode())
+	var week_text := ""
+	if board == LevelsScript.BOARD_WEEK and not best.is_empty():
+		week_text = WhiteRabbitScript.week_display(best.get("week", ""), rabbit_week)
+	hud.set_best_time(float(best.get("time", -1.0)), week_text)
 
 
 func next_level() -> void:
@@ -827,14 +876,16 @@ func level_complete_sequence() -> void:
 
 	var elapsed := real_now - level_start_real
 	var mode := run_mode()
+	var board := board_id()
+	var week := board_week_label()
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
-	var result := Speedrun.record_level_time(cleared_id, elapsed, board_id(), mode)
-	Leaderboard.submit_time(cleared_id, board_id(), elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode)
+	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week)
+	Leaderboard.submit_time(cleared_id, board, elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode, week)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
-	if mode != "solo":
-		subtitle += "  ·  %s-Bestenliste" % LevelsScript.MODE_LABELS[mode]
+	if board != LevelsScript.BOARD_WEEK:
+		subtitle += "  ·  %s-Bestenliste" % LevelsScript.BOARD_LABELS[board]
 	if result.newly_unlocked_bonus:
 		subtitle += "  ·  ZIELZEIT GESCHAFFT!"
 		Sfx.eat_enemy()
@@ -843,7 +894,7 @@ func level_complete_sequence() -> void:
 		subtitle += "  ·  neue Bestzeit!"
 	elif result.beat_target:
 		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
-	hud.set_best_time(Speedrun.best_for(cleared_id, board_id(), mode))
+	_refresh_board_hud()
 
 	hud.show_levelclear(true, subtitle)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -1117,10 +1168,12 @@ func _rescue_player_from_wall() -> void:
 ## ---------------- white rabbit and conditions (spec 2.2-2.5) ----------------
 
 ## The rabbit generator of a level: "Kaninchen der Woche" (level id + ISO
-## week, local time — see white_rabbit.gd). Etappe 3: Chaos mode returns
-## WhiteRabbit.chaos_rng() here instead.
+## week, local time — see white_rabbit.gd), or in Chaos mode a generator with
+## a random seed (real randomness, still only through pick_condition).
 func _make_rabbit_rng(lid: String) -> RandomNumberGenerator:
 	rabbit_week = rabbit_week_override if rabbit_week_override.x > 0 else WhiteRabbitScript.current_iso_week()
+	if chaos_mode:
+		return WhiteRabbitScript.chaos_rng()
 	return WhiteRabbitScript.week_rng(lid, rabbit_week)
 
 

@@ -41,38 +41,70 @@ const POOL := [
 
 ## Run modes. Every mode has its own best times and leaderboards, so runs
 ## that are not comparable never share a board:
-##   solo  plain run, nobody interfered
-##   chat  at least one Twitch chat command took effect during the level
+##   solo        one player (also when Twitch chat helped: that is the
+##               "chat" BOARD, not a mode — see BOARD_CHAT)
 ##   pvp / coop  reserved for the planned multiplayer modes (no gameplay yet)
-const MODES := ["solo", "chat", "pvp", "coop"]
-const MODE_LABELS := {"solo": "Solo", "chat": "Chat", "pvp": "PvP", "coop": "Koop"}
+## (Until Etappe 3 "chat" was a mode; such old keys are migrated to the chat
+## board, see Speedrun/Leaderboard.)
+const MODES := ["solo", "pvp", "coop"]
+const MODE_LABELS := {"solo": "Solo", "pvp": "PvP", "coop": "Koop"}
 
 
-## Boards (spec 2.5). Since the rabbit conditions (Etappe 2) the condition
-## is no longer part of a board key: a speedrun run is recorded on the
-## "woche" board (Kaninchen der Woche — everyone gets the same rabbits in a
-## given week). Etappe 3 adds "chaos" and "chat" and migrates the old
-## condition boards (matrix_ghost, fear_and_loathing, none); until then those
-## old keys simply stay in the files, untouched and no longer shown.
+## Boards (spec 2.5). The condition is not part of a board key; the board
+## says how the rabbits of the run were drawn:
+##   woche  "Kaninchen der Woche" (level id + ISO week, same for everybody in
+##          a week) — the default board; its best times carry their week
+##   chaos  Chaos mode: real randomness for the rabbit (start screen switch)
+##   chat   Twitch chat had a hand in the level: it shifted the rabbit's
+##          good/bad ratio (!gut/!schlecht), or a !power/!fruit took effect
+## A level that the chat touched always goes to "chat", never to woche/chaos.
 const BOARD_WEEK := "woche"
-## Boards whose solo runs may earn the target-time badge ("" = the old
-## no-condition board, kept for old saves and tests).
-const BADGE_BOARDS := ["", BOARD_WEEK]
+const BOARD_CHAOS := "chaos"
+const BOARD_CHAT := "chat"
+const BOARDS := [BOARD_WEEK, BOARD_CHAOS, BOARD_CHAT]
+const BOARD_LABELS := {"woche": "Woche", "chaos": "Chaos", "chat": "Chat"}
+## Boards whose solo runs may earn the target-time badge: only the weekly
+## board — also with a Matrix rabbit (studio head 03.10.2026: the rabbit is
+## a voluntary bet with a detour).
+const BADGE_BOARDS := [BOARD_WEEK]
 
 
-## Key of the best time / leaderboard of one (level, board, mode).
-## "" board is stored as "none" (the pre-rabbit "no condition" board). Solo
-## keeps the short "level|board" form the saved files already use; the other
-## modes append "|mode".
+## Key of the best time / leaderboard of one (level, board, mode):
+## "level|brett|modus", e.g. "klassik-2|woche|solo". "" mode means solo.
 static func board_key(level_id: String, board: String, mode: String = "solo") -> String:
-	var b := board if board != "" else "none"
-	if mode == "solo" or mode == "":
-		return "%s|%s" % [level_id, b]
-	return "%s|%s|%s" % [level_id, b, mode]
+	return "%s|%s|%s" % [level_id, board, mode if mode != "" else "solo"]
+
+
+## True for a key of a real pool level, a known board and a known mode.
+## Code-W8: a typo must not silently open a new board — Speedrun and
+## Leaderboard refuse to write anything else.
+static func is_valid_board_key(key: String) -> bool:
+	var parts := key.split("|")
+	return parts.size() == 3 and index_of(parts[0]) >= 0 and BOARDS.has(parts[1]) and MODES.has(parts[2])
 
 
 static func board_earns_badge(board: String) -> bool:
 	return BADGE_BOARDS.has(board)
+
+
+## Keys from before Etappe 3 that still describe the current rules, mapped
+## to their v3 key; "" for everything else (condition boards like
+## "offen|none" or "klassik-1|matrix_ghost|chat" — those get archived).
+##   "level|woche"        -> "level|woche|solo"  (Etappe 2, week unknown)
+##   "level|woche|chat"   -> "level|chat|solo"   (chat used to be a mode)
+##   "level|woche|<mode>" -> "level|woche|<mode>"
+static func migrate_v2_key(key: String) -> String:
+	var parts := key.split("|")
+	if parts.size() < 2 or parts.size() > 3 or parts[1] != BOARD_WEEK:
+		return ""
+	var out := ""
+	if parts.size() == 2:
+		out = board_key(parts[0], BOARD_WEEK, "solo")
+	elif parts[2] == "chat":
+		out = board_key(parts[0], BOARD_CHAT, "solo")
+	else:
+		out = board_key(parts[0], BOARD_WEEK, parts[2])
+	return out if is_valid_board_key(out) else ""
 
 
 static func ids() -> Array:

@@ -1,251 +1,198 @@
 extends SceneTree
 ## Headless test: res://scripts/leaderboard.gd — the local Leaderboard
-## autoload (one board per city_id/condition_id combination). A bare
-## `--script` run has no autoloads initialized (same reason test_speedrun.gd
-## does this), so this instantiates a fresh instance directly instead of
-## referencing the `Leaderboard` global — its public methods all call
-## _load()/_save() themselves rather than relying on _ready(), so a bare
-## instance behaves identically to the real autoload. Run with
+## autoload (one board per level × board × mode, key "level|brett|modus").
+## A bare `--script` run has no autoloads initialized, so this instantiates
+## fresh instances directly instead of referencing the `Leaderboard` global —
+## its public methods call _load()/_save() themselves, so a bare instance
+## behaves like the real autoload (fields read directly need reload() first).
+## Run with
 ##   godot --headless --path . --script res://tests/test_leaderboard.gd
 ## Exits with code 0 on success, 1 on any failure.
 
 const SaveIsolation := preload("res://tests/save_isolation.gd")
 
+var failures := 0
+var checks := 0
+
+
+func _check(name: String, cond: bool, detail := "") -> void:
+	checks += 1
+	if not cond:
+		failures += 1
+		print("FAIL %s %s" % [name, detail])
+
 
 func _initialize() -> void:
-	var failures := 0
-	var checks := 0
-
 	# QA-W6: own save folder for the whole run; the real file stays untouched.
 	var real_saves := SaveIsolation.begin()
+	var lb_script = load("res://scripts/leaderboard.gd")
+	var lb = lb_script.new()
+	_check("the test writes to the test save folder", lb.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), lb.save_path())
+	lb.reset_all()
 
-	var Leaderboard = load("res://scripts/leaderboard.gd").new()
-	checks += 1
-	if not Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT):
-		failures += 1
-		print("FAIL the test should write to the test save folder, got %s" % Leaderboard.save_path())
-	Leaderboard.reset_all()
-
-	# --- board_key: "" normalizes to "none", different (city,cond) pairs
-	# never collide ---
-	checks += 1
-	if Leaderboard.board_key("manhattan", "") != "manhattan|none":
-		failures += 1
-		print("FAIL board_key should normalize '' to 'none', got '%s'" % Leaderboard.board_key("manhattan", ""))
-	checks += 1
-	if Leaderboard.board_key("manhattan", "matrix_ghost") == Leaderboard.board_key("manhattan", "fear_and_loathing"):
-		failures += 1
-		print("FAIL different conditions on the same city should be different boards")
-	checks += 1
-	if Leaderboard.board_key("manhattan", "") == Leaderboard.board_key("klassik-1", ""):
-		failures += 1
-		print("FAIL different cities should be different boards")
-
-	# --- modes: chat / pvp / coop never share a board with solo ---
-	checks += 1
+	# --- board keys: level|brett|modus, the condition is not part of it ----
+	_check("board key form level|brett|modus", lb.board_key("klassik-1", "woche") == "klassik-1|woche|solo", lb.board_key("klassik-1", "woche"))
 	var keys := {}
-	for m in ["solo", "chat", "pvp", "coop"]:
-		keys[Leaderboard.board_key("offen", "", m)] = true
-	if keys.size() != 4:
-		failures += 1
-		print("FAIL every mode needs its own board key, got %s" % [keys.keys()])
-	checks += 1
-	if Leaderboard.board_key("offen", "") != "offen|none":
-		failures += 1
-		print("FAIL solo key should keep the short 'level|cond' form")
+	for b in ["woche", "chaos", "chat"]:
+		for m in ["solo", "pvp", "coop"]:
+			keys[lb.board_key("offen", b, m)] = true
+	_check("every board and mode has its own key", keys.size() == 9, str(keys.keys()))
+	_check("different levels are different boards", lb.board_key("offen", "woche") != lb.board_key("klassik-1", "woche"))
 
 	# --- an empty board has no entries yet ---
-	checks += 1
-	if Leaderboard.get_top("manhattan", "").size() != 0:
-		failures += 1
-		print("FAIL a fresh board should start empty")
+	_check("a fresh board starts empty", lb.get_top("klassik-1", "woche").size() == 0)
 
 	# --- submit_time: sorted fastest-first, rank reported correctly ------
-	var r1 = Leaderboard.submit_time("manhattan", "", 90.0, "Alice")
-	checks += 1
-	if r1.rank != 1 or not r1.is_new_best:
-		failures += 1
-		print("FAIL first submission should be rank 1 and a new best, got %s" % r1)
+	var r1 = lb.submit_time("klassik-1", "woche", 90.0, "Alice", "solo", "2026-W40")
+	_check("first submission is rank 1 and a new best", r1.rank == 1 and r1.is_new_best, str(r1))
+	var r2 = lb.submit_time("klassik-1", "woche", 60.0, "Bob", "solo", "2026-W40")
+	_check("a faster time takes rank 1", r2.rank == 1, str(r2))
+	var r3 = lb.submit_time("klassik-1", "woche", 120.0, "Carol", "solo", "2026-W41")
+	_check("a slower time ranks behind", r3.rank == 3, str(r3))
+	var top: Array = lb.get_top("klassik-1", "woche", 5)
+	_check("top entries sorted fastest-first", top.size() == 3 and top[0].name == "Bob" and top[1].name == "Alice" and top[2].name == "Carol", str(top))
 
-	var r2 = Leaderboard.submit_time("manhattan", "", 60.0, "Bob")
-	checks += 1
-	if r2.rank != 1:
-		failures += 1
-		print("FAIL a faster time should take rank 1, got %s" % r2)
-
-	var r3 = Leaderboard.submit_time("manhattan", "", 120.0, "Carol")
-	checks += 1
-	if r3.rank != 3:
-		failures += 1
-		print("FAIL a slower time should rank behind the faster ones, got %s" % r3)
-
-	var top = Leaderboard.get_top("manhattan", "", 5)
-	checks += 1
-	if top.size() != 3 or top[0].name != "Bob" or top[1].name != "Alice" or top[2].name != "Carol":
-		failures += 1
-		print("FAIL top entries should be sorted fastest-first: Bob, Alice, Carol — got %s" % [top])
+	# --- weekly board: every entry carries its ISO week -------------------
+	_check("weekly entries carry their week", top[0].week == "2026-W40" and top[2].week == "2026-W41", str(top))
+	lb.submit_time("klassik-1", "chaos", 70.0, "Dora", "solo", "2026-W40")
+	_check("chaos entries store no week", lb.get_top("klassik-1", "chaos")[0].week == "")
 
 	# --- is_new_best is per player name, not board-wide ------------------
-	var r4 = Leaderboard.submit_time("manhattan", "", 200.0, "Alice") # slower than Alice's own 90.0
-	checks += 1
-	if r4.is_new_best:
-		failures += 1
-		print("FAIL a slower time than the same player's own best should not be a new best")
+	_check("slower than own best: no new best", not lb.submit_time("klassik-1", "woche", 200.0, "Alice").is_new_best)
+	_check("faster than own best: new best", lb.submit_time("klassik-1", "woche", 50.0, "Alice", "solo", "2026-W41").is_new_best)
 
-	var r5 = Leaderboard.submit_time("manhattan", "", 50.0, "Alice") # faster than Alice's own 90.0
-	checks += 1
-	if not r5.is_new_best:
-		failures += 1
-		print("FAIL a faster time than the same player's own best should be a new best")
+	# --- boards are separate -----------------------------------------------
+	lb.submit_time("durchbruch", "chat", 70.0, "Streamer")
+	lb.submit_time("durchbruch", "woche", 90.0, "Streamer", "solo", "2026-W40")
+	_check("chat and woche submissions land on separate boards", lb.get_top("durchbruch", "chat").size() == 1 and lb.get_top("durchbruch", "woche").size() == 1)
+	_check("the faster chat time is not on the weekly board", lb.get_top("durchbruch", "woche")[0].time == 90.0)
+	_check("chaos/pvp/coop boards stay empty", lb.get_top("durchbruch", "chaos").size() == 0 and lb.get_top("durchbruch", "woche", 5, "pvp").size() == 0 and lb.get_top("durchbruch", "woche", 5, "coop").size() == 0)
 
-	# --- a condition board is separate from the unconditioned one --------
-	Leaderboard.submit_time("manhattan", "matrix_ghost", 999.0, "Solo")
-	checks += 1
-	if Leaderboard.get_top("manhattan", "matrix_ghost").size() != 1:
-		failures += 1
-		print("FAIL matrix_ghost board should have exactly the 1 entry submitted to it")
-	checks += 1
-	var unconditioned_names := []
-	for e in Leaderboard.get_top("manhattan", ""):
-		unconditioned_names.append(e.name)
-	if "Solo" in unconditioned_names:
-		failures += 1
-		print("FAIL a matrix_ghost submission should not leak into the unconditioned board")
-
-	# --- a chat run lands on the chat board only ---
-	Leaderboard.submit_time("durchbruch", "", 70.0, "Streamer", "chat")
-	Leaderboard.submit_time("durchbruch", "", 90.0, "Streamer", "solo")
-	checks += 1
-	if Leaderboard.get_top("durchbruch", "", 5, "chat").size() != 1 or Leaderboard.get_top("durchbruch", "", 5).size() != 1:
-		failures += 1
-		print("FAIL chat and solo submissions must land on separate boards")
-	checks += 1
-	if Leaderboard.get_top("durchbruch", "", 5)[0].time != 90.0:
-		failures += 1
-		print("FAIL the faster chat time must not appear on the solo board")
-	checks += 1
-	if Leaderboard.get_top("durchbruch", "", 5, "pvp").size() != 0 or Leaderboard.get_top("durchbruch", "", 5, "coop").size() != 0:
-		failures += 1
-		print("FAIL pvp/coop boards should be empty")
-
-	# --- boards saved before the level pool are migrated ---
-	Leaderboard.reset_all()
-	var f := FileAccess.open(Leaderboard.save_path(), FileAccess.WRITE)
-	f.store_string(JSON.stringify({
-		"normal-1|none": [{"name": "Old", "time": 80.0}],
-		"normal-3|matrix_ghost": [{"name": "Old", "time": 90.0}],
-		"manhattan|none": [{"name": "Old", "time": 50.0}],
-	}))
-	f.close()
-	var migrated = load("res://scripts/leaderboard.gd").new()
-	checks += 1
-	if migrated.get_top("klassik-2", "").size() != 1 or migrated.get_top("klassik-4", "matrix_ghost").size() != 1:
-		failures += 1
-		print("FAIL old normal-N boards should migrate to klassik-(N+1)")
-	checks += 1
-	if migrated.get_top("manhattan", "").size() != 0:
-		failures += 1
-		print("FAIL the old manhattan board should be dropped")
-	migrated.free()
+	# --- Code-W8: unknown board, mode or level records nothing -------------
+	var bad1: Dictionary = lb.submit_time("klassik-1", "matrix_ghost", 10.0, "X")
+	var bad2: Dictionary = lb.submit_time("klassik-1", "woche", 10.0, "X", "chat")
+	var bad3: Dictionary = lb.submit_time("manhattan", "woche", 10.0, "X")
+	lb.reload()
+	var any_bad := false
+	for k in lb._boards.keys():
+		if not load("res://scripts/levels.gd").is_valid_board_key(k):
+			any_bad = true
+	_check("invalid keys are refused (rank -1, no new board)", bad1.rank == -1 and bad2.rank == -1 and bad3.rank == -1 and not any_bad, str(lb._boards.keys()))
 
 	# --- board caps at MAX_ENTRIES_PER_BOARD, keeping the fastest --------
-	Leaderboard.reset_all()
-	for i in Leaderboard.MAX_ENTRIES_PER_BOARD + 5:
-		Leaderboard.submit_time("klassik-1", "", float(100 - i), "P%d" % i) # a range of distinct times
-	var capped = Leaderboard.get_top("klassik-1", "", Leaderboard.MAX_ENTRIES_PER_BOARD + 10)
-	checks += 1
-	if capped.size() != Leaderboard.MAX_ENTRIES_PER_BOARD:
-		failures += 1
-		print("FAIL board should cap at MAX_ENTRIES_PER_BOARD (%d), got %d" % [Leaderboard.MAX_ENTRIES_PER_BOARD, capped.size()])
+	lb.reset_all()
+	for i in lb.MAX_ENTRIES_PER_BOARD + 5:
+		lb.submit_time("klassik-1", "woche", float(100 - i), "P%d" % i)
+	var capped: Array = lb.get_top("klassik-1", "woche", lb.MAX_ENTRIES_PER_BOARD + 10)
+	_check("board caps at MAX_ENTRIES_PER_BOARD", capped.size() == lb.MAX_ENTRIES_PER_BOARD, str(capped.size()))
 
-	# --- Code-W3: version field, type checks, no orphans ------------------
-	var lb_script = load("res://scripts/leaderboard.gd")
-	checks += 1
-	var vf := FileAccess.open(Leaderboard.save_path(), FileAccess.READ)
-	var saved = JSON.parse_string(vf.get_as_text())
-	vf.close()
-	if typeof(saved) != TYPE_DICTIONARY or saved.get("version", 0) != lb_script.SAVE_VERSION or typeof(saved.get("boards")) != TYPE_DICTIONARY:
-		failures += 1
-		print("FAIL a written save should be {version: %d, boards: {...}}, got %s" % [lb_script.SAVE_VERSION, str(saved).left(120)])
-	checks += 1
-	if FileAccess.file_exists(Leaderboard.save_path() + ".tmp"):
-		failures += 1
-		print("FAIL the atomic write must not leave its .tmp file behind")
+	# --- written file: version 3, boards, atomic --------------------------
+	var saved = _read_json(lb.save_path())
+	_check("a written save is {version: 3, boards: {...}}", typeof(saved) == TYPE_DICTIONARY and saved.get("version", 0) == lb_script.SAVE_VERSION and lb_script.SAVE_VERSION == 3 and typeof(saved.get("boards")) == TYPE_DICTIONARY, str(saved).left(120))
+	_check("the atomic write leaves no .tmp file", not FileAccess.file_exists(lb.save_path() + ".tmp"))
 
-	_write(Leaderboard.save_path(), JSON.stringify({
-		"klassik-1|none": [
-			{"name": "Ok", "time": 90.0},
+	# --- migration v1 (before the level pool, top-level boards) -----------
+	lb.reset_all()
+	_write(lb.save_path(), JSON.stringify({
+		"normal-1|none": [{"name": "Old", "time": 80.0}],
+		"normal-3|matrix_ghost": [{"name": "Old", "time": 90.0}],
+		"normal-7|none": [{"name": "Orphan", "time": 60.0}],
+		"manhattan|none": [{"name": "Old", "time": 50.0}],
+	}))
+	var m1 = lb_script.new()
+	m1.reload()
+	_check("v1: no board survives (all were condition boards)", m1._boards.is_empty(), str(m1._boards.keys()))
+	_check("v1: every old board is archived under its original key (nothing deleted)", m1.archive.has("normal-1|none") and m1.archive.has("normal-3|matrix_ghost") and m1.archive.has("normal-7|none") and m1.archive.has("manhattan|none") and not m1._boards.has("klassik-8|none"), str(m1.archive.keys()))
+	_check("v1: loaded as version 1", m1.loaded_version == 1)
+	m1.free()
+
+	# --- migration v2 (condition keys + Etappe-2 weekly keys) --------------
+	var v2_boards := {
+		"klassik-1|none": [{"name": "A", "time": 130.0}, {"name": "B", "time": 140.0}],
+		"klassik-1|matrix_ghost": [{"name": "A", "time": 90.0}],
+		"klassik-2|fear_and_loathing|chat": [{"name": "A", "time": 150.0}],
+		"offen|none|chat": [{"name": "A", "time": 99.0}],
+		"durchbruch|woche": [{"name": "W", "time": 140.0}],
+		"durchbruch|woche|chat": [{"name": "C", "time": 111.0}],
+		"klassik-3|woche|coop": [{"name": "K", "time": 160.0}],
+		"klassik-4|none": "kaputt",
+	}
+	_write(lb.save_path(), JSON.stringify({"version": 2, "boards": v2_boards}))
+	var m2 = lb_script.new()
+	m2.reload()
+	var archived := ["klassik-1|none", "klassik-1|matrix_ghost", "klassik-2|fear_and_loathing|chat", "offen|none|chat"]
+	var all_in := true
+	for k in archived:
+		if not m2.archive.has(k) or m2.archive[k].size() != v2_boards[k].size():
+			all_in = false
+	_check("v2: condition boards are archived with all their entries", all_in and m2.archive.size() == archived.size(), str(m2.archive.keys()))
+	_check("v2: archived boards are never shown", m2.get_top("klassik-1", "woche").size() == 0 and m2.get_top("offen", "chat").size() == 0)
+	_check("v2: old 'none' times are not taken over to the weekly board", m2.get_top("klassik-1", "woche").is_empty())
+	_check("v2: Etappe-2 weekly boards move to level|woche|mode (week unknown)", m2.get_top("durchbruch", "woche").size() == 1 and m2.get_top("durchbruch", "woche")[0].week == "" and m2.get_top("klassik-3", "woche", 5, "coop").size() == 1)
+	_check("v2: |woche|chat moves to the chat board", m2.get_top("durchbruch", "chat").size() == 1 and m2.get_top("durchbruch", "chat")[0].name == "C")
+	m2.submit_time("klassik-1", "woche", 125.0, "Neu", "solo", "2026-W40")
+	m2.free()
+	var after = _read_json(lb.save_path())
+	_check("v2 -> v3: file rewritten as version 3 with the archive", after.get("version") == 3 and typeof(after.get("archive")) == TYPE_DICTIONARY and after.archive.size() == archived.size(), str(after).left(160))
+
+	# --- round trip: v3 load + save changes nothing --------------------------
+	var rt1 = lb_script.new()
+	rt1.reload()
+	var boards1: Dictionary = rt1._boards.duplicate(true)
+	var arch1: Dictionary = rt1.archive.duplicate(true)
+	rt1._save()
+	rt1.free()
+	var rt2 = lb_script.new()
+	rt2.reload()
+	_check("v3 round trip keeps boards and archive", rt2._boards == boards1 and rt2.archive == arch1 and rt2.loaded_version == 3)
+	_check("v3 round trip keeps the week of an entry", rt2.get_top("klassik-1", "woche")[0].week == "2026-W40")
+	rt2.free()
+
+	# --- v3 with an unknown key: archived; dirty entries dropped -----------
+	_write(lb.save_path(), JSON.stringify({"version": 3, "boards": {
+		"klassik-1|woche|solo": [
+			{"name": "Ok", "time": 90.0, "week": "2026-W40"},
 			{"name": "NoTime"},
 			{"time": 50.0},
 			{"name": "Neg", "time": -3.0},
 			{"name": "Str", "time": "fast"},
 			{"name": 7, "time": 40.0},
+			{"name": "BadWeek", "time": 95.0, "week": 40},
 			"garbage",
 			null,
 		],
-		"klassik-2|none": "not a board",
-		"normal-7|none": [{"name": "Orphan", "time": 60.0}],
-		"normal-0|none": [{"name": "Old", "time": 70.0}],
-	}))
+		"klassik-2|woche|solo": "not a board",
+		"klassik-1|psychedelic|solo": [{"name": "Z", "time": 70.0}],
+	}, "archive": {"alt|none": [{"name": "Alt", "time": 12.0}]}}))
 	var dirty = lb_script.new()
-	var top1: Array = dirty.get_top("klassik-1", "")
-	checks += 1
-	if top1.size() != 2 or top1[0].name != "Old" or top1[1].name != "Ok":
-		failures += 1
-		print("FAIL only well-formed entries should survive (and normal-0 merge into klassik-1), got %s" % [top1])
-	checks += 1
-	if dirty.get_top("klassik-8", "").size() != 0 or dirty._boards.has("klassik-8|none"):
-		failures += 1
-		print("FAIL normal-7 must not become an orphan klassik-8 board")
-	checks += 1
-	if dirty.loaded_version != 1:
-		failures += 1
-		print("FAIL an unversioned file should load as version 1, got %d" % dirty.loaded_version)
-	var r_dirty: Dictionary = dirty.submit_time("klassik-1", "", 80.0, "After")
-	checks += 1
-	if r_dirty.rank != 2:
-		failures += 1
-		print("FAIL submit_time should keep working after loading a dirty board: %s" % [r_dirty])
+	var top1: Array = dirty.get_top("klassik-1", "woche")
+	_check("only well-formed entries survive", top1.size() == 2 and top1[0].name == "Ok" and top1[1].name == "BadWeek" and top1[1].week == "", str(top1))
+	_check("an unknown v3 key goes to the archive, the old archive stays", dirty.archive.has("klassik-1|psychedelic|solo") and dirty.archive.has("alt|none"), str(dirty.archive.keys()))
+	var r_dirty: Dictionary = dirty.submit_time("klassik-1", "woche", 80.0, "After")
+	_check("submit_time keeps working after a dirty file", r_dirty.rank == 1, str(r_dirty))
 	dirty.free()
-	var reread = lb_script.new()
-	var reread_top: Array = reread.get_top("klassik-1", "") # loads lazily, before loaded_version is read
-	checks += 1
-	if reread.loaded_version != lb_script.SAVE_VERSION or reread_top.size() != 3:
-		failures += 1
-		print("FAIL the re-saved file should be version %d with 3 klassik-1 entries" % lb_script.SAVE_VERSION)
-	reread.free()
 
 	# truncated JSON and wrong top-level type: start empty, still accept times
-	for broken in ['{"version": 2, "boards": {"klassik-1|none": [{"name": "A", "ti', '[1, 2, 3]', '{"version": 2, "boards": 5}']:
-		_write(Leaderboard.save_path(), broken)
+	for broken in ['{"version": 3, "boards": {"klassik-1|woche|solo": [{"name": "A", "ti', '[1, 2, 3]', '{"version": 3, "boards": 5}']:
+		_write(lb.save_path(), broken)
 		var b = lb_script.new()
-		checks += 1
-		var rb: Dictionary = b.submit_time("klassik-1", "", 99.0, "B")
-		if b.get_top("klassik-1", "").size() != 1 or rb.rank != 1:
-			failures += 1
-			print("FAIL a broken file (%s) should load as empty and still take a time" % broken.left(30))
+		var rb: Dictionary = b.submit_time("klassik-1", "woche", 99.0, "B")
+		_check("a broken file (%s) loads empty and still takes a time" % broken.left(30), b.get_top("klassik-1", "woche").size() == 1 and rb.rank == 1)
 		b.free()
 
 	# a file from a newer game version: not loaded, never overwritten
-	var future := JSON.stringify({"version": lb_script.SAVE_VERSION + 1, "boards": {"klassik-1|none": [{"name": "F", "time": 10.0}]}})
-	_write(Leaderboard.save_path(), future)
+	var future := JSON.stringify({"version": lb_script.SAVE_VERSION + 1, "boards": {"klassik-1|woche|solo": [{"name": "F", "time": 10.0}]}})
+	_write(lb.save_path(), future)
 	var fut = lb_script.new()
-	fut.submit_time("klassik-1", "", 50.0, "Now")
+	fut.submit_time("klassik-1", "woche", 50.0, "Now")
 	fut.free()
-	var ff := FileAccess.open(Leaderboard.save_path(), FileAccess.READ)
-	var after_future := ff.get_as_text()
+	var ff := FileAccess.open(lb.save_path(), FileAccess.READ)
+	_check("a newer-version save is not overwritten", ff.get_as_text() == future)
 	ff.close()
-	checks += 1
-	if after_future != future:
-		failures += 1
-		print("FAIL a newer-version save must not be overwritten")
-	Leaderboard.free()
+	lb.free()
 
 	# --- QA-W6: the real save file was never touched ----------------------
-	checks += 1
-	if not SaveIsolation.end(real_saves):
-		failures += 1
-		print("FAIL the test changed the real save files")
+	_check("the real save files are unchanged", SaveIsolation.end(real_saves))
 
 	print("")
 	if failures == 0:
@@ -254,6 +201,15 @@ func _initialize() -> void:
 	else:
 		print("%d/%d LEADERBOARD CHECKS FAILED" % [failures, checks])
 		quit(1)
+
+
+func _read_json(path: String):
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	return parsed if parsed != null else {}
 
 
 func _write(path: String, text: String) -> void:
