@@ -1,0 +1,839 @@
+diff --git a/godot/scripts/city_theme.gd b/godot/scripts/city_theme.gd
+index 49ac3e4..0de6e35 100644
+--- a/godot/scripts/city_theme.gd
++++ b/godot/scripts/city_theme.gd
+@@ -114,6 +114,30 @@ var ceil_sky_clouds := false
+ ## letters of a tall building's name are visible" bug this fixes.
+ var ceil_enabled := true
+ 
++## ---- Speedrun-Look-Prototyp (Art Direction): optionale Shader und Pickup-Look ----
++## Leer = altes Verhalten. Pfade auf .gdshader-Dateien.
++var wall_shader_path := ""   # ersetzt matrix_rain, wenn gesetzt
++var floor_shader_path := ""
++var ceil_shader_path := ""
++var pellet_color := Color(1.0, 0.82, 0.4)
++var pellet_emission := Color(1.0, 0.69, 0.18)
++var pellet_energy := 1.3
++var pellet_shape := "sphere"   # "sphere" | "cube"
++var pellet_size := 0.11        # Radius bzw. halbe Kantenlänge
++var pellet_height := 0.32
++var power_color := Color(1.0, 0.365, 0.635)
++var power_emission := Color(1.0, 0.184, 0.525)
++var power_energy := 1.6
++var power_shape := "sphere"
++var power_size := 0.26
++var power_blink_hz := 0.0      # 0 = nur pulsieren (alt); >0 = an/aus-Blinken
++var screen_overlay_shader_path := ""  # Vollbild-Overlay (z. B. Scanlines), leer = keins
++var power_diamond := false     # Power-Kugel auf die Spitze gestellt (Raute)
++## Pac-Man-Basislook v2: Wandlinien-Verlauf je Level. Schlüssel = Level-ID,
++## "default" als Rückfall. Werte: {top, base, body, frightened}.
++var speedrun_palettes := {}
++var minimap_wall_color := Color(0.118, 0.227, 0.478)
++
+ ## ---- Scene-wide environment (background/fog/ambient) — read by Main ----
+ var env_bg_color := Color(0.0196, 0.0275, 0.0627)
+ var env_fog_color := Color(0.0196, 0.0275, 0.0627)
+diff --git a/godot/scripts/city_themes.gd b/godot/scripts/city_themes.gd
+index 90236b2..4893d91 100644
+--- a/godot/scripts/city_themes.gd
++++ b/godot/scripts/city_themes.gd
+@@ -32,23 +32,61 @@ static func normal() -> Resource:
+ 	# MazeView constant since it's shared by every theme.
+ 	t.wall_footprint_scale = 1.12
+ 
+-	# Brown dirt ground + a bright blue "sky" ceiling with blocky white
+-	# clouds (see ceil_sky_clouds / cloud_mesh.gd) — a deliberate Super-
+-	# Mario/Minecraft mashup against the green Matrix-code walls, per the
+-	# user's request.
+-	t.floor_color = Color(0.36, 0.22, 0.1)
+-	t.floor_roughness = 0.85
+-	t.ceil_color = Color(0.35, 0.65, 1.0)
+-	t.ceil_emission_enabled = true
+-	t.ceil_emission_color = Color(0.35, 0.65, 1.0)
+-	t.ceil_emission_energy = 0.35
+-	t.ceil_sky_clouds = true
+-
+-	t.env_bg_color = Color(0.35, 0.65, 1.0)
+-	t.env_fog_color = Color(0.35, 0.65, 1.0)
+-	t.env_fog_density = 0.015
+-	t.env_ambient_color = Color(0.55, 0.7, 0.85)
+-	t.env_ambient_energy = 1.1
++	# PROTOTYP „Pac-Man-Basislook v2“ (Art Direction 03.10.2026, nicht freigegeben):
++	# Speedrun-Level immer im Arcade-Maze-Look, aber eigenständig: türkise
++	# Leuchtkante mit Verlauf je Level, gefaste Ecken, Taktstrich-Sockel,
++	# lit Boden mit Kachelraster und Kreuzungsrahmen. Matrix-Optik = Kondition.
++	t.wall_matrix_rain = false
++	t.wall_shader_path = "res://shaders/pacman_wall.gdshader"
++	t.floor_shader_path = "res://shaders/pacman_floor.gdshader"
++	t.floor_color = Color(0.05, 0.058, 0.085)
++	t.floor_roughness = 0.9
++	t.ceil_color = Color(0.0, 0.0, 0.0)
++	t.ceil_emission_enabled = false
++	t.ceil_sky_clouds = false
++	# Variante „Niedrig“ (nur zum Vergleich, per Umgebungsvariable): 1,3 m hohe
++	# Wände, Blick über das Labyrinth. Ändert die Schwierigkeit – nicht Standard.
++	if OS.get_environment("ZAC_LOW_WALLS") == "1":
++		t.wall_height_min = 1.3
++		t.wall_height_max = 1.3
++		t.ceil_enabled = false
++
++	# Signatur: Oberkante immer Türkis; der Verlauf zum Sockel wechselt je Level.
++	var lagune := {"top": Color("1ef2c8"), "base": Color("0b7fa8"), "body": Color("06141c"), "frightened": Color("bdfcef")}
++	var riff := {"top": Color("1ef2c8"), "base": Color("1fbf5a"), "body": Color("061a12"), "frightened": Color("bdfcef")}
++	t.speedrun_palettes = {
++		"default": lagune,
++		"klassik-1": lagune,
++		"klassik-2": riff,
++		"klassik-3": lagune,
++		"klassik-4": riff,
++	}
++	if OS.get_environment("ZAC_PALETTE") == "riff":
++		t.speedrun_palettes["klassik-1"] = riff
++	t.minimap_wall_color = Color("128f7c")
++
++	t.env_bg_color = Color(0.0, 0.0, 0.0)
++	t.env_fog_color = Color(0.0, 0.0, 0.0)
++	t.env_fog_density = 0.022
++	t.env_ambient_color = Color(0.45, 0.55, 0.6)
++	t.env_ambient_energy = 0.9
++
++	# Kugeln: kleine helle Würfel (Belohnung = hell-neutral), Power-Kugel
++	# derselbe Farbton, groß, auf die Spitze gestellt, langsam blinkend.
++	t.pellet_color = Color("fff0c8")
++	t.pellet_emission = Color("ffd98a")
++	t.pellet_energy = 0.9
++	t.pellet_shape = "cube"
++	t.pellet_size = 0.075
++	t.pellet_height = 0.42
++	t.power_color = Color("fff0c8")
++	t.power_emission = Color("ffd27a")
++	t.power_energy = 1.4
++	t.power_shape = "cube"
++	t.power_size = 0.2
++	t.power_diamond = true
++	t.power_blink_hz = 2.0
++	t.screen_overlay_shader_path = "res://shaders/crt_overlay.gdshader"
+ 
+ 	t.has_power_ups = true
+ 	t.permanently_word_built = false
+diff --git a/godot/scripts/enemy.gd b/godot/scripts/enemy.gd
+index bd12513..4f04d8d 100644
+--- a/godot/scripts/enemy.gd
++++ b/godot/scripts/enemy.gd
+@@ -27,6 +27,7 @@ var body_material: StandardMaterial3D
+ var word_mesh: MeshInstance3D
+ var light: OmniLight3D
+ var word_skin_active := false
++var frightened_color := Color(0.82, 0.82, 1.0) # PROTOTYP: von Main aus der Level-Palette gesetzt
+ 
+ var _bob_seed := 0.0
+ 
+@@ -41,7 +42,7 @@ func setup(color: Color, glow: Color, speed: float) -> void:
+ 	body_material.albedo_color = color
+ 	body_material.emission_enabled = true
+ 	body_material.emission = color
+-	body_material.emission_energy_multiplier = 0.7
++	body_material.emission_energy_multiplier = 1.4 # PROTOTYP
+ 	body_material.metallic = 0.2
+ 	body_material.roughness = 0.3
+ 	# Blocky pixel-art ghost (see ghost_mesh.gd) instead of a smooth sphere —
+@@ -104,8 +105,9 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool,
+ 		body_material.emission = Color(0.62, 0.7, 0.85)
+ 	elif frightened_active and mode != "eaten":
+ 		mode = "frightened"
+-		body_material.albedo_color = Color(0.13, 0.2, 0.93)
+-		body_material.emission = Color(0.33, 0.47, 1.0)
++		# PROTOTYP Pac-Man v2: verängstigt = alle gleich, kalt-hell (Raumfarbe = fressbar)
++		body_material.albedo_color = frightened_color
++		body_material.emission = frightened_color * 0.55
+ 	elif mode == "frightened" and not frightened_active:
+ 		mode = "chase"
+ 		body_material.albedo_color = palette_color
+diff --git a/godot/scripts/ghost_mesh.gd b/godot/scripts/ghost_mesh.gd
+index 3b5e65d..ed99ddb 100644
+--- a/godot/scripts/ghost_mesh.gd
++++ b/godot/scripts/ghost_mesh.gd
+@@ -12,18 +12,19 @@ extends RefCounted
+ 
+ ## Ghost silhouette as an 8-row x 7-column pixel grid, top row first —
+ ## dome top, solid body, then a 4-point zig-zag skirt at the bottom.
+-const PIXEL_ROWS := [
+-	".#####.",
+-	"#######",
+-	"#######",
++const PIXEL_ROWS := [ # PROTOTYP Richtung 2: „Schild mit Visier“ – Hörner oben, Spitze unten, ein Sehschlitz
++	"#.....#",
++	"##.#.##",
+ 	"#######",
++	"#.....#",
+ 	"#######",
+ 	"#######",
+-	"#######",
+-	"#.#.#.#",
++	".#####.",
++	"..###..",
++	"...#...",
+ ]
+ const COLS := 7
+-const ROWS := 8
++const ROWS := 9
+ const DEPTH_VOXELS := 2 # a couple of voxels deep so it reads as a solid from any angle, not a flat sprite
+ 
+ 
+@@ -32,7 +33,7 @@ const DEPTH_VOXELS := 2 # a couple of voxels deep so it reads as a solid from an
+ ## e.g. Enemy's frightened/eaten recolor just mutates the material in place,
+ ## no rebuild needed). `options.voxel_size` scales the whole ghost.
+ static func build(material: StandardMaterial3D, options: Dictionary = {}) -> MultiMeshInstance3D:
+-	var voxel_size: float = float(options.get("voxel_size", 0.095))
++	var voxel_size: float = float(options.get("voxel_size", 0.105))
+ 
+ 	var box := BoxMesh.new()
+ 	box.size = Vector3.ONE * voxel_size
+diff --git a/godot/scripts/hud.gd b/godot/scripts/hud.gd
+index ad3e28f..ccad809 100644
+--- a/godot/scripts/hud.gd
++++ b/godot/scripts/hud.gd
+@@ -12,11 +12,12 @@ signal twitch_toggled(is_enabled: bool, channel: String)
+ 
+ const ConditionsScript := preload("res://scripts/conditions.gd")
+ 
+-const BG := Color(0.035, 0.055, 0.11, 0.86)
+-const BORDER := Color(0.31, 0.66, 1.0, 0.35)
+-const ACCENT := Color(0.2, 0.878, 1.0)
+-const PELLET_COLOR := Color(1.0, 0.82, 0.4)
+-const POWER_COLOR := Color(1.0, 0.365, 0.635)
++const BG := Color(0.0, 0.0, 0.0, 0.9)
++const BORDER := Color(0.118, 0.949, 0.784, 0.75) # #1EF2C8 Türkis (PROTOTYP Pac-Man v2)
++const ACCENT := Color(1.0, 1.0, 1.0)
++const PELLET_COLOR := Color(1.0, 0.94, 0.78) # #FFF0C8
++const POWER_COLOR := Color(1.0, 0.82, 0.48) # #FFD27A
++const MINIMAP_WALL := Color(0.071, 0.561, 0.486) # #128F7C, bewusst nicht Blau
+ const DANGER := Color(1.0, 0.231, 0.365)
+ 
+ var score_label: Label
+@@ -539,22 +540,22 @@ func _draw_minimap() -> void:
+ 	var size := minimap.size
+ 	var sx: float = size.x / float(minimap_maze.cols)
+ 	var sy: float = size.y / float(minimap_maze.rows)
+-	minimap.draw_rect(Rect2(Vector2.ZERO, size), Color(0.008, 0.012, 0.039, 0.4))
++	minimap.draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, 0.9))
+ 	for r in minimap_maze.rows:
+ 		for c in minimap_maze.cols:
+ 			if minimap_maze.grid[r][c] == 1:
+-				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), Color(0.118, 0.227, 0.478))
++				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), MINIMAP_WALL)
+ 	if minimap_maze_view != null:
+ 		for i in minimap_maze_view.pellet_cells.size():
+ 			if not minimap_maze_view.pellet_alive[i]:
+ 				continue
+ 			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
+-			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, Color(1.0, 0.82, 0.4))
++			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, PELLET_COLOR)
+ 		for i in minimap_maze_view.power_cells.size():
+ 			if not minimap_maze_view.power_alive[i]:
+ 				continue
+ 			var pw: Vector2i = minimap_maze_view.power_cells[i]
+-			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, Color(1.0, 0.365, 0.635))
++			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, POWER_COLOR)
+ 	# Review findings GD-K4/UX-K2/Code-W11: the player's real facing
+ 	# direction is (-sin(yaw), -cos(yaw)) (see player_controller.gd's
+ 	# _physics_process), but the arrow was rotated by `p.rotated(yaw)` —
+@@ -564,7 +565,7 @@ func _draw_minimap() -> void:
+ 	# +0.5-cell offset the pellets/power-ups above already use, putting
+ 	# them half a cell off from where they actually are.
+ 	for e in minimap_enemies:
+-		var col: Color = Color(0.35, 0.82, 1.0) if minimap_frightened else e.palette_color
++		var col: Color = Color(0.74, 0.99, 0.94) if minimap_frightened else e.palette_color
+ 		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
+ 	if minimap_player != null:
+ 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
+diff --git a/godot/scripts/main.gd b/godot/scripts/main.gd
+index 6ec5060..b67045b 100644
+--- a/godot/scripts/main.gd
++++ b/godot/scripts/main.gd
+@@ -91,12 +91,12 @@ const LevelsScript := preload("res://scripts/levels.gd")
+ const CityThemesScript := preload("res://scripts/city_themes.gd")
+ const ConditionsScript := preload("res://scripts/conditions.gd")
+ 
+-const ENEMY_PALETTE := [
+-	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
+-	{"color": Color(1.0, 0.365, 0.635), "glow": Color(1.0, 0.62, 0.788)},
+-	{"color": Color(0.2, 0.878, 1.0), "glow": Color(0.616, 0.953, 1.0)},
+-	{"color": Color(1.0, 0.655, 0.2), "glow": Color(1.0, 0.816, 0.541)},
+-	{"color": Color(0.616, 0.361, 1.0), "glow": Color(0.788, 0.639, 1.0)},
++const ENEMY_PALETTE := [ # PROTOTYP Pac-Man v2: Gefahr = warm/gesättigt; erste drei ohne Pink/Cyan/Orange
++	{"color": Color("ff3049"), "glow": Color("ff6a7a")},   # Rot – Jäger
++	{"color": Color("e2ff3a"), "glow": Color("efff8a")},   # Zitron – Abfänger
++	{"color": Color("a65cff"), "glow": Color("c79bff")},   # Violett – Streuner
++	{"color": Color("ffa41f"), "glow": Color("ffc56e")},   # Bernstein – Lauerer
++	{"color": Color("ff36c8"), "glow": Color("ff85dd")},   # Magenta – Nachzügler
+ ]
+ 
+ var hud
+@@ -255,6 +255,7 @@ func start_level(level: Dictionary) -> void:
+ 	start_cell = LevelsScript.start_cell(MazeGen, maze)
+ 	level_chat_assisted = false
+ 
++	maze_view.level_id = level.id
+ 	maze_view.build(maze, start_cell, "normal", [], [], level_index >= FEAR_FIRST_LEVEL)
+ 	hud.set_explorer_hud(false)
+ 	_apply_theme_environment("normal")
+@@ -290,6 +291,8 @@ func start_level(level: Dictionary) -> void:
+ 		enemy.set_script(load("res://scripts/enemy.gd"))
+ 		enemy_root.add_child(enemy)
+ 		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
++		if maze_view.palette.has("frightened"):
++			enemy.frightened_color = maze_view.palette.frightened
+ 		enemy.setup(pal.color, pal.glow, minf(level.ghost_speed + i * 0.05 + extra * 0.15, GHOST_SPEED_CAP)) # GD-N1: capped so ghosts never outrun the player past the tuned levels
+ 		var cell: Vector2i = house_cells[i % house_cells.size()]
+ 		enemy.place_in_house(cell)
+diff --git a/godot/scripts/maze_view.gd b/godot/scripts/maze_view.gd
+index 0884dbf..ff8fbec 100644
+--- a/godot/scripts/maze_view.gd
++++ b/godot/scripts/maze_view.gd
+@@ -63,6 +63,9 @@ var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed
+ var sky_cloud_nodes: Array = [] # Array[MultiMeshInstance3D], sky-cloud themes only — see _build_sky_clouds; tracked mainly so tests can check their height
+ var _t := 0.0
+ 
++var level_id := "" # PROTOTYP Pac-Man v2: von Main vor build() gesetzt, wählt den Wandverlauf
++var palette := {}   # aktive Speedrun-Palette (top/base/body/frightened), leer = keine
++var maze_tex: ImageTexture # 1 Pixel je Zelle: R = Wand, G = Kreuzung (>=3 offene Nachbarn)
+ var wall_material: Material # StandardMaterial3D normally, or a matrix_rain ShaderMaterial (see CityTheme.wall_matrix_rain)
+ var pellet_material: StandardMaterial3D
+ var power_material: StandardMaterial3D
+@@ -104,6 +107,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
+ 	_build_sky_clouds()
+ 	_build_tunnel_vistas()
+ 	_build_pellets(start_cell, reserved_cells, metro_cells, fear_enabled)
++	_build_screen_overlay()
+ 	# A permanently-word-built theme (Manhattan) starts in the word-built-
+ 	# world look; other themes start out looking normal and only switch when
+ 	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
+@@ -111,7 +115,17 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
+ 
+ 
+ func _make_materials() -> void:
+-	if city_theme.wall_matrix_rain:
++	palette = {}
++	if not city_theme.speedrun_palettes.is_empty():
++		palette = city_theme.speedrun_palettes.get(level_id, city_theme.speedrun_palettes["default"])
++	_build_maze_tex()
++	if city_theme.wall_shader_path != "":
++		var sp_mat := ShaderMaterial.new()
++		sp_mat.shader = load(city_theme.wall_shader_path)
++		sp_mat.set_shader_parameter("cell", CELL)
++		_apply_palette(sp_mat)
++		wall_material = sp_mat
++	elif city_theme.wall_matrix_rain:
+ 		# Scrolling green ASCII glyphs baked into the wall surface itself —
+ 		# see matrix_rain.gdshader. Always fully "ASCII", never a flat real
+ 		# color, at any distance (unlike the old screen-space post effect).
+@@ -129,16 +143,16 @@ func _make_materials() -> void:
+ 		wall_material = sm
+ 
+ 	pellet_material = StandardMaterial3D.new()
+-	pellet_material.albedo_color = Color(1.0, 0.82, 0.4)
++	pellet_material.albedo_color = city_theme.pellet_color
+ 	pellet_material.emission_enabled = true
+-	pellet_material.emission = Color(1.0, 0.69, 0.18)
+-	pellet_material.emission_energy_multiplier = 1.3
++	pellet_material.emission = city_theme.pellet_emission
++	pellet_material.emission_energy_multiplier = city_theme.pellet_energy
+ 
+ 	power_material = StandardMaterial3D.new()
+-	power_material.albedo_color = Color(1.0, 0.365, 0.635)
++	power_material.albedo_color = city_theme.power_color
+ 	power_material.emission_enabled = true
+-	power_material.emission = Color(1.0, 0.184, 0.525)
+-	power_material.emission_energy_multiplier = 1.6
++	power_material.emission = city_theme.power_emission
++	power_material.emission_energy_multiplier = city_theme.power_energy
+ 
+ 	fruit_material = StandardMaterial3D.new()
+ 	fruit_material.albedo_color = Color(0.486, 1.0, 0.42)
+@@ -233,6 +247,7 @@ func _build_walls() -> void:
+ 
+ 	var mm := MultiMesh.new()
+ 	mm.transform_format = MultiMesh.TRANSFORM_3D
++	mm.use_custom_data = true # PROTOTYP: Nachbar-Maske für Kontur-Shader
+ 	mm.mesh = box_mesh
+ 	mm.instance_count = wall_cells.size()
+ 	var fp: float = city_theme.wall_footprint_scale
+@@ -242,6 +257,11 @@ func _build_walls() -> void:
+ 		var basis := Basis().scaled(Vector3(fp, h, fp))
+ 		var xf := Transform3D(basis, Vector3(cell.y * CELL, h * 0.5, cell.x * CELL))
+ 		mm.set_instance_transform(i, xf)
++		mm.set_instance_custom_data(i, Color(
++			1.0 if _is_wall(cell.x - 1, cell.y) else 0.0,
++			1.0 if _is_wall(cell.x + 1, cell.y) else 0.0,
++			1.0 if _is_wall(cell.x, cell.y - 1) else 0.0,
++			1.0 if _is_wall(cell.x, cell.y + 1) else 0.0))
+ 
+ 	normal_wall_mmi = MultiMeshInstance3D.new()
+ 	normal_wall_mmi.multimesh = mm
+@@ -310,6 +330,38 @@ func _build_walls() -> void:
+ 		walls_body.add_child(cs)
+ 
+ 
++func _apply_palette(m: ShaderMaterial) -> void:
++	if palette.is_empty():
++		return
++	m.set_shader_parameter("line_top", palette.top)
++	m.set_shader_parameter("line_base", palette.base)
++	m.set_shader_parameter("body_color", palette.body)
++
++
++## Zellkarte als Textur (1 Pixel je Zelle) für Boden-/Wand-Shader:
++## R = Wand, G = Kreuzung (offene Zelle mit >= 3 offenen Nachbarn).
++func _build_maze_tex() -> void:
++	var img := Image.create(maze.cols, maze.rows, false, Image.FORMAT_RGBA8)
++	for r in maze.rows:
++		for c in maze.cols:
++			var wall: bool = maze.grid[r][c] == 1
++			var open_n := 0
++			if not wall:
++				for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
++					var rr: int = r + d.x
++					var cc: int = c + d.y
++					if rr >= 0 and rr < maze.rows and cc >= 0 and cc < maze.cols and maze.grid[rr][cc] != 1:
++						open_n += 1
++			img.set_pixel(c, r, Color(1.0 if wall else 0.0, 1.0 if open_n >= 3 else 0.0, 0.0, 1.0))
++	maze_tex = ImageTexture.create_from_image(img)
++
++
++func _is_wall(r: int, c: int) -> bool:
++	if r < 0 or r >= maze.rows or c < 0 or c >= maze.cols:
++		return false
++	return maze.grid[r][c] == 1
++
++
+ func _build_floor_ceiling() -> void:
+ 	var floor_w: float = maze.cols * CELL
+ 	var floor_d: float = maze.rows * CELL
+@@ -335,6 +387,15 @@ func _build_floor_ceiling() -> void:
+ 	var floor_mesh := MeshInstance3D.new()
+ 	floor_mesh.mesh = plane
+ 	floor_mesh.material_override = floor_mat
++	if city_theme.floor_shader_path != "":
++		var fsm := ShaderMaterial.new()
++		fsm.shader = load(city_theme.floor_shader_path)
++		fsm.set_shader_parameter("cell", CELL)
++		fsm.set_shader_parameter("maze_tex", maze_tex)
++		fsm.set_shader_parameter("maze_size", Vector2(maze.cols, maze.rows))
++		fsm.set_shader_parameter("floor_albedo", city_theme.floor_color)
++		_apply_palette(fsm)
++		floor_mesh.material_override = fsm
+ 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
+ 	add_child(floor_mesh)
+ 
+@@ -351,6 +412,10 @@ func _build_floor_ceiling() -> void:
+ 		var ceil_mesh := MeshInstance3D.new()
+ 		ceil_mesh.mesh = plane
+ 		ceil_mesh.material_override = ceil_mat
++		if city_theme.ceil_shader_path != "":
++			var csm := ShaderMaterial.new()
++			csm.shader = load(city_theme.ceil_shader_path)
++			ceil_mesh.material_override = csm
+ 		ceil_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, ceil_h, (maze.rows - 1) * CELL * 0.5)
+ 		ceil_mesh.rotation.x = PI
+ 		add_child(ceil_mesh)
+@@ -685,28 +750,25 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
+ 		for cell in fear_powerup_cells:
+ 			pellet_cells.erase(cell)
+ 
+-	var sphere := SphereMesh.new()
+-	sphere.radius = 0.11
+-	sphere.height = 0.22
+-	sphere.material = pellet_material
++	var sphere: Mesh = _pickup_mesh(city_theme.pellet_shape, city_theme.pellet_size, pellet_material)
+ 	for cell in pellet_cells:
+ 		var mesh := MeshInstance3D.new()
+ 		mesh.mesh = sphere
+-		mesh.position = Vector3(cell.y * CELL, 0.32, cell.x * CELL)
++		mesh.position = Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
+ 		add_child(mesh)
+ 		pellet_meshes.append(mesh)
+ 		pellet_alive.append(true)
+ 
+-	var power_sphere := SphereMesh.new()
+-	power_sphere.radius = 0.26
+-	power_sphere.height = 0.52
+-	power_sphere.material = power_material
++	var power_sphere: Mesh = _pickup_mesh(city_theme.power_shape, city_theme.power_size, power_material)
+ 	for cell in power_cells:
+ 		var mesh := MeshInstance3D.new()
+ 		mesh.mesh = power_sphere
+ 		mesh.position = Vector3(cell.y * CELL, 0.4, cell.x * CELL)
++		if city_theme.power_diamond:
++			# auf die Spitze gestellt: Raute statt Würfel/Kugel (eigene Form)
++			mesh.basis = Basis.from_euler(Vector3(PI * 0.25, 0.0, PI * 0.25))
+ 		var light := OmniLight3D.new()
+-		light.light_color = Color(1.0, 0.365, 0.635)
++		light.light_color = city_theme.power_color
+ 		light.omni_range = 2.4
+ 		light.light_energy = 0.7
+ 		mesh.add_child(light)
+@@ -720,6 +782,34 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
+ 		_build_fear_powerup_mesh(cell)
+ 
+ 
++func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
++	if shape == "cube":
++		var b := BoxMesh.new()
++		b.size = Vector3.ONE * size * 2.0
++		b.material = mat
++		return b
++	var sp := SphereMesh.new()
++	sp.radius = size
++	sp.height = size * 2.0
++	sp.material = mat
++	return sp
++
++
++func _build_screen_overlay() -> void:
++	if city_theme.screen_overlay_shader_path == "":
++		return
++	var layer := CanvasLayer.new()
++	layer.layer = 0
++	var rect := ColorRect.new()
++	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
++	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
++	var m := ShaderMaterial.new()
++	m.shader = load(city_theme.screen_overlay_shader_path)
++	rect.material = m
++	layer.add_child(rect)
++	add_child(layer)
++
++
+ func total_pickups() -> int:
+ 	return pellet_cells.size() + power_cells.size()
+ 
+@@ -813,8 +903,12 @@ func _process(delta: float) -> void:
+ 	_t += delta
+ 	for i in power_nodes.size():
+ 		if power_alive[i]:
+-			var s := 1.0 + sin(_t * 6.0 + i) * 0.14
+-			power_nodes[i].scale = Vector3.ONE * s
++			if city_theme != null and city_theme.power_blink_hz > 0.0:
++				# an/aus wie ein Arcade-Energizer, aber langsam (< 3 Hz)
++				power_nodes[i].visible = fmod(_t * city_theme.power_blink_hz, 1.0) < 0.62
++			else:
++				var s := 1.0 + sin(_t * 6.0 + i) * 0.14
++				power_nodes[i].scale = Vector3.ONE * s
+ 	if fruit_alive and fruit_node != null:
+ 		fruit_node.rotate_y(delta * 1.4)
+ 	for i in word_powerup_nodes.size():
+diff --git a/godot/shaders/crt_overlay.gdshader b/godot/shaders/crt_overlay.gdshader
+new file mode 100644
+index 0000000..2b90fca
+--- /dev/null
++++ b/godot/shaders/crt_overlay.gdshader
+@@ -0,0 +1,20 @@
++// crt_overlay.gdshader — PROTOTYP Pac-Man v2: statische Arcade-Anmutung.
++// Auflösungsunabhängig: feste Zahl Zeilen je Bildhöhe (line_count) statt
++// „jede 3. Pixelzeile“; Kanten über fwidth geglättet, damit bei 720p wie bei
++// 4K dieselbe Struktur entsteht und nichts schwebt. Vignette in SCREEN_UV.
++// Kein Flimmern, keine Bildkrümmung, keine Farbsäume (Komfort, Lesbarkeit).
++shader_type canvas_item;
++uniform float line_count = 270.0;   // Zeilen je Bildhöhe (unabhängig von der Auflösung)
++uniform float line_strength = 0.22;
++uniform float vignette = 0.5;
++void fragment() {
++	float y = SCREEN_UV.y * line_count;
++	float fw = max(fwidth(y), 1e-4);
++	// dunkles Drittel jeder Zeile, geglättet
++	float p = fract(y);
++	float dark = clamp((0.33 - p) / fw + 0.5, 0.0, 1.0);
++	dark *= clamp(1.0 / (fw * 3.0), 0.0, 1.0);   // < 3 px je Zeile: Struktur weich ausblenden statt Moiré
++	vec2 d = SCREEN_UV - vec2(0.5);
++	float v = smoothstep(0.35, 0.85, length(d * vec2(1.0, 1.25))) * vignette;
++	COLOR = vec4(0.0, 0.0, 0.0, clamp(dark * line_strength + v, 0.0, 0.85));
++}
+diff --git a/godot/shaders/pacman_floor.gdshader b/godot/shaders/pacman_floor.gdshader
+new file mode 100644
+index 0000000..0394ae5
+--- /dev/null
++++ b/godot/shaders/pacman_floor.gdshader
+@@ -0,0 +1,66 @@
++// pacman_floor.gdshader — PROTOTYP „Pac-Man-Basislook v2“ (Art Direction, nicht freigegeben)
++//
++// Beleuchteter (NICHT unshaded) dunkler Boden: das OmniLight der Geister färbt
++// ihn um Ecken herum als Vorwarnung. Darauf, emissiv und fwidth-geglättet:
++//  - Kachelraster in Zellgröße: Querstriche alle CELL Meter -> Tempogefühl
++//  - Kreuzungsrahmen: gefastes Achteck auf jeder Zelle mit >= 3 offenen
++//    Nachbarn -> Abzweigungen schon aus der Distanz erkennbar
++// Zellkarte kommt als Textur (1 Pixel je Zelle, R = Wand, G = Kreuzung).
++shader_type spatial;
++render_mode specular_schlick_ggx;
++
++uniform sampler2D maze_tex : filter_nearest;
++uniform vec2 maze_size = vec2(21.0, 19.0);
++uniform float cell = 2.0;
++uniform vec3 floor_albedo : source_color = vec3(0.035, 0.04, 0.065);
++uniform vec3 line_top : source_color = vec3(0.118, 0.949, 0.784);
++uniform vec3 line_base : source_color = vec3(0.043, 0.498, 0.659);
++uniform float grid_w = 0.06;
++uniform float grid_strength = 1.0;
++uniform float junction_half = 0.6;    // halbe Kantenlänge des Kreuzungsrahmens (m)
++uniform float junction_chamfer = 0.38;
++uniform float junction_w = 0.06;
++uniform float junction_strength = 0.75;
++
++varying vec3 wpos;
++
++void vertex() {
++	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
++}
++
++float line_aa(float d, float w) {
++	float fw = max(fwidth(d), 1e-5);
++	float wc = max(w, fw);
++	float a = clamp((wc * 0.5 - abs(d)) / fw + 0.5, 0.0, 1.0);
++	return a * clamp(w / fw, 0.0, 1.0);
++}
++
++void fragment() {
++	// Zelle (r, c) hat ihr Zentrum bei (x = c*cell, z = r*cell)
++	vec2 g = vec2(wpos.x, wpos.z) / cell + 0.5;
++	ivec2 ci = ivec2(floor(g));
++	vec4 m = vec4(1.0, 0.0, 0.0, 1.0);
++	if (ci.x >= 0 && ci.y >= 0 && float(ci.x) < maze_size.x && float(ci.y) < maze_size.y) {
++		m = texelFetch(maze_tex, ci, 0);
++	}
++	vec2 local = (fract(g) - 0.5) * cell;   // Meter ab Zellmitte
++
++	// Kachelraster: Abstand zur nächsten Zellgrenze
++	vec2 db = cell * 0.5 - abs(local);
++	float grid = max(line_aa(db.x, grid_w), line_aa(db.y, grid_w));
++	float fade = clamp(1.0 - max(fwidth(g.x), fwidth(g.y)) * 6.0, 0.0, 1.0); // weit weg ausblenden
++	vec3 em = line_base * grid * grid_strength * fade;
++
++	if (m.g > 0.5) {
++		vec2 q = abs(local);
++		float d_sq = max(q.x, q.y) - junction_half;
++		float d_ch = (q.x + q.y - (2.0 * junction_half - junction_chamfer)) * 0.70710678;
++		float d = max(d_sq, d_ch);
++		float frame = line_aa(d, junction_w);
++		float inner = (1.0 - smoothstep(-0.02, 0.02, d)) * 0.05;
++		em += line_top * (frame * junction_strength + inner);
++	}
++	ALBEDO = floor_albedo;
++	ROUGHNESS = 0.85;
++	EMISSION = em;
++}
+diff --git a/godot/shaders/pacman_wall.gdshader b/godot/shaders/pacman_wall.gdshader
+new file mode 100644
+index 0000000..b2ba2bd
+--- /dev/null
++++ b/godot/shaders/pacman_wall.gdshader
+@@ -0,0 +1,133 @@
++// pacman_wall.gdshader — PROTOTYP „Pac-Man-Basislook v2“ (Art Direction, nicht freigegeben)
++//
++// Arcade-Maze-Prinzip (beschrieben, nicht kopiert): Wände sind dunkle Masse
++// mit Leuchtkontur, Gänge sind dunkle Kanäle. Eigenständig gegenüber dem
++// Original durch: EINE kräftige Leuchtkante statt dünner Doppellinie, Farbe
++// Türkis mit Verlauf je Level (nie Blau), gefaste 45°-Ecken statt runder,
++// Taktstrich-Sockel (gibt Tempo), schraffierte Deckfläche.
++// Welche Nachbarn Wand sind, schreibt MazeView je Instanz in INSTANCE_CUSTOM.
++// Technik: alle Linien über fwidth() kantengeglättet (kein Flimmern auf
++// Distanz), Masse beleuchtet (Geister-OmniLight als Vorwarnung sichtbar),
++// psychedelic_amount für den Fear-&-Loathing-Pickup (MazeView.set_psychedelic).
++shader_type spatial;
++render_mode cull_back, specular_disabled;
++
++uniform vec3 line_top : source_color = vec3(0.118, 0.949, 0.784);  // #1EF2C8
++uniform vec3 line_base : source_color = vec3(0.043, 0.498, 0.659); // #0B7FA8 (je Level)
++uniform vec3 body_color : source_color = vec3(0.024, 0.078, 0.11); // #06141C
++uniform float cell = 2.0;          // MazeView.CELL; BoxMesh ist cell x 1 x cell
++uniform float edge_w = 0.11;       // Leuchtkante oben (m)
++uniform float base_w = 0.04;       // Sockellinie (m)
++uniform float dash_len = 0.5;      // Taktstrich-Periode (m)
++uniform float dash_y = 0.24;       // Höhe der Taktstriche über Boden (m)
++uniform float dash_h = 0.09;
++uniform float chamfer = 0.5;       // Fase an freien Außenecken der Deckfläche (m)
++uniform float cap_w = 0.07;        // Leuchtkante der Deckfläche (m)
++uniform float emission_gain = 2.4;
++uniform float psychedelic_amount = 0.0;
++
++varying vec3 wpos;
++varying vec3 wnorm;
++varying vec4 nb;    // r: Wand bei row-1 (-Z), g: row+1 (+Z), b: col-1 (-X), a: col+1 (+X)
++varying vec3 center;
++varying float half_h;
++varying float half_w;
++
++void vertex() {
++	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
++	wnorm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
++	nb = INSTANCE_CUSTOM;
++	center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
++	half_h = length(MODEL_MATRIX[1].xyz) * 0.5;
++	half_w = length(MODEL_MATRIX[0].xyz) * cell * 0.5;
++}
++
++// Kantengeglättete Linie: d = Abstand zur Mittellinie (m), w = Breite (m).
++// Unter einem Pixel Breite wird die Linie 1 px breit und entsprechend dunkler
++// gezeichnet statt zu zerfallen – kein Flimmern auf Distanz.
++float line_aa(float d, float w) {
++	float fw = max(fwidth(d), 1e-5);
++	float wc = max(w, fw);
++	float a = clamp((wc * 0.5 - abs(d)) / fw + 0.5, 0.0, 1.0);
++	return a * clamp(w / fw, 0.0, 1.0);
++}
++
++vec3 hue_shift(vec3 c, float a) {
++	const vec3 k = vec3(0.57735);
++	float ca = cos(a);
++	return c * ca + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - ca);
++}
++
++void fragment() {
++	float H = 2.0 * half_h;
++	float y = wpos.y - (center.y - half_h);   // 0 = Boden
++	float top = H - y;                          // 0 = Oberkante
++	if (psychedelic_amount > 0.001) {
++		y += sin(wpos.x * 2.1 + wpos.z * 1.7 + TIME * 2.3) * 0.12 * psychedelic_amount;
++		top = H - y;
++	}
++	vec3 grad = mix(line_base, line_top, smoothstep(0.0, H, y));
++	vec3 albedo = body_color * mix(1.0, 0.45, clamp(y / max(H, 0.01), 0.0, 1.0));
++	vec3 em = vec3(0.0);
++
++	if (wnorm.y > 0.5) {
++		// Deckfläche (nur bei niedrigen Wänden sichtbar): gefüllter Block mit
++		// Leuchtkante an freien Kanten, gefaste Außenecken, feine Diagonal-Schraffur.
++		float dx = wpos.x - center.x;
++		float dz = wpos.z - center.z;
++		float e[4] = float[4](dz + half_w, half_w - dz, dx + half_w, half_w - dx);
++		float o[4] = float[4](nb.r, nb.g, nb.b, nb.a);
++		float d = 1e3;
++		for (int i = 0; i < 4; i++) {
++			if (o[i] < 0.5) { d = min(d, e[i]); }
++		}
++		// Fasen: Ecke zwischen zwei freien Kanten
++		int ca[4] = int[4](0, 0, 1, 1);
++		int cb[4] = int[4](2, 3, 2, 3);
++		bool cut = false;
++		for (int k = 0; k < 4; k++) {
++			if (o[ca[k]] < 0.5 && o[cb[k]] < 0.5) {
++				float dd = (e[ca[k]] + e[cb[k]] - chamfer) * 0.70710678;
++				d = min(d, dd);
++				if (dd < 0.0) { cut = true; }
++			}
++		}
++		float hatch = line_aa((fract((wpos.x + wpos.z) / 0.42) - 0.5) * 0.42 * 0.70710678, 0.035);
++		albedo = body_color * 1.3;
++		em = line_base * hatch * 0.18;
++		float rim = line_aa(d - cap_w * 0.5 - 0.03, cap_w);
++		em = mix(em, line_top, rim);
++		if (cut) { albedo = vec3(0.0); em = vec3(0.0); }
++	} else if (abs(wnorm.y) < 0.5) {
++		// Seitenflächen
++		// niedrige Wände (Variante) liegen nah am Auge: Kante und Lichthof mitskalieren
++		float hs = clamp(H / 4.4, 0.35, 1.0);
++		float rim = line_aa(top - edge_w * hs * 0.5, edge_w * hs);
++		float glow = exp(-max(top, 0.0) * 6.0 / hs) * 0.12 * hs;       // Lichthof unter der Kante
++		float base = line_aa(y - base_w * 0.5 - 0.01, base_w);
++		bool face_x = abs(wnorm.x) > 0.5;
++		float along = face_x ? wpos.z : wpos.x;
++		float u = along / dash_len;
++		float fu = fwidth(u);
++		float dash = line_aa((fract(u) - 0.5) * dash_len, dash_len * 0.45);
++		dash = mix(dash, 0.45, clamp(fu * 1.5 - 0.5, 0.0, 1.0));       // auf Distanz zu Mittelwert, nie Moiré
++		float dash_band = line_aa(y - dash_y, dash_h) * dash;
++		// senkrechte Linie nur an freien Enden (Ecken/Öffnungen früh erkennbar)
++		float h = face_x ? (wpos.z - center.z) : (wpos.x - center.x);
++		bool open_neg = face_x ? (nb.r < 0.5) : (nb.b < 0.5);
++		bool open_pos = face_x ? (nb.g < 0.5) : (nb.a < 0.5);
++		float near_fade = smoothstep(1.3, 3.0, length(wpos - INV_VIEW_MATRIX[3].xyz));
++		float vert = 0.0;
++		if (open_neg) { vert = max(vert, line_aa(h + half_w - base_w, base_w * 1.5) * near_fade); }
++		if (open_pos) { vert = max(vert, line_aa(half_w - h - base_w, base_w * 1.5) * near_fade); }
++		float wash = 0.07 * (1.0 - 0.75 * clamp(y / max(H, 0.01), 0.0, 1.0)); // dunkle Türkis-Masse statt Schwarz
++		em = line_top * max(rim, glow) + line_base * max(base, dash_band) + grad * (vert * 0.85 + wash);
++	}
++	if (psychedelic_amount > 0.001) {
++		em = mix(em, hue_shift(em, TIME * 1.7 + wpos.x * 0.3 + wpos.z * 0.2), psychedelic_amount);
++		albedo = mix(albedo, hue_shift(albedo * 3.0, TIME), psychedelic_amount * 0.5);
++	}
++	ALBEDO = albedo;
++	ROUGHNESS = 0.9;
++	EMISSION = em * emission_gain;
++}
+diff --git a/godot/tests/bot_test.gd b/godot/tests/bot_test.gd
+index 67b48ff..a9cb03b 100644
+--- a/godot/tests/bot_test.gd
++++ b/godot/tests/bot_test.gd
+@@ -104,18 +104,29 @@ func _run_checks() -> void:
+ 	var start_dr: int = roundi(-cos(start_yaw))
+ 	_check("level start: player faces an open neighbor cell, not a wall", MazeGen.is_open(main.maze, main.start_cell.x + start_dr, main.start_cell.y + start_dc), "start_cell=%s yaw=%f dr=%d dc=%d" % [main.start_cell, start_yaw, start_dr, start_dc])
+ 
+-	# ---- Matrix wall shader: much more glyph variance, and the new
+-	# darker-but-more-luminous color tuning ----
++	# ---- PROTOTYP Pac-Man v2: Wand-/Boden-Shader (Technik-Auflagen des code-reviewer) ----
+ 	var wall_shader: Shader = main.maze_view.wall_material.shader
+-	_check("matrix wall: glyph table has far more than the original 10 shapes", wall_shader.code.find("GLYPH_COUNT = 31") != -1)
+-	# Uniforms aren't overridden per-material here (no set_shader_parameter
+-	# call — see MazeView._make_materials), so get_shader_parameter() would
+-	# just return the "no override" nil rather than the shader's own default;
+-	# check the darker/more-saturated defaults straight in the shader source
+-	# instead.
+-	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.0004, 0.006, 0.002)") != -1)
+-	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.05, 0.92, 0.18)") != -1)
+-	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.6") != -1)
++	_check("pacman wall: shader in use", wall_shader.resource_path == "res://shaders/pacman_wall.gdshader")
++	_check("pacman wall: psychedelic_amount uniform exists (Fear & Loathing)", wall_shader.code.find("uniform float psychedelic_amount") != -1)
++	_check("pacman wall: lines antialiased via fwidth", wall_shader.code.find("fwidth(") != -1)
++	_check("pacman wall: half_w derived from cell", wall_shader.code.find("cell * 0.5") != -1)
++	var floor_mat = null
++	for ch in main.maze_view.get_children():
++		if ch is MeshInstance3D and ch.material_override is ShaderMaterial and ch.material_override.shader.resource_path.ends_with("pacman_floor.gdshader"):
++			floor_mat = ch.material_override
++	var floor_lit := false
++	if floor_mat != null:
++		for line in floor_mat.shader.code.split("\n"):
++			if line.begins_with("render_mode"):
++				floor_lit = line.find("unshaded") == -1
++	_check("pacman floor: floor uses the lit pacman_floor shader (ghost light visible)", floor_mat != null and floor_lit)
++	var no_blue := true
++	for k in main.maze_view.city_theme.speedrun_palettes:
++		for role in ["top", "base"]:
++			var hdeg: float = main.maze_view.city_theme.speedrun_palettes[k][role].h * 360.0
++			if hdeg >= 215.0 and hdeg <= 250.0:
++				no_blue = false
++	_check("pacman look: no wall line color in the blue hue range 215-250 deg (Rechtsabstand)", no_blue)
+ 	_check("matrix wall: corridors narrowed via a bigger-than-CELL wall footprint", main.maze_view.city_theme.wall_footprint_scale > 1.0)
+ 	_check("matrix wall: taller than the previous WALL_H", main.maze_view.WALL_H > 3.8)
+ 
+@@ -130,7 +141,7 @@ func _run_checks() -> void:
+ 
+ 	# ---- sky clouds float well above the wall tops, not right at them ----
+ 	var mv: Node = main.maze_view
+-	_check("sky clouds: at least one spawned on a normal level", mv.sky_cloud_nodes.size() > 0, "got %d" % mv.sky_cloud_nodes.size())
++	_check("sky clouds: none on the Pac-Man speedrun look", mv.sky_cloud_nodes.size() == 0, "got %d" % mv.sky_cloud_nodes.size())
+ 	var lowest_cloud_y := INF
+ 	for cloud in mv.sky_cloud_nodes:
+ 		lowest_cloud_y = minf(lowest_cloud_y, cloud.position.y)
+diff --git a/godot/tests/test_city_themes.gd b/godot/tests/test_city_themes.gd
+index 0fdc30f..5eeaebc 100644
+--- a/godot/tests/test_city_themes.gd
++++ b/godot/tests/test_city_themes.gd
+@@ -33,13 +33,14 @@ func _initialize() -> void:
+ 		failures += 1
+ 		print("FAIL normal theme should not be permanently word-built")
+ 	checks += 1
+-	if not normal.wall_matrix_rain:
++	# PROTOTYP Pac-Man v2: Speedrun-Level im Arcade-Maze-Look (Matrix = Kondition)
++	if normal.wall_shader_path != "res://shaders/pacman_wall.gdshader" or normal.wall_matrix_rain:
+ 		failures += 1
+-		print("FAIL normal theme's walls should use the matrix_rain shader")
++		print("FAIL normal theme's walls should use the pacman_wall shader (not matrix_rain)")
+ 	checks += 1
+-	if not normal.ceil_sky_clouds:
++	if normal.ceil_sky_clouds or normal.floor_shader_path != "res://shaders/pacman_floor.gdshader" or not normal.speedrun_palettes.has("default"):
+ 		failures += 1
+-		print("FAIL normal theme should have the voxel-cloud sky ceiling enabled")
++		print("FAIL normal theme should have no sky clouds, the pacman floor shader and a default level palette")
+ 	checks += 1
+ 	if normal.wall_word_tall != "" or normal.wall_height_min > 0.0 or normal.wall_vertical_text or normal.pellets_follow_metro_trails:
+ 		failures += 1
