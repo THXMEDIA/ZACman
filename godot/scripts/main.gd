@@ -59,7 +59,7 @@ const GHOST_SPEED_CAP := 3.96
 
 ## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
 ## explore level. Traffic and pedestrians are its only obstacles: harmless,
-## just something to walk around (Main._check_manhattan_obstacles). Both
+## just something to walk around (Main._check_explorer_obstacles). Both
 ## are real moving traffic now — more lanes and more variety of each
 ## (TAXI/CAR/BIKE/VERYLONGLIMOUSINE, MAN/WOMAN/KID/DAD+KID) than the
 ## original handful of stationary pedestrians + 5 cars.
@@ -103,6 +103,7 @@ const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
 const SettingsScript := preload("res://scripts/settings.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 const ChatVoteScript := preload("res://scripts/chat_vote.gd")
+const ExplorerCitiesScript := preload("res://scripts/explorer_cities.gd")
 
 ## Ghost colors come from the level look (MazeView.ghost_palette(), see
 ## city_themes.gd GHOST_* — no green, no cyan, never the level's gradient).
@@ -158,7 +159,14 @@ var level_board := ""
 ## The condition the rabbit gave in this level ("" = rabbit left alone);
 ## stored with the leaderboard entry (GD: Bestenliste-Metadatum).
 var level_condition_id := ""
-var playing_manhattan := false
+## true while an Explorer city runs (Manhattan, Tokyo — explorer_cities.gd);
+## explorer_city_id says which one.
+var playing_explorer := false
+## Kept for the tests and tools written against Manhattan: true while the
+## Explorer city Manhattan runs.
+var playing_manhattan: bool:
+	get:
+		return playing_explorer and explorer_city_id == "manhattan"
 ## Number of finished games (end_game), for tests (double death, Code).
 signal game_over
 var games_ended := 0
@@ -242,9 +250,8 @@ var mouse_sens := 1.0
 ## Debug overlay (FPS, player position, cell): toggled with F3, debug builds only.
 var debug_mode := false
 
-## Which registered CityTheme (see city_themes.gd's EXPLORER_IDS) the
-## current/last Explorer run was played on. Only "manhattan" resolves to
-## real content today (see start_explorer_level).
+## Which Explorer city (explorer_cities.gd: "manhattan", "tokyo") the
+## current/last Explorer run was played on (see start_explorer_level).
 var explorer_city_id := "manhattan"
 
 var enemies: Array = [] # Array[Enemy]
@@ -337,8 +344,34 @@ func _apply_theme_environment(theme_id: String) -> void:
 	env.background_color = ct.env_bg_color
 	env.fog_light_color = ct.env_fog_color
 	env.fog_density = ct.env_fog_density
+	env.fog_sky_affect = ct.env_fog_sky_affect
 	env.ambient_light_color = ct.env_ambient_color
 	env.ambient_light_energy = ct.env_ambient_energy
+	# Post-processing is set from the theme on EVERY switch (also back to the
+	# speedrun), so Tokyo's glow, SSR or volumetric fog can never stay on in
+	# the next level (docs/design/tokyo-explorer.md, technical condition).
+	env.glow_enabled = ct.env_glow_enabled
+	env.glow_intensity = ct.env_glow_intensity
+	env.glow_strength = ct.env_glow_strength
+	env.glow_bloom = ct.env_glow_bloom
+	env.glow_hdr_threshold = ct.env_glow_hdr_threshold
+	for i in ct.env_glow_levels.size():
+		env.set_glow_level(i, ct.env_glow_levels[i])
+	env.ssr_enabled = ct.env_ssr_enabled
+	env.ssr_max_steps = ct.env_ssr_max_steps
+	env.ssr_fade_in = ct.env_ssr_fade_in
+	env.ssr_fade_out = ct.env_ssr_fade_out
+	env.ssr_depth_tolerance = ct.env_ssr_depth_tolerance
+	env.volumetric_fog_enabled = ct.env_volumetric_fog_enabled
+	env.tonemap_mode = ct.env_tonemap_mode
+	env.tonemap_exposure = ct.env_tonemap_exposure
+	env.tonemap_white = ct.env_tonemap_white
+	if player != null and player.camera != null:
+		player.camera.far = ct.camera_far
+		if player.light != null:
+			player.light.light_color = ct.player_light_color
+			player.light.light_energy = ct.player_light_energy
+			player.light.omni_range = ct.player_light_range
 	# W2: the base a condition look blends from, cached once here (at the
 	# level start) instead of building the theme again every frame.
 	_env_base_bg = ct.env_bg_color
@@ -385,7 +418,7 @@ func _build_hud() -> void:
 	hud.start_pressed.connect(_on_start_pressed)
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
-	hud.manhattan_pressed.connect(_on_manhattan_pressed)
+	hud.explorer_pressed.connect(_on_explorer_pressed)
 	hud.menu_pressed.connect(go_to_main_menu)
 	hud.quit_pressed.connect(_on_quit_pressed)
 	hud.reduce_fx_toggled.connect(_on_reduce_fx_toggled)
@@ -435,7 +468,7 @@ func start_level(level: Dictionary) -> void:
 	for e in enemies:
 		e.queue_free()
 	enemies.clear()
-	_clear_manhattan_obstacles() # normal levels never have any; defensive
+	_clear_explorer_obstacles() # normal levels never have any; defensive
 	var house_cells := []
 	for r in range(maze.house.r0 + 1, maze.house.r1):
 		for c in range(maze.house.c0 + 1, maze.house.c1):
@@ -472,7 +505,7 @@ func begin_game(forced_level_id: String = "") -> void:
 	Sfx.stop_all()
 	score = 0
 	lives = 3
-	playing_manhattan = false
+	playing_explorer = false
 	level_index = 0
 	played_ids.clear()
 	_chat_cooldown_until.clear()
@@ -499,17 +532,26 @@ func begin_game(forced_level_id: String = "") -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
-## ---------------- Manhattan bonus level ----------------
-## An untimed hub level: no clock, no score, no high score, no completion.
-## The pellets are only signposts that lead to the SUBWAY signs, and a SUBWAY
-## sign is the exit into a speedrun (see _enter_metro). Reuses MazeView and the
-## pause against a hand-built real-Midtown-grid Maze instead of a
-## MazeGen.generate_maze() result.
-func start_manhattan_level() -> void:
+## ---------------- Explorer cities (Manhattan, Tokyo) ----------------
+## Untimed hub levels: no clock, no score, no high score, no completion, no
+## ghosts, no rabbit. The pellets are only signposts that lead to the subway,
+## and the subway is the exit into a speedrun (see _enter_metro). Reuses
+## MazeView and the pause against the city's hand-built grid (its maze
+## script) instead of a MazeGen.generate_maze() result. What differs per
+## city (theme, grid, metro placement, traffic, level seed) comes from
+## explorer_cities.gd — this code has no city names in it.
+func start_explorer_level(city_id: String) -> void:
+	var city := ExplorerCitiesScript.get_city(city_id)
+	if city.is_empty():
+		push_warning("start_explorer_level: unknown city '%s' — Manhattan instead" % city_id)
+		city_id = "manhattan"
+		city = ExplorerCitiesScript.get_city(city_id)
+	explorer_city_id = city_id
 	_end_condition(false)
-	var mm = load("res://scripts/manhattan_maze.gd").new()
+	var mm = load(city.maze_script).new()
 	maze = mm.generate()
-	mm.free()
+	if mm is Node:
+		mm.free()
 
 	start_cell = maze.start_cell
 	current_level = {}
@@ -518,12 +560,16 @@ func start_manhattan_level() -> void:
 	# Metro-station cells are picked before the maze view builds its
 	# pellets and handed in as reserved cells, so a metro sign can never
 	# end up parked on top of a pellet the player could never then reach.
-	# Pedestrians now walk the streets like traffic (see _spawn_manhattan_
+	# Pedestrians walk the streets like traffic (see _spawn_manhattan_
 	# obstacles), so they no longer need a reserved home cell of their own.
-	var metro_cells := _pick_manhattan_metro_cells()
+	var metro_cells: Array
+	if city.metro == "maze":
+		metro_cells = load(city.maze_script).metro_cells()
+	else:
+		metro_cells = _pick_random_metro_cells(int(city.metro_count))
 	var reserved_cells: Array = metro_cells
-	maze_view.build(maze, start_cell, "manhattan", reserved_cells, metro_cells)
-	_apply_theme_environment("manhattan")
+	maze_view.build(maze, start_cell, city.theme, reserved_cells, metro_cells, -1, "", int(city.seed))
+	_apply_theme_environment(city.theme)
 	fruit_spawned = false
 	frightened_until = 0.0
 	combo_count = 0
@@ -534,15 +580,27 @@ func start_manhattan_level() -> void:
 
 	for e in enemies:
 		e.queue_free()
-	enemies.clear() # Manhattan has no ghosts — see this function's header comment
+	enemies.clear() # Explorer cities have no ghosts — see this function's header comment
 
-	_spawn_manhattan_obstacles()
-	_spawn_metro_stations(metro_cells)
+	_clear_explorer_obstacles()
+	if city.traffic == "manhattan":
+		_spawn_manhattan_obstacles()
+	_spawn_metro_stations(metro_cells, city.metro_script)
 
-	hud.set_level("MANHATTAN")
+	hud.set_level(city.label)
 	hud.set_game_hud_visible(true)
 	hud.set_explorer_hud(true) # no timer / score / lives / best time here
 	hud.set_minimap_visible(true)
+
+
+## Manhattan, kept as a name for the tests and tools written against it.
+func start_manhattan_level() -> void:
+	start_explorer_level("manhattan")
+
+
+## The registry entry of the running (or last) Explorer city.
+func _explorer_city() -> Dictionary:
+	return ExplorerCitiesScript.get_city(explorer_city_id)
 
 
 ## ---------------- start facing / noclip-end safety ----------------
@@ -599,7 +657,7 @@ func _facing_yaw_for_start(cell: Vector2i) -> float:
 	return best_yaw
 
 
-func _clear_manhattan_obstacles() -> void:
+func _clear_explorer_obstacles() -> void:
 	for t in taxis:
 		t.queue_free()
 	taxis.clear()
@@ -614,12 +672,13 @@ func _clear_manhattan_obstacles() -> void:
 ## Metro-station cells, picked ahead of pellet placement (see maze_view.gd's
 ## `build`/`_build_pellets` reserved_cells parameter) so a metro sign can
 ## never end up parked on a pellet the player could never then reach.
-func _pick_manhattan_metro_cells() -> Array:
+## `count` random open room cells (Manhattan: MANHATTAN_METRO_COUNT).
+func _pick_random_metro_cells(count: int = MANHATTAN_METRO_COUNT) -> Array:
 	var open_cells: Array = MazeGen.cells_in_room(maze, false)
 	_shuffle(open_cells)
 	var picked := []
 	for cell in open_cells:
-		if picked.size() >= MANHATTAN_METRO_COUNT:
+		if picked.size() >= count:
 			break
 		if cell == start_cell:
 			continue
@@ -669,7 +728,7 @@ func _pick_weighted_vehicle(pool: Array) -> Dictionary:
 ## standing still, each assigned its own row or column lane. Both are built
 ## fresh per Manhattan run, same as enemies are per level.
 func _spawn_manhattan_obstacles() -> void:
-	_clear_manhattan_obstacles()
+	_clear_explorer_obstacles()
 
 	var row_choices := []
 	var r := 1
@@ -730,18 +789,19 @@ func _spawn_manhattan_obstacles() -> void:
 		pedestrians.append(ped)
 
 
-## Glowing "SUBWAY" signs at the reserved metro cells; entering one ends
-## and scores the Manhattan run (see _check_metro_entry).
-func _spawn_metro_stations(metro_cells: Array) -> void:
+## The subway signs at the reserved metro cells (Manhattan: glowing
+## "SUBWAY", Tokyo: the green 地下鉄 exit); entering one ends the Explorer
+## run and starts a speedrun (see _check_metro_entry).
+func _spawn_metro_stations(metro_cells: Array, script_path: String = "res://scripts/metro_station.gd") -> void:
 	for cell in metro_cells:
 		var station := Node3D.new()
-		station.set_script(load("res://scripts/metro_station.gd"))
+		station.set_script(load(script_path))
 		obstacle_root.add_child(station)
 		station.setup(Vector3(cell.y * CELL, 0.9, cell.x * CELL))
 		metro_stations.append(station)
 
 
-func _check_manhattan_obstacles() -> void:
+func _check_explorer_obstacles() -> void:
 	for t in taxis:
 		_push_player_away_from(t.position, MANHATTAN_OBSTACLE_RADIUS)
 	for p in pedestrians:
@@ -762,14 +822,14 @@ func _enter_metro() -> void:
 	running = false
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
-	hud.show_levelclear(true, "SUBWAY — los zum Speedrun!")
+	hud.show_levelclear(true, _explorer_city().get("exit_text", "SUBWAY — los zum Speedrun!"))
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var token := _run_token
 	await get_tree().create_timer(1.4).timeout
 	if token != _run_token:
 		return
 	hud.show_levelclear(false)
-	playing_manhattan = false
+	playing_explorer = false
 	begin_game()
 
 
@@ -791,20 +851,19 @@ func _push_player_away_from(obstacle_pos: Vector3, radius: float) -> void:
 		player.global_position.z += push.y
 
 
-## Starts (or restarts) the Explorer level. Explorer levels have no rabbit
-## and no conditions. `city_id` is generic for a future second Explorer city (see
-## city_themes.gd's EXPLORER_IDS); only Manhattan exists today.
-func begin_manhattan_game(city_id: String = "manhattan") -> void:
+## Starts (or restarts) an Explorer city (explorer_cities.gd: "manhattan",
+## "tokyo"). Explorer levels have no rabbit and no conditions.
+func begin_explorer_game(city_id: String = "manhattan") -> void:
 	Sfx.stop_all()
 	_run_token += 1
 	score = 0
 	lives = 3
-	playing_manhattan = true
 	start_hold = false
 	player.movement_locked = false
 	hud.show_start_intro(false)
 	hud.show_clock_hint(false)
 	hud.hide_all_panels()
+	playing_explorer = true
 	start_explorer_level(city_id)
 	running = true
 	paused = false
@@ -815,15 +874,14 @@ func begin_manhattan_game(city_id: String = "manhattan") -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
-## Dispatches to the right Explorer-level builder for `city_id`. Only
-## Manhattan exists today.
-func start_explorer_level(city_id: String) -> void:
-	explorer_city_id = city_id
-	start_manhattan_level()
+## Manhattan (or `city_id`), kept as a name for the tests and tools written
+## against it.
+func begin_manhattan_game(city_id: String = "manhattan") -> void:
+	begin_explorer_game(city_id)
 
 
-func _on_manhattan_pressed() -> void:
-	begin_manhattan_game()
+func _on_explorer_pressed(city_id: String) -> void:
+	begin_explorer_game(city_id)
 
 
 func _on_reduce_fx_toggled(on: bool) -> void:
@@ -939,7 +997,7 @@ func _on_twitch_command(user: String, command: String, _args: String) -> void:
 		chat_vote.vote(user, command == "gut", real_now)
 		_update_chat_hud(true)
 		return
-	if not (running and not paused) or playing_manhattan or start_hold:
+	if not (running and not paused) or playing_explorer or start_hold:
 		return
 	if now < float(_chat_cooldown_until.get(command, -1.0)):
 		return
@@ -1066,12 +1124,12 @@ func end_game() -> void:
 	if score > high_score and not run_chat_assisted:
 		high_score = score
 		_save_highscore(high_score)
-	var level_display = "MANHATTAN" if playing_manhattan else level_index + 1
+	var level_display = _explorer_city().get("label", "EXPLORER") if playing_explorer else level_index + 1
 	hud.set_game_hud_visible(false)
 	hud.show_gameover(score, level_display, high_score, chat_blocked)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.set_start_highscore(high_score)
-	playing_manhattan = false
+	playing_explorer = false
 	_apply_theme_environment("normal")
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	games_ended += 1
@@ -1093,7 +1151,7 @@ func go_to_main_menu() -> void:
 	hud.show_clock_hint(false)
 	hud.show_levelclear(false)
 	Sfx.stop_all()
-	playing_manhattan = false
+	playing_explorer = false
 	_apply_theme_environment("normal")
 	hud.set_game_hud_visible(false)
 	hud.set_start_highscore(high_score)
@@ -1160,8 +1218,8 @@ func _on_resume_pressed() -> void:
 
 func _on_restart_pressed() -> void:
 	hud.hide_all_panels()
-	if playing_manhattan:
-		begin_manhattan_game()
+	if playing_explorer:
+		begin_explorer_game(explorer_city_id)
 	else:
 		begin_game()
 
@@ -1177,10 +1235,10 @@ func toggle_pause() -> void:
 			intro_until_real = real_now
 			hud.show_start_intro(false)
 			hud.show_clock_hint(false)
-		hud.set_pause_note(not playing_manhattan)
+		hud.set_pause_note(not playing_explorer)
 		hud.set_reduce_fx(reduce_fx)
 		hud.set_comfort(fov, mouse_sens)
-		hud.set_menu_confirm(not playing_manhattan) # UX-K2: abandoning a speedrun asks once
+		hud.set_menu_confirm(not playing_explorer) # UX-K2: abandoning a speedrun asks once
 		hud.show_only(hud.pause_panel)
 		Sfx.set_siren(false, false)
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -1248,7 +1306,7 @@ func _process(delta: float) -> void:
 		if not running:
 			return # the last life is gone: game over exactly once, nothing else this frame
 
-	if playing_manhattan:
+	if playing_explorer:
 		for t in taxis:
 			t.update(delta)
 		for p in pedestrians:
@@ -1262,8 +1320,8 @@ func _process(delta: float) -> void:
 	# obstacles just slide the player back out afterward, same as always.
 	_check_pickups()
 
-	if playing_manhattan:
-		_check_manhattan_obstacles()
+	if playing_explorer:
+		_check_explorer_obstacles()
 		_check_metro_entry()
 
 	_update_condition(delta)
@@ -1310,9 +1368,9 @@ func _add_score(points: int) -> void:
 func _check_pickups() -> void:
 	var result: Dictionary = maze_view.consume_at(player.global_position, now)
 
-	# Manhattan: the pellets are signposts to the SUBWAY signs, nothing more —
+	# Explorer cities: the pellets are signposts to the subway, nothing more —
 	# no score, no fruit, no completion.
-	if playing_manhattan:
+	if playing_explorer:
 		if result.pellet or result.power:
 			Sfx.munch()
 		return
@@ -1345,11 +1403,11 @@ func _check_pickups() -> void:
 		maze_view.spawn_fruit(now)
 
 	# Manhattan is an untimed hub with no completion condition at all (see
-	# start_manhattan_level's header comment) — only a metro station ends a
+	# start_explorer_level's header comment) — only a metro station ends a
 	# visit there (_check_metro_entry/_enter_metro). Collecting every pellet
 	# must never trigger level_complete_sequence(), which assumes a normal
 	# Levels.POOL level (current_level/level_id would be empty/invalid).
-	if not playing_manhattan and maze_view.remaining_pickups() <= 0 and running:
+	if not playing_explorer and maze_view.remaining_pickups() <= 0 and running:
 		level_complete_sequence()
 
 
@@ -1505,7 +1563,7 @@ func _update_chat_hud(force: bool = false) -> void:
 	if not force and real_now < _chat_hud_next_update:
 		return
 	_chat_hud_next_update = real_now + 0.25
-	var show_it: bool = Twitch.enabled and Twitch.is_connected_to_chat() and running and not playing_manhattan and level_id != ""
+	var show_it: bool = Twitch.enabled and Twitch.is_connected_to_chat() and running and not playing_explorer and level_id != ""
 	hud.set_chat_share_visible(show_it)
 	if show_it:
 		var source := "Chaos" if level_board == LevelsScript.BOARD_CHAOS else "Woche"
@@ -1657,7 +1715,7 @@ func _end_condition(play_sound: bool) -> void:
 	Sfx.stop_condition_layer()
 	if maze_view.normal_wall_mmi != null and maze_view.current_look != maze_view.LOOK_BASE:
 		maze_view.set_look(maze_view.LOOK_BASE)
-	if not playing_manhattan:
+	if not playing_explorer:
 		_apply_theme_environment("normal")
 	if maze_view.pellet_material != null:
 		_set_object_style(false, false)

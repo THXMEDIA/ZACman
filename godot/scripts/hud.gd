@@ -6,7 +6,8 @@ extends CanvasLayer
 signal start_pressed
 signal resume_pressed
 signal restart_pressed
-signal manhattan_pressed
+## Explorer city chosen on the start screen (explorer_cities.gd id).
+signal explorer_pressed(city_id: String)
 ## UX-K2: back to the start screen (pause after the confirmation in a
 ## speedrun, game over) and quitting the game (start screen).
 signal menu_pressed
@@ -153,6 +154,7 @@ var final_hs_label: Label
 var gameover_note_label: Label
 var start_hs_label: Label
 var manhattan_btn: Button
+var tokyo_btn: Button
 var manhattan_bonus_label: Label
 var debug_label: Label
 var twitch_toggle: CheckBox
@@ -446,7 +448,7 @@ func _make_button(text: String) -> Button:
 
 ## Start screen, top to bottom (UX-K1, W5): title, the comfort block (always
 ## visible without scrolling, also at 1152x720), the options (Chaos, Twitch),
-## SPEEDRUN with its explanation, BESTENLISTE, EXPLORER-LEVEL, BEENDEN.
+## SPEEDRUN with its explanation, BESTENLISTE, EXPLORER (Manhattan | Tokyo), BEENDEN.
 func _build_start_panel() -> void:
 	start_panel = _overlay_panel(true)
 	var box := _panel_box(start_panel)
@@ -504,10 +506,25 @@ func _build_start_panel() -> void:
 	# not gated behind the speedrun bonus-unlock anymore (that still
 	# exists, see manhattan_bonus_label below, just as a nice badge now
 	# rather than a lock on the button).
-	manhattan_btn = _make_button("EXPLORER-LEVEL")
-	manhattan_btn.pressed.connect(func(): manhattan_pressed.emit())
-	box.add_child(manhattan_btn)
-	box.add_child(_subtitle_label("Ruhige Stadt ohne Uhr und Punkte. Die Kugeln zeigen den Weg zur U-Bahn (SUBWAY); sie ist der Ausgang in einen Speedrun."))
+	# Explorer selection: one row with a button per city (same height as the
+	# former single EXPLORER-LEVEL button, so the start screen still fits).
+	var explorer_row := HBoxContainer.new()
+	explorer_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	explorer_row.add_theme_constant_override("separation", 10)
+	box.add_child(explorer_row)
+	var explorer_tag := Label.new()
+	explorer_tag.text = "EXPLORER"
+	explorer_tag.add_theme_color_override("font_color", MUTED)
+	explorer_row.add_child(explorer_tag)
+	manhattan_btn = _make_button("MANHATTAN")
+	manhattan_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	manhattan_btn.pressed.connect(func(): explorer_pressed.emit("manhattan"))
+	explorer_row.add_child(manhattan_btn)
+	tokyo_btn = _make_button("TOKYO")
+	tokyo_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tokyo_btn.pressed.connect(func(): explorer_pressed.emit("tokyo"))
+	explorer_row.add_child(tokyo_btn)
+	box.add_child(_subtitle_label("Ruhige Stadt ohne Uhr und Punkte: Manhattan oder Tokyo. Die Kugeln zeigen den Weg zur U-Bahn; sie ist der Ausgang in einen Speedrun."))
 	manhattan_bonus_label = _subtitle_label("★ Zielzeit in einem Level geschafft")
 	manhattan_bonus_label.add_theme_color_override("font_color", PELLET_COLOR)
 	manhattan_bonus_label.visible = false

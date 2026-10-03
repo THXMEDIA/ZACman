@@ -169,8 +169,46 @@ var minimap_frightened_color := Color(0.35, 0.82, 1.0)
 var env_bg_color := Color(0.0196, 0.0275, 0.0627)
 var env_fog_color := Color(0.0196, 0.0275, 0.0627)
 var env_fog_density := 0.03
+var env_fog_sky_affect := 1.0 # Environment default
 var env_ambient_color := Color(0.165, 0.227, 0.4)
 var env_ambient_energy := 0.9
+## Post-processing of the theme. Main applies ALL of these on every theme
+## switch (_apply_theme_environment), so a theme that turns glow/SSR/
+## volumetric fog on (Tokyo) never leaks them into the next one (the speedrun
+## must not glow on). The defaults are a fresh Environment's values, i.e.
+## exactly what the speedrun and Manhattan had before these fields existed.
+var env_glow_enabled := false
+var env_glow_intensity := 0.8
+var env_glow_strength := 1.0
+var env_glow_bloom := 0.0
+var env_glow_hdr_threshold := 1.0
+var env_glow_levels: Array = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] # Environment default (levels 3 and 5)
+var env_ssr_enabled := false
+var env_ssr_max_steps := 64
+var env_ssr_fade_in := 0.15
+var env_ssr_fade_out := 2.0
+var env_ssr_depth_tolerance := 0.2
+var env_volumetric_fog_enabled := false
+var env_tonemap_mode := 0 # Environment.TONE_MAPPER_LINEAR
+var env_tonemap_exposure := 1.0
+var env_tonemap_white := 1.0
+## The small light the player carries (player_controller.gd) and the camera's
+## far plane: the defaults are the old fixed values (cyan-white lamp, 100 m).
+var player_light_color := Color(0.56, 0.83, 1.0)
+var player_light_energy := 1.1
+var player_light_range := 7.0
+var camera_far := 100.0
+
+## ---- Neon-line city (Tokyo, docs/design/tokyo-explorer.md) ----
+## A script with a static `build(maze, city_theme, seed: int) -> Node3D`
+## that adds the theme's own static scenery (neon contours, signs, paint)
+## on top of the wall MultiMesh; null = none (all other themes).
+var scenery_builder_script: Script = null
+## A script with a static `trail_cells(maze, metro_cells, start_cell, seed)
+## -> Array` that decides where the wayfinding pellets lie (instead of
+## MazeView's generic metro trails over the odd/odd room cells); null = the
+## generic trails. Only used with pellets_follow_metro_trails.
+var pellet_trail_provider_script: Script = null
 
 ## ---- Gameplay ----
 ## Manhattan-style "calm explorer" levels have no power pellets, no white

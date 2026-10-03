@@ -26,6 +26,9 @@ var movement_locked := false
 ## UX-K1: the player's mouse sensitivity, a factor on MOUSE_SENSITIVITY
 ## (Settings "mouse_sens", 0.3-3.0).
 var mouse_sensitivity_scale := 1.0
+## The small lamp the player carries; Main sets its color per city theme
+## (CityTheme.player_light_*).
+var light: OmniLight3D
 
 
 func _ready() -> void:
@@ -60,7 +63,7 @@ func _ready() -> void:
 	camera.far = 100.0
 	add_child(camera)
 
-	var light := OmniLight3D.new()
+	light = OmniLight3D.new()
 	light.light_color = Color(0.56, 0.83, 1.0)
 	light.omni_range = 7.0
 	light.light_energy = 1.1

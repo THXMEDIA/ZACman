@@ -68,6 +68,11 @@ var level_look: Dictionary = {}
 ## G = junction (open cell with >= 3 open neighbors). Shader themes only.
 var maze_tex: ImageTexture
 var floor_mesh: MeshInstance3D
+## The theme's own static scenery (CityTheme.scenery_builder_script, Tokyo's
+## neon contours); null for every other theme.
+var scenery_root: Node3D = null
+## The level seed the scenery and the pellet trails were built with (Tokyo).
+var scenery_seed := 0
 var screen_overlay: CanvasLayer = null # CRT overlay (CityTheme.screen_overlay_shader_path), else null
 
 ## ---- Look switching (rabbit conditions, spec 1.2) ----
@@ -102,7 +107,11 @@ var fruit_material: StandardMaterial3D
 ##
 ## `look_id` names the level's color variant (Levels.POOL[].look, e.g.
 ## "lagune"/"riff"); "" or an unknown id uses CityTheme.default_level_look.
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "") -> void:
+##
+## `level_seed` drives everything decorative of a theme with its own scenery
+## (Tokyo: floor bands, background silhouettes, which trails carry pellets) —
+## the same seed always builds the same city (tests/test_tokyo.gd).
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "", level_seed: int = 0) -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -122,6 +131,8 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	word_mode_active = false
 	sky_cloud_nodes.clear()
 	screen_overlay = null
+	scenery_root = null
+	scenery_seed = level_seed
 	_looks.clear()
 	current_look = LOOK_BASE
 
@@ -136,6 +147,9 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
+	if city_theme.scenery_builder_script != null:
+		scenery_root = city_theme.scenery_builder_script.build(maze, city_theme, level_seed)
+		add_child(scenery_root)
 	_build_sky_clouds()
 	_build_tunnel_vistas()
 	_build_pellets(start_cell, reserved_cells, metro_cells, rabbit_seed)
@@ -820,7 +834,14 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		if not power_set.has(cell):
 			pellet_candidates.append(cell)
 
-	if city_theme.pellets_follow_metro_trails and metro_cells.size() > 0:
+	if city_theme.pellets_follow_metro_trails and metro_cells.size() > 0 and city_theme.pellet_trail_provider_script != null:
+		# The theme lays its own trails (Tokyo: along the street center lines,
+		# every cell, not only the odd/odd room cells).
+		pellet_cells = []
+		for cell in city_theme.pellet_trail_provider_script.trail_cells(maze, metro_cells, start_cell, scenery_seed):
+			if cell != start_cell and not reserved_set.has(cell) and not power_set.has(cell) and MazeGen.is_open(maze, cell.x, cell.y):
+				pellet_cells.append(cell)
+	elif city_theme.pellets_follow_metro_trails and metro_cells.size() > 0:
 		pellet_cells = _metro_trail_cells(pellet_candidates, metro_cells, start_cell)
 	else:
 		pellet_cells = pellet_candidates

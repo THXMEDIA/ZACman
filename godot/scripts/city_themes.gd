@@ -7,6 +7,9 @@ extends RefCounted
 
 const ManhattanMazeScript := preload("res://scripts/manhattan_maze.gd")
 const CityThemeScript := preload("res://scripts/city_theme.gd")
+const TokyoMazeScript := preload("res://scripts/tokyo_maze.gd")
+const TokyoSceneryScript := preload("res://scripts/tokyo_scenery.gd")
+const TokyoStyle := preload("res://scripts/tokyo_style.gd")
 
 ## ---- Speedrun base look "Lagune" (docs/design/kaninchen-speedrun.md 1.1) ----
 ## Every wall has the same turquoise glowing top edge; the gradient down to
@@ -269,25 +272,98 @@ static func manhattan() -> Resource:
 	return t
 
 
+## Tokyo Explorer city, look "Natriumregen" (direction A, approved by the
+## owner 03.10.2026; spec docs/design/tokyo-explorer.md): the city is only
+## light and lines — black unlit masses (the wall MultiMesh with
+## tokyo_mass.gdshader), neon contours from tokyo_scenery.gd, a wet dark
+## floor, glow. Palette and roles in tokyo_style.gd. Milestone M1: simple
+## wet floor (roughness) and a calm night sky; rain, puddle SSR fine-tuning,
+## the scramble and passers-by follow in M2.
+static func tokyo() -> Resource:
+	var t = CityThemeScript.new()
+	t.id = "tokyo"
+	t.display_name = "Tokyo"
+	t.wall_word = ""
+	# Whole cells: the building outline is the cell boundary, so the
+	# collision is exactly where the neon base line is drawn.
+	t.wall_footprint_scale = 1.0
+	t.wall_alternate_rotation = false
+	t.landmark_provider_script = TokyoMazeScript
+	t.landmark_heights = TokyoMazeScript.building_heights()
+	t.landmark_default_height = 12.0
+	t.wall_shader_path = "res://shaders/tokyo_mass.gdshader"
+	t.scenery_builder_script = TokyoSceneryScript
+	t.pellet_trail_provider_script = TokyoMazeScript
+
+	t.floor_color = TokyoStyle.ASPHALT
+	t.floor_roughness = 0.14 # wet, glossy; SSR fine-tuning and puddle mask: M2
+	t.floor_metallic = 0.25
+	t.ceil_enabled = false
+
+	t.env_bg_color = TokyoStyle.SKY
+	t.env_fog_color = TokyoStyle.FOG
+	t.env_fog_density = 0.012
+	t.env_fog_sky_affect = 0.3 # calm, nearly black night sky
+	t.env_ambient_color = Color("0b0806")
+	t.env_ambient_energy = 0.3
+	t.env_glow_enabled = true
+	t.env_glow_intensity = 0.9
+	t.env_glow_strength = 1.0
+	t.env_glow_bloom = 0.0
+	t.env_glow_hdr_threshold = 0.85
+	t.env_glow_levels = [0.0, 1.0, 0.0, 0.8, 0.0, 0.64, 0.0]
+	t.env_ssr_enabled = true
+	t.env_ssr_max_steps = 48
+	t.env_ssr_fade_in = 0.15
+	t.env_ssr_fade_out = 2.0
+	t.env_ssr_depth_tolerance = 0.2
+	t.env_volumetric_fog_enabled = false
+	t.env_tonemap_mode = 2 # Environment.TONE_MAPPER_FILMIC
+	t.env_tonemap_exposure = 1.0
+	t.env_tonemap_white = 6.0
+	t.player_light_color = TokyoStyle.AMBER
+	t.player_light_energy = 0.3
+	t.player_light_range = 5.0
+	t.camera_far = 260.0 # the sky-deck tower and the skyline beyond the map
+
+	# Pickups: warm white-gold orbs, exclusive to the pellets.
+	t.pellet_color = TokyoStyle.PELLET_CORE
+	t.pellet_emission = TokyoStyle.PELLET
+	t.pellet_energy = 1.8
+	t.pellet_shape = "sphere"
+	t.pellet_size = 0.11
+	t.pellet_height = 0.55
+
+	t.minimap_bg_color = Color(0.0, 0.0, 0.0, 0.85)
+	t.minimap_wall_color = Color("4a2c10")
+
+	t.has_power_ups = false
+	t.permanently_word_built = false
+	t.pellets_follow_metro_trails = true
+	return t
+
+
 static func get_theme(id: String) -> Resource:
 	match id:
 		"manhattan":
 			return manhattan()
+		"tokyo":
+			return tokyo()
 		_:
 			return normal()
 
 
-## The "calm explorer" city themes (see main.gd's start_explorer_level) — not
-## the Matrix speedrun levels, which aren't part of that rotation. Add a new city's id
-## here once it has its own static func above.
-const EXPLORER_IDS := ["manhattan"]
+## The "calm explorer" city themes (see main.gd's start_explorer_level and
+## explorer_cities.gd) — not the speedrun levels, which aren't part of that
+## rotation. Add a new city's id here once it has its own static func above.
+const EXPLORER_IDS := ["manhattan", "tokyo"]
 
 
 ## A different registered explorer city id than `current_id`, for the
 ## post-run "andere Stadt" choice — falls back to `current_id` itself when
-## it's the only explorer city registered yet (today: just Manhattan). See
-## this project's "Explorer-Level-Erweiterung, Leaderboard & Konditionen"
-## doc — more cities are the next content step, not an architecture change.
+## it's the only explorer city registered. See this project's "Explorer-
+## Level-Erweiterung, Leaderboard & Konditionen" doc — more cities are the
+## next content step, not an architecture change.
 static func other_explorer_id(current_id: String) -> String:
 	for id in EXPLORER_IDS:
 		if id != current_id:
