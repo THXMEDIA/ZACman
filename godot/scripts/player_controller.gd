@@ -19,9 +19,13 @@ var move_input := Vector2.ZERO # x = strafe, y = forward, set externally by touc
 ## Main.active_condition, the single source of the active state. Only the
 ## movement vector goes through it; mouse look never does (red line E8e).
 var active_condition = null
-## true during the speedrun start intro: mouse look works, walking does not
-## (the clock only starts with the first movement input after it).
+## true during the speedrun start intro and the wait for the first step:
+## mouse look works, walking does not (the clock and the legs start together,
+## see Main._update_start_hold).
 var movement_locked := false
+## UX-K1: the player's mouse sensitivity, a factor on MOUSE_SENSITIVITY
+## (Settings "mouse_sens", 0.3-3.0).
+var mouse_sensitivity_scale := 1.0
 
 
 func _ready() -> void:
@@ -87,8 +91,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x * MOUSE_SENSITIVITY
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENSITIVITY, -1.1, 1.1)
+		var sens := MOUSE_SENSITIVITY * mouse_sensitivity_scale
+		yaw -= event.relative.x * sens
+		pitch = clampf(pitch - event.relative.y * sens, -1.1, 1.1)
 		rotation.y = yaw
 		camera.rotation.x = pitch
 

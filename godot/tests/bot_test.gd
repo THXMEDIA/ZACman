@@ -39,6 +39,10 @@ func _ready() -> void:
 	main.skip_start_intro = true
 	# A fixed week, so the rabbit results do not depend on the test date.
 	main.rabbit_week_override = Vector2i(2026, 40)
+	# N6: every random choice of Main (level draw, ghost turns, Chaos and
+	# chat rabbits) from seeded generators — the checks below that compare
+	# several random results are deterministic now.
+	main.seed_randomness(4242)
 
 	await _run_checks()
 	await _run_look_checks()
@@ -47,6 +51,7 @@ func _ready() -> void:
 	await _run_intro_checks()
 	await _run_board_checks()
 	await _run_chat_vote_checks()
+	await _run_review_fix_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -805,7 +810,7 @@ func _run_look_checks() -> void:
 		if e.palette_color.is_equal_approx(violet):
 			has_violet = true
 	_check("look klassik-1: Streuner is violet in a Lagune level", has_violet)
-	_check("look: frightened ghosts #BDFCEF", main.enemies[0].frightened_color.is_equal_approx(Color("bdfcef")))
+	_check("look: frightened ghosts cerulean #14A7CC (UX-W2)", main.enemies[0].frightened_color.is_equal_approx(Color("14a7cc")))
 
 	# ---- Look API (prepared for Etappe 2): swap materials on the same instances ----
 	var wall_mmi = mv.normal_wall_mmi
@@ -1317,18 +1322,19 @@ func _run_chat_vote_checks() -> void:
 	Leaderboard.reset_all()
 	main.chat_vote.clear()
 	Twitch.enabled = true # chat mode without a real connection (no network here)
+	Twitch._connected = true # N5: the chip needs a connected chat; pretend it is
 
 	main.begin_game("klassik-1")
 	await get_tree().process_frame
 	main._update_chat_hud(true)
-	_check("chat bar: shown in chat mode, base 60 % without votes", main.hud.chat_chip.visible and main.hud.chat_share_label.text.begins_with("Kaninchen: 60 % gut"), main.hud.chat_share_label.text)
+	_check("chat bar: shown in chat mode; unshifted it names the rabbit's source", main.hud.chat_chip.visible and main.hud.chat_share_label.text.begins_with("Kaninchen: Woche"), main.hud.chat_share_label.text)
 	_votes(7, 3)
-	_check("chat bar: 7 gut / 3 schlecht -> 'Kaninchen: 72 % gut'", main.hud.chat_share_label.text == "Kaninchen: 72 % gut", main.hud.chat_share_label.text)
+	_check("chat bar: 7 gut / 3 schlecht -> 'Kaninchen: 70 % gut' (p = 0.6 + 0.3 d - 0.1 d^2)", main.hud.chat_share_label.text == "Kaninchen: 70 % gut", main.hud.chat_share_label.text)
 	_check("chat: votes alone do not touch the board", main.board_id() == WOCHE)
 	await _take_rabbit()
 	var c = main.active_condition
 	_check("chat shift: the rabbit pickup moves the level to the chat board", main.board_id() == "chat" and main.level_chat_assisted)
-	_check("chat shift: title card 'Chat 72 % → <KONDITION>'", c != null and main.hud.condition_chat_label.visible and main.hud.condition_chat_label.text == "Chat 72 %% → %s" % c.display_name.to_upper(), main.hud.condition_chat_label.text)
+	_check("chat shift: title card 'Chat 70 % → <KONDITION>'", c != null and main.hud.condition_chat_label.visible and main.hud.condition_chat_label.text == "Chat 70 %% → %s" % c.display_name.to_upper(), main.hud.condition_chat_label.text)
 	await _clear_level_fast()
 	_check("chat run: lands on the chat board, never on woche/chaos", Leaderboard.get_top("klassik-1", "chat").size() == 1 and Leaderboard.get_top("klassik-1", WOCHE).size() == 0 and Leaderboard.get_top("klassik-1", "chaos").size() == 0 and Speedrun.best_for("klassik-1", WOCHE) == -1.0)
 	await get_tree().create_timer(2.0).timeout
@@ -1413,5 +1419,391 @@ func _run_chat_vote_checks() -> void:
 	main._update_chat_hud(true)
 	_check("chat bar: hidden in Manhattan", not main.hud.chat_chip.visible)
 	Twitch.enabled = false
+	Twitch._connected = false
 	main.chat_vote.clear()
 	main.end_game()
+
+
+## ---------------- Review fixes 03.10. (Code, GD, UX) ----------------
+
+func _texts_of(node: Node) -> Array:
+	return _texts_under(node)
+
+
+func _start_pos() -> Vector3:
+	return Vector3(main.start_cell.y * main.CELL, main.player.EYE_H, main.start_cell.x * main.CELL)
+
+
+func _esc() -> void:
+	var e := InputEventKey.new()
+	e.keycode = KEY_ESCAPE
+	e.pressed = true
+	main._unhandled_input(e)
+
+
+func _wall_cell_near_start() -> Vector2i:
+	for r in range(2, main.maze.rows - 2, 2):
+		for cc in range(2, main.maze.cols - 2, 2):
+			if main.maze.grid[r][cc] == 1:
+				return Vector2i(r, cc)
+	return Vector2i(-1, -1)
+
+
+func _run_review_fix_checks() -> void:
+	Speedrun.reset_all()
+	Leaderboard.reset_all()
+	main.set_chaos_mode(false)
+
+	# ---- W1: death ends the running condition (all four) + Code-W7 ----
+	for id in ConditionsScript.ids():
+		main.begin_game("klassik-1")
+		await get_tree().process_frame
+		main.invuln_until = 0.0
+		main.start_condition(ConditionsScript.get_condition(id))
+		main._process(0.5)
+		if id == "matrix":
+			var wc := _wall_cell_near_start()
+			main.player.global_position = Vector3(wc.y * main.CELL, main.player.global_position.y, wc.x * main.CELL)
+		var lives_before: int = main.lives
+		main.lose_life()
+		await get_tree().physics_frame
+		var pc: Vector2i = main.player.cell()
+		_check("W1 %s: death ends the condition (main + player)" % id, main.active_condition == null and main.player.active_condition == null and not main.hud.condition_card.visible and main.lives == lives_before - 1)
+		_check("W1 %s: collision on, player in an open cell, capsule free" % id, main.player.collision_mask == 2 and main.maze.grid[pc.x][pc.y] == 0 and _capsule_free())
+		_check("W1 %s: base look, normal ghosts, minimap, fog" % id, main.maze_view.current_look == main.maze_view.LOOK_BASE and main.enemies[0].speed_scale == 1.0 and main.hud.minimap.visible and main.world_env.environment.fog_density < 0.05)
+		_check("Code-W7 %s: respawn looks down the longest corridor" % id, is_equal_approx(main.player.yaw, main._facing_yaw_for_start(main.start_cell)) and main.player.global_position.distance_to(_start_pos()) < 0.001)
+
+	# ---- double death in one frame on the last life: end_game exactly once ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.lives = 1
+	main.invuln_until = -1.0
+	main.frightened_until = 0.0
+	for i in 2:
+		var en = main.enemies[i]
+		en.mode = "chase"
+		en.release_at = 0.0
+		_pin_enemy_at(en, main.start_cell)
+		en.position = Vector3(main.start_cell.y * main.CELL, en.position.y, main.start_cell.x * main.CELL)
+	main.player.global_position = _start_pos()
+	var ended_before: int = main.games_ended
+	var emitted := [0]
+	var cb := func(): emitted[0] += 1
+	main.game_over.connect(cb)
+	main._process(1.0 / 60.0)
+	main.game_over.disconnect(cb)
+	_check("double death: two ghosts in one frame on the last life -> one game over", main.games_ended == ended_before + 1 and emitted[0] == 1 and main.lives == 0 and main.hud.gameover_panel.visible, "ended=%d emitted=%d lives=%d" % [main.games_ended - ended_before, emitted[0], main.lives])
+	main.lose_life()
+	_check("double death: a late lose_life after the game over changes nothing", main.lives == 0 and main.games_ended == ended_before + 1)
+
+	# ---- Code-W8 part 1: no high score after chat help ----
+	main.high_score = 100
+	main._save_highscore(100)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	Twitch.chat_command.emit("helper", "power", "")
+	main.score = 5000
+	main.end_game()
+	_check("Code-W8: a chat-helped run never becomes the high score", main.high_score == 100 and main._load_highscore() == 100 and main.hud.gameover_note_label.visible)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.score = 5000
+	main.end_game()
+	_check("Code-W8: a run without chat help still sets it", main.high_score == 5000 and main._load_highscore() == 5000 and not main.hud.gameover_note_label.visible)
+	# W4 for the high score: an unreadable file is kept before it is overwritten
+	var hs_path: String = SettingsScript.SavePathsScript.path(main.HIGHSCORE_FILE)
+	var hf := FileAccess.open(hs_path, FileAccess.WRITE)
+	hf.store_string("viel")
+	hf.close()
+	_check("W4: an unreadable high score loads as 0 ...", main._load_highscore() == 0)
+	var hs_backups: Array = SettingsScript.SavePathsScript.corrupt_backups(hs_path)
+	_check("W4: ... and is kept as .corrupt-<time>", hs_backups.size() == 1)
+	for b in hs_backups:
+		DirAccess.remove_absolute(b)
+	main._save_highscore(main.high_score)
+
+	# ---- N1: Matrix ending inside the ghost house -> out of the house ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.invuln_until = main.now + 999.0
+	main.start_condition(ConditionsScript.get_condition("matrix"))
+	var hc := Vector2i(main.maze.house.r0 + 1, main.maze.house.c0 + 1)
+	main.player.global_position = Vector3(hc.y * main.CELL, main.player.global_position.y, hc.x * main.CELL)
+	_check("N1 setup: player inside the ghost house", main.in_ghost_house(main.player.global_position))
+	main._end_condition(false)
+	await get_tree().physics_frame
+	_check("N1: Matrix end puts the player out of the ghost house, capsule free", not main.in_ghost_house(main.player.global_position) and _capsule_free())
+
+	# ---- N2: the board is frozen at the level start ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.set_chaos_mode(true)
+	_check("N2: switching Chaos on mid-level keeps the level on its board", main.board_id() == WOCHE)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("N2: ... the next level start takes the new board", main.board_id() == "chaos")
+	main.set_chaos_mode(false)
+
+	# ---- N4: unknown level id ----
+	main.begin_game("gibt-es-nicht")
+	await get_tree().process_frame
+	_check("N4: begin_game with an unknown id starts a real pool level", LevelsScript.index_of(main.level_id) >= 0 and main.running)
+
+	# ---- N5: chat chip only with a connected chat ----
+	Twitch.enabled = true
+	Twitch._connected = false
+	main._update_chat_hud(true)
+	_check("N5: Twitch on but not connected -> no chat chip", not main.hud.chat_chip.visible)
+	Twitch._connected = true
+	main._update_chat_hud(true)
+	_check("N5: connected -> chip, 'Kaninchen: Woche' without a shift", main.hud.chat_chip.visible and main.hud.chat_share_label.text.begins_with("Kaninchen: Woche"), main.hud.chat_share_label.text)
+	main.set_chaos_mode(true)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main._update_chat_hud(true)
+	_check("GD: in Chaos mode the unshifted chip says 'Kaninchen: Chaos'", main.hud.chat_share_label.text.begins_with("Kaninchen: Chaos"), main.hud.chat_share_label.text)
+	main.set_chaos_mode(false)
+	Twitch._connected = false
+	Twitch.enabled = false
+	main.chat_vote.clear()
+
+	# ---- W2: no work per frame while a condition runs (resource counters) ----
+	for id in ["matrix", "taschenuhr", "stromausfall", "fear_and_loathing"]:
+		main.begin_game("klassik-1")
+		await get_tree().process_frame
+		main.invuln_until = main.now + 999.0
+		var wc2 = ConditionsScript.get_condition(id)
+		if "play_sound" in wc2:
+			wc2.play_sound = false # the 1-Hz clock tick starts an audio playback object; this check is about per-frame work
+		main.start_condition(wc2)
+		for i in 6:
+			main._process(0.2) # through the 0.8-s transition
+		var blends: int = main.env_blend_count
+		var params: int = main.look_param_count
+		var objs := Performance.get_monitor(Performance.OBJECT_COUNT)
+		for i in 60:
+			main._process(1.0 / 60.0)
+		var objs_after := Performance.get_monitor(Performance.OBJECT_COUNT)
+		_check("W2 %s: no environment blend and no uniform write per frame between the transitions" % id, main.env_blend_count == blends and main.look_param_count == params, "blends +%d, params +%d" % [main.env_blend_count - blends, main.look_param_count - params])
+		_check("W2 %s: no object created per frame" % id, objs_after <= objs, "objects %d -> %d" % [objs, objs_after])
+		main._end_condition(false)
+	_check("W2: _blend_environment no longer builds a theme (cached base)", not (main.get_script().source_code.contains("var base = CityThemesScript.get_theme(\"normal\")")))
+
+	# ---- W3: walking starts together with the clock ----
+	main.skip_start_intro = false
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.intro_until_real = main.real_now
+	for i in 4:
+		await get_tree().process_frame
+	_check("UX-W7: after the intro the hint 'Die Uhr startet mit deinem ersten Schritt' stays", not main.hud.is_start_intro_visible() and main.hud.is_clock_hint_visible() and main.hud.clock_hint_label.text == "Die Uhr startet mit deinem ersten Schritt")
+	_check("W3: legs still locked while the clock waits", main.player.movement_locked and main.start_hold)
+	Input.action_press("move_forward")
+	var guard := 0
+	while main.start_hold and guard < 60:
+		await get_tree().process_frame
+		guard += 1
+	_check("W3: at the clock start the player stands exactly on the start position", not main.start_hold and main.hold_release_position.distance_to(_start_pos()) < 0.0001, "%s vs %s" % [main.hold_release_position, _start_pos()])
+	for i in 10:
+		await get_tree().physics_frame
+	_release_all_move_keys()
+	_check("W3: ... and walks from there once the clock runs", main.player.global_position.distance_to(_start_pos()) > 0.05 and not main.hud.is_clock_hint_visible())
+
+	# ---- UX-W7: from the second start of a session any key skips the intro ----
+	main.intros_shown = 0
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("UX-W7: the first intro of a session is not skippable", not main.intro_skippable() and not main.hud.start_intro_skip_label.visible)
+	var key := InputEventKey.new()
+	key.keycode = KEY_SPACE
+	key.pressed = true
+	main._unhandled_input(key)
+	await get_tree().process_frame
+	_check("UX-W7: ... a key does not skip it", main.hud.is_start_intro_visible())
+	main.begin_game("klassik-1") # NEUSTART
+	await get_tree().process_frame
+	_check("UX-W7: second start: skippable, with a hint", main.intro_skippable() and main.hud.start_intro_skip_label.visible)
+	main._unhandled_input(key)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("UX-W7: any key skips it; the clock still waits for the first step", not main.hud.is_start_intro_visible() and main.start_hold and main.hud.is_clock_hint_visible())
+	main.skip_start_intro = true
+
+	# ---- GD: the condition is stored with every leaderboard entry ----
+	Leaderboard.reset_all()
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.forced_rabbit_condition = "matrix"
+	await _take_rabbit()
+	main.forced_rabbit_condition = ""
+	await _clear_level_fast()
+	await get_tree().create_timer(2.0).timeout
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await _clear_level_fast()
+	await get_tree().create_timer(2.0).timeout
+	var conds := {}
+	for e in Leaderboard.get_top("klassik-1", WOCHE):
+		conds[e.cond] = true
+	_check("GD: leaderboard entries carry the condition taken ('matrix') or '' without rabbit", conds.has("matrix") and conds.has(""), str(Leaderboard.get_top("klassik-1", WOCHE)))
+
+	# ---- UX-W6: Bestenliste ----
+	main.go_to_main_menu()
+	main.hud.current_week = Vector2i(2026, 40)
+	Leaderboard.date_override = "2026-09-20" # an older week (KW 38)
+	Leaderboard.submit_time("klassik-1", WOCHE, 99.0, "Player", "solo", "2026-W38", "stromausfall")
+	Leaderboard.date_override = ""
+	main.hud.show_leaderboard(WOCHE, "klassik-1")
+	main.hud._set_lb_range("all")
+	await get_tree().process_frame
+	var all_lines: Array = main.hud.leaderboard_lines()
+	var h_all: float = main.hud.leaderboard_panel.size.y
+	_check("UX-W6: Allzeit shows every entry with condition tag and date column", all_lines.size() == 3 and all_lines[2].find("STROM") != -1 and all_lines[2].find("KW 38") != -1 and all_lines[2].find("20.09.") != -1, str(all_lines))
+	_check("UX-W6: tags MTX and OHNE for the condition / no rabbit", "\n".join(all_lines).find("MTX") != -1 and "\n".join(all_lines).find("OHNE") != -1, str(all_lines))
+	_check("UX-W6: no player name column any more", "\n".join(all_lines).find("Player") == -1)
+	main.hud._set_lb_range("week")
+	await get_tree().process_frame
+	var week_lines: Array = main.hud.leaderboard_lines()
+	_check("UX-W6: 'Diese Woche' filters to the current week", week_lines.size() == 2 and "\n".join(week_lines).find("STROM") == -1, str(week_lines))
+	_check("UX-W6: the active range tab is pressed, in the accent color with an underline", main.hud.lb_range_tabs["week"].button_pressed and not main.hud.lb_range_tabs["all"].button_pressed and main.hud.lb_range_tabs["week"].get_theme_stylebox("pressed").border_width_bottom == 3)
+	main.hud._set_lb_board("chat")
+	await get_tree().process_frame
+	_check("UX-W6: fixed height — an empty board is as tall as a full one", is_equal_approx(main.hud.leaderboard_panel.size.y, h_all) and main.hud.lb_rows_box.custom_minimum_size.y >= main.hud.LB_ROW_H * 10, "%f vs %f" % [main.hud.leaderboard_panel.size.y, h_all])
+	main.hud._set_lb_board(WOCHE)
+	main.hud._set_lb_range("all")
+	_esc()
+	_check("UX-K2: Esc closes the Bestenliste (back to the start screen)", main.hud.start_panel.visible and not main.hud.leaderboard_panel.visible)
+
+	# ---- UX-K2: menus ----
+	var start_texts := _texts_of(main.hud.start_panel)
+	_check("UX-K2: start screen has BEENDEN", start_texts.has("BEENDEN"))
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.toggle_pause()
+	var pause_texts := _texts_of(main.hud.pause_panel)
+	_check("UX-K2: pause offers WEITER / NEUSTART / HAUPTMENÜ", pause_texts.has("WEITER") and pause_texts.has("NEUSTART") and pause_texts.has("HAUPTMENÜ"))
+	main.hud.menu_btn.pressed.emit()
+	_check("UX-K2: HAUPTMENÜ in a speedrun asks first", main.hud.is_menu_confirm_open() and main.running)
+	_esc()
+	_check("UX-K2: Esc cancels the question, the pause stays", not main.hud.is_menu_confirm_open() and main.paused and main.hud.pause_panel.visible)
+	main.hud.menu_btn.pressed.emit()
+	main.hud.menu_pressed.emit() # "JA, ZUM MENÜ"
+	await get_tree().process_frame
+	_check("UX-K2: confirmed -> start screen, run over, no game HUD", main.hud.start_panel.visible and not main.running and not main.paused and not main.hud.is_game_hud_visible())
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("UX-W5: the game HUD is visible while a game runs", main.hud.is_game_hud_visible())
+	main.end_game()
+	var go_texts := _texts_of(main.hud.gameover_panel)
+	_check("UX-K2: game over offers NOCHMAL / HAUPTMENÜ / BESTENLISTE", go_texts.has("NOCHMAL") and go_texts.has("HAUPTMENÜ") and go_texts.has("BESTENLISTE"))
+	_check("UX-W5: no game HUD over the game over", not main.hud.is_game_hud_visible())
+	main.hud.show_leaderboard("", "", main.hud.gameover_panel)
+	_esc()
+	_check("UX-K2: Bestenliste from the game over returns there on Esc", main.hud.gameover_panel.visible and not main.hud.leaderboard_panel.visible)
+	main.go_to_main_menu()
+
+	# ---- UX-K1 / W5: comfort block and start-screen order ----
+	var box: VBoxContainer = main.hud._panel_box(main.hud.start_panel)
+	_check("UX-K1: the comfort block sits right under the title", box.get_child(1) == main.hud.comfort_start_block and _texts_of(main.hud.comfort_start_block).has("KOMFORT"))
+	var speedrun_idx := -1
+	for i in box.get_child_count():
+		var ch = box.get_child(i)
+		if ch is Button and ch.text == "SPEEDRUN":
+			speedrun_idx = i
+	_check("UX-W5: options (Chaos, comfort) above the SPEEDRUN button", main.hud.chaos_start.get_index() < speedrun_idx and main.hud.comfort_start_block.get_index() < speedrun_idx)
+	var small := []
+	for l in _labels_under(main.hud.start_panel):
+		if l.autowrap_mode != TextServer.AUTOWRAP_OFF and l.get_theme_font_size("font_size") < 14:
+			small.append(l.text.left(20))
+	_check("UX-W5: explanation texts at least 14 px", small.is_empty(), str(small))
+	get_tree().root.size = Vector2i(1152, 720)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var scroll: ScrollContainer = main.hud.start_panel.get_child(0)
+	var visible_bottom := scroll.get_global_rect().end.y
+	var block_bottom: float = main.hud.comfort_start_block.get_global_rect().end.y
+	_check("UX-K1: comfort block fully visible without scrolling at 1152x720", scroll.scroll_vertical == 0 and block_bottom <= visible_bottom, "block bottom %f, visible %f" % [block_bottom, visible_bottom])
+	get_tree().root.size = Vector2i(1280, 800)
+	await get_tree().process_frame
+	main.hud.fov_sliders[0].value = 90.0
+	_check("UX-K1: FOV slider sets the camera, is stored and synced", is_equal_approx(main.player.camera.fov, 90.0) and is_equal_approx(SettingsScript.load_settings().fov, 90.0) and is_equal_approx(main.hud.fov_sliders[1].value, 90.0))
+	main.hud.sens_sliders[1].value = 1.5
+	_check("UX-K1: mouse sensitivity slider (pause) works and is stored", is_equal_approx(main.player.mouse_sensitivity_scale, 1.5) and is_equal_approx(SettingsScript.load_settings().mouse_sens, 1.5) and is_equal_approx(main.hud.sens_sliders[0].value, 1.5))
+	_check("UX-K1: FOV range 60-100, default 72", main.hud.fov_sliders[0].min_value == 60.0 and main.hud.fov_sliders[0].max_value == 100.0 and SettingsScript.FOV_DEFAULT == 72.0)
+	main.set_fov(72.0)
+	main.set_mouse_sens(1.0)
+	_check("UX-K1: the pause carries the comfort block too", main.hud.comfort_pause_block != null and main.hud.comfort_pause_block.get_parent() == main.hud.pause_panel.get_child(0))
+
+	# ---- UX-K1: Kippbild with "Effekte reduzieren": no tipping, thin frame ----
+	main.set_reduce_fx(true)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.invuln_until = main.now + 999.0
+	var fear = ConditionsScript.get_condition("fear_and_loathing")
+	fear.set_manipulation(FearScript.SWAP)
+	main.start_condition(fear)
+	Input.action_press("move_right")
+	var max_shader_flip := 0.0
+	var max_frame := 0.0
+	for i in 40:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+		max_shader_flip = maxf(max_shader_flip, float(main.maze_view.cond_wall_material.get_shader_parameter("flip")))
+		max_frame = maxf(max_frame, main.hud.flip_frame_alpha)
+	_release_all_move_keys()
+	_check("UX-K1: reduced Kippbild — the world does not tip", max_shader_flip == 0.0 and fear.look_flip() > 0.5, "shader flip %f" % max_shader_flip)
+	_check("UX-K1: reduced Kippbild — a thin frame (~6 px) shows it instead", max_frame > 0.5 and main.hud.FLIP_FRAME_PX == 6.0 and main.hud.flip_frame.visible)
+	main._end_condition(false)
+	_check("UX-K1: the frame goes with the condition", not main.hud.flip_frame.visible)
+	main.set_reduce_fx(false)
+	var kw: String = (load("res://shaders/kond_wall.gdshader") as Shader).code
+	_check("UX-K1: flow direction cross-fades instead of step()", kw.find("step(0.5, flip)") == -1 and kw.find("mix(stripe_dn, stripe_up, vflip)") != -1)
+	_check("UX-W4: reduced Matrix density max 0.8, near 0.3, walls stay permeable", kw.find("uniform float mx_reduce_near = 0.3;") != -1 and kw.find("uniform float mx_reduce_max = 0.8;") != -1 and kw.find("max(reduce_fx, matrix_solid)") == -1)
+	_check("N3: transition glyphs only while a transition runs", kw.find("if (transition > 0.001 && transition < 0.999 && look != 0)") != -1)
+
+	# ---- UX-W1: title card ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	var fl2 = ConditionsScript.get_condition("fear_and_loathing")
+	fl2.set_manipulation(FearScript.DELAY)
+	main.start_condition(fl2, "Chat 46 % → FEAR & LOATHING")
+	var hud = main.hud
+	_check("UX-W1: second line 15 px white, chat line 12 px", hud.condition_sub_label.get_theme_font_size("font_size") == 15 and hud.condition_sub_label.get_theme_color("font_color") == Color(1, 1, 1) and hud.condition_chat_label.get_theme_font_size("font_size") == 12)
+	_check("UX-W1: right column 'SCHLECHT ▼' and '8 s'", hud.condition_kind_label.text == "SCHLECHT ▼" and hud.condition_secs_label.text == "8 s", "%s / %s" % [hud.condition_kind_label.text, hud.condition_secs_label.text])
+	hud.update_condition_card(6.2, 8.0)
+	_check("UX-W1: seconds count down ('7 s'), no pulse before the last 3 s", hud.condition_secs_label.text == "7 s" and is_equal_approx(hud.condition_bar.modulate.a, 1.0))
+	hud.update_condition_card(2.5, 8.0)
+	var a_half: float = hud.condition_bar.modulate.a
+	hud.update_condition_card(2.0, 8.0)
+	var a_full: float = hud.condition_bar.modulate.a
+	_check("UX-W1: last 3 s the bar pulses at 1 Hz", a_half < 0.5 and a_full > 0.95 and hud.condition_secs_label.text == "2 s", "%f / %f" % [a_half, a_full])
+	main._end_condition(false)
+	var good_c = ConditionsScript.get_condition("taschenuhr")
+	main.start_condition(good_c)
+	_check("UX-W1: good conditions say 'GUT ▲'", hud.condition_kind_label.text == "GUT ▲")
+	main._end_condition(false)
+
+	# ---- UX-W3: the rabbit reads as a rabbit ----
+	var mv = main.maze_view
+	var fig: Node3D = mv.rabbit_figure
+	var vox: Dictionary = load("res://scripts/pixel_rabbit_mesh.gd").voxels()
+	var top_y := 0.0
+	for p in vox.body:
+		top_y = maxf(top_y, p.y)
+	_check("UX-W3: 3D figure with body and eyes, ears reach ~1 m", fig != null and fig.has_node("Body") and fig.has_node("Eyes") and top_y > 0.9 and vox.eyes.size() >= 2)
+	var spot = mv.rabbit_node.get_node_or_null("LightCone")
+	_check("UX-W3: a weak light cone on the floor (spot from above + glow disk)", spot is SpotLight3D and spot.global_transform.basis.z.y > 0.99 and mv.rabbit_node.has_node("FloorGlow"))
+	_check("UX-W3: floats above the floor, turns below 0.5 Hz", fig.position.y > 0.1 and mv.RABBIT_TURN_RAD_S / TAU < 0.5 and mv.RABBIT_BOB_HZ < 0.5)
+	var bm: StandardMaterial3D = mv.rabbit_material
+	_check("UX-W3: rabbit white #F2F2ED", bm != null and bm.albedo_color.is_equal_approx(Color("f2f2ed")))
+	main.end_game()
+	main.go_to_main_menu()
+
+
+func _labels_under(node: Node) -> Array:
+	var out := []
+	for ch in node.get_children():
+		if ch is Label:
+			out.append(ch)
+		out.append_array(_labels_under(ch))
+	return out

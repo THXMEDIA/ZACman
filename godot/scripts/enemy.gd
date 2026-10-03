@@ -34,6 +34,9 @@ var frightened_emission := Color(0.33, 0.47, 1.0)
 var emission_energy := 0.7
 
 var _bob_seed := 0.0
+## N6: the generator for the random turns while frightened (Main injects its
+## ai_rng so a seeded run is reproducible); null = the global generator.
+var rng: RandomNumberGenerator = null
 
 
 func setup(color: Color, glow: Color, speed: float) -> void:
@@ -167,7 +170,8 @@ func _pick_next_cell(maze, target_cell: Vector2i) -> Vector2i:
 		return Vector2i(target_r, target_c)
 
 	if mode == "frightened":
-		return pool[randi() % pool.size()]
+		var roll: int = rng.randi() if rng != null else randi()
+		return pool[roll % pool.size()]
 
 	var dist: Array = MazeGen.bfs(maze, target_cell.x, target_cell.y)
 	var best: Vector2i = pool[0]
