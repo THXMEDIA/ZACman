@@ -1,4 +1,4 @@
-# Review-Brief: ZACman (Kugelschlucker)
+# Review-Brief: ZAPmaniac
 
 Gilt für alle drei Reviewer (`game-designer`, `ux-reviewer`, `code-reviewer`).
 Rollenspezifische Zusätze stehen in `docs/review/<rollenname>.md`.

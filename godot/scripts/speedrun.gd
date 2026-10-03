@@ -5,7 +5,7 @@ extends Node
 ## across scenes (the future Manhattan bonus level reads is_bonus_unlocked()
 ## the same way Main does).
 
-const SAVE_FILE := "kugelschlucker_speedrun.json"
+const SAVE_FILE := "zapmaniac_speedrun.json"
 ## Version of the file format written by _save(). History:
 ##   1 (implicit, no "version" field): {"best_times": {...}, "bonus_unlocked": bool};
 ##     the oldest saves keyed best_times by level index ("0".."3").

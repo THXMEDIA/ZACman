@@ -1,4 +1,4 @@
-<title>Kugelschlucker</title>
+<title>ZAPmaniac</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -991,7 +991,7 @@
   };
 
   try {
-    state.highScore = parseInt(localStorage.getItem('kugelschlucker_hs') || '0', 10) || 0;
+    state.highScore = parseInt(localStorage.getItem('zapmaniac_hs') || localStorage.getItem('kugelschlucker_hs') || '0', 10) || 0;
   } catch (e) {}
 
   function playerCell() {
@@ -1096,7 +1096,7 @@
     if (state.score > state.highScore) {
       state.highScore = state.score;
       try {
-        localStorage.setItem('kugelschlucker_hs', String(state.highScore));
+        localStorage.setItem('zapmaniac_hs', String(state.highScore));
       } catch (e) {}
     }
     document.getElementById('final-score').textContent = state.score;

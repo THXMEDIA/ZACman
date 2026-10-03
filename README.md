@@ -1,4 +1,4 @@
-# ZACman (Kugelschlucker)
+# ZAPmaniac
 
 Ein First-Person-3D-Labyrinthspiel im Geiste von Pac-Man: durch ein
 Labyrinth laufen, Kugeln schlucken, Power-Kugeln nutzen und leuchtenden
@@ -38,6 +38,21 @@ Die Bot-Simulation (`godot/tests/BotTest.tscn`) instanziiert die echte
 `Input`-Singleton und prüft Kollisionen, Gegner-KI-Zustände, Pickup-Logik,
 Level-Übergänge, den Speedrun-/Bonuslevel-Unlock und die Twitch-Chat-Befehle
 im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
+
+**Spielstände nach der Umbenennung (ZACman → ZAPmaniac, 03.10.2026):**
+Der neue Projektname verschiebt den `user://`-Ordner
+(`…/app_userdata/ZACman` → `…/app_userdata/ZAPmaniac`), die Dateien heißen
+jetzt `zapmaniac_*` statt `kugelschlucker_*`. Das Autoload `SaveMigration`
+(`godot/scripts/save_migration.gd`, steht als erstes in der Autoload-Liste)
+kopiert beim ersten echten Spielstart einmalig und still jede fehlende
+`zapmaniac_*`-Datei (Speedrun, Bestenlisten, Highscore, Einstellungen) aus
+ihrem Vorgänger — erst `kugelschlucker_*` im selben Ordner, dann im alten
+Ordner `ZACman`. Vorhandene neue Dateien werden nie überschrieben, alte nie
+gelöscht. Sie läuft nur, wenn `SavePaths` auf seinem Standard-Ordner steht
+und das Spiel wirklich gestartet wurde (nicht headless, kein `--script`,
+keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
+`godot/tests/test_save_migration.gd` prüft sie in eigenen Testordnern unter
+`SaveIsolation`, deren Fingerabdruck auch die alten Dateien umfasst.
 
 ## Spiel-Design
 
@@ -87,7 +102,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   Speedrun-Unlock versteckt (`hud.gd::_build_start_panel`). Eine
   Konditionswahl gibt es nicht mehr (das weiße Kaninchen entscheidet, siehe
   unten); dazu der Schalter **„Effekte reduzieren“** (auch im Pausemenü,
-  gespeichert in `kugelschlucker_settings.json`, `settings.gd`). Den
+  gespeichert in `zapmaniac_settings.json`, `settings.gd`). Den
   Testbuild-Button gibt es nicht mehr; das
   Debug-Overlay (FPS, Position, Zelle) schaltet **F3** ein, nur in
   Debug-Builds (`main.gd::_unhandled_input`). Der Startbildschirm ist inzwischen mit
@@ -330,7 +345,7 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     (Entscheidung Studio Head: das Kaninchen ist eine freiwillige Wette mit
     Umweg).
   - **Chaos-Modus**: Schalter am Startscreen (gespeichert in
-    `kugelschlucker_settings.json`, Version 2), echter Zufall für jedes
+    `zapmaniac_settings.json`, Version 2), echter Zufall für jedes
     Kaninchen, eigenes Brett `chaos`, Badge CHAOS.
   - **Bestenliste**: Button BESTENLISTE am Startscreen; Tabs Woche, Chaos,
     Chat, Level-Umschalter, Top 10. Auf dem Wochenbrett steht bei jeder
@@ -348,8 +363,8 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     Kaninchen-Sackgasse trug eine Pflicht-Kugel; ab dem zweiten Level eines
     Laufs ersetzten Word-/Fear-Pickups Kugeln, GD-W1/Code-W2), und welche
     Variante eine Zeit war, steht nicht in der Datei.
-  - Lokal als JSON (`user://kugelschlucker_speedrun.json`,
-    `user://kugelschlucker_leaderboards.json`), hinter einer kleinen
+  - Lokal als JSON (`user://zapmaniac_speedrun.json`,
+    `user://zapmaniac_leaderboards.json`), hinter einer kleinen
     Schnittstelle (`submit_time`/`get_top`), damit ein späteres
     Steamworks-Backend (GodotSteam Leaderboards, siehe
     `docs/STEAM_ROADMAP.md`) die Persistenz ersetzen kann, ohne Main/HUD

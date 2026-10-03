@@ -20,7 +20,7 @@ extends Node
 const LevelsScript := preload("res://scripts/levels.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 
-const SAVE_FILE := "kugelschlucker_leaderboards.json"
+const SAVE_FILE := "zapmaniac_leaderboards.json"
 ## Version of the file format written by _save(). History:
 ##   1 (implicit): the whole file is {board_key: [entries]}.
 ##   2: {"version": 2, "boards": {board_key: [entries]}}; every entry

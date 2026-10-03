@@ -18,7 +18,7 @@ func _initialize() -> void:
 	var checks := 0
 
 	var real_saves := SaveIsolation.begin()
-	SAVE_PATH = SavePathsScript.path("kugelschlucker_speedrun.json")
+	SAVE_PATH = SavePathsScript.path("zapmaniac_speedrun.json")
 	checks += 1
 	if not SAVE_PATH.begins_with(SavePathsScript.TEST_ROOT):
 		failures += 1

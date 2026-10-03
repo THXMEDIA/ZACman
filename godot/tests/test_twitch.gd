@@ -15,9 +15,9 @@ func _initialize() -> void:
 
 	# --- parse_irc_line -------------------------------------------------
 	checks += 1
-	var ok_line := ":alice!alice@alice.tmi.twitch.tv PRIVMSG #zacman :!power let's go"
+	var ok_line := ":alice!alice@alice.tmi.twitch.tv PRIVMSG #zapmaniac :!power let's go"
 	var parsed: Dictionary = twitch.parse_irc_line(ok_line)
-	if parsed.get("user") != "alice" or parsed.get("channel") != "zacman" or parsed.get("message") != "!power let's go":
+	if parsed.get("user") != "alice" or parsed.get("channel") != "zapmaniac" or parsed.get("message") != "!power let's go":
 		failures += 1
 		print("FAIL parse_irc_line PRIVMSG: %s" % [parsed])
 
@@ -40,14 +40,14 @@ func _initialize() -> void:
 
 	# a vote as a full IRC line, end to end through both parsers
 	checks += 1
-	var vote_line: Dictionary = twitch.parse_irc_line(":Carol!carol@carol.tmi.twitch.tv PRIVMSG #zacman :!schlecht")
+	var vote_line: Dictionary = twitch.parse_irc_line(":Carol!carol@carol.tmi.twitch.tv PRIVMSG #zapmaniac :!schlecht")
 	var vote_cmd: Dictionary = twitch.parse_command(vote_line.get("message", ""))
 	if vote_line.get("user") != "Carol" or vote_cmd.get("command") != "schlecht":
 		failures += 1
 		print("FAIL a !schlecht line should parse to user Carol, command schlecht: %s %s" % [vote_line, vote_cmd])
 
 	checks += 1
-	var no_user_line := ":bob!bob@bob.tmi.twitch.tv PRIVMSG #zacman :just chatting, no command here"
+	var no_user_line := ":bob!bob@bob.tmi.twitch.tv PRIVMSG #zapmaniac :just chatting, no command here"
 	var parsed2: Dictionary = twitch.parse_irc_line(no_user_line)
 	if parsed2.get("message") != "just chatting, no command here":
 		failures += 1

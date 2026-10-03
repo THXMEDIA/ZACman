@@ -27,7 +27,7 @@ const MATRIX_BLINK_HZ := 1.5
 ## vorbei können") — a ghost in the way now has to be eaten (frightened),
 ## evaded by backing off into a side passage, or run into.
 const ENEMY_HIT_RADIUS := 0.85
-const HIGHSCORE_FILE := "kugelschlucker_highscore.txt" # under SavePaths.root (tests redirect it)
+const HIGHSCORE_FILE := "zapmaniac_highscore.txt" # under SavePaths.root (tests redirect it)
 ## Code-W8: global cooldown (game clock) for each helping chat command. 20 s
 ## is about three Frightened windows (FRIGHTENED_DURATION 7 s): chat !power
 ## can never chain Frightened back to back or keep resetting the eat combo,

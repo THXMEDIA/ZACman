@@ -10,7 +10,7 @@ extends RefCounted
 ## "Chaos-Modus" (spec 2.5): real randomness for the rabbit, own board.
 
 const SavePathsScript := preload("res://scripts/save_paths.gd")
-const SAVE_FILE := "kugelschlucker_settings.json"
+const SAVE_FILE := "zapmaniac_settings.json"
 ## 1: {"version", "reduce_fx"}; 2: plus "chaos". A missing field keeps its
 ## default, so a version-1 file loads unchanged.
 const SAVE_VERSION := 2

@@ -1,4 +1,4 @@
-# QA-Screenshots für ZACman (vom qa-playtester-Agenten genutzt).
+# QA-Screenshots für ZAPmaniac (vom qa-playtester-Agenten genutzt).
 #
 # Aufruf aus dem Repo-Wurzelverzeichnis mit virtuellem Bildschirm. Godot kann
 # Skripte nur innerhalb des Projektordners laden, deshalb vorübergehend kopieren:

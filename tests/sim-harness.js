@@ -325,7 +325,7 @@ const context = {
 context.globalThis = context;
 context.self = context;
 vm.createContext(context);
-vm.runInContext(code, context, { filename: 'zacman-game-script.js' });
+vm.runInContext(code, context, { filename: 'zapmaniac-game-script.js' });
 
 module.exports = {
   sim: context.__sim,

@@ -21,7 +21,7 @@ Herkunft: Art-Director-Prototypen (`tools/art/speedrun_proto/pacman_v2.patch`, `
 ### 1.2 Konditions-Looks
 Ein gemeinsamer Wand-/Boden-Shader (aus `konditionen.patch`) mit Uniforms `look`, `transition`, `flip`, `reduce_fx`; Wechsel zur Laufzeit per Materialtausch bzw. Uniform, nie durch zweiten Wandsatz.
 - **Übergang:** 0,8-s-Welle vom Spieler aus, Zelle für Zelle; in der Wellenfront zerfallen die Neonlinien zu Zeichen in Hasenweiß `#F2F2ED`. Rückweg identisch rückwärts.
-- **Matrix „Durchlässiger Code“:** Wände nur noch Code-Raster (vor der Kamera fast offen, auf Gangbreite ~70 %, Ferne ~95 %), Oberkante als einzige durchgehende Linie, Rückseiten gedimmt, eigener Glyphensatz „ZAC-Code“ (keine Film-Glyphen). Grün `#00D94D`, Kopf `#CCFFDB`, Grund `#000301`.
+- **Matrix „Durchlässiger Code“:** Wände nur noch Code-Raster (vor der Kamera fast offen, auf Gangbreite ~70 %, Ferne ~95 %), Oberkante als einzige durchgehende Linie, Rückseiten gedimmt, eigener Glyphensatz „ZAP-Code“ (keine Film-Glyphen). Grün `#00D94D`, Kopf `#CCFFDB`, Grund `#000301`.
 - **Fear & Loathing „Kippbild“:** schmelzende Wüsten-Neon-Streifen (`#2B0A3D` → `#B3175C` → `#F26B33`), Casino-Teppich-Boden; wenn die Steuerungsmanipulation aktiv „gekippt“ ist, kippt die Welt in die Komplementärpalette (`#072E33` → `#0F8C85` → `#4DCCF2`) in 0,4 s bei gleicher Helligkeit; Streifen fließen dann nach oben.
 - **Taschenuhr:** Basis-Look bleibt; leichter warmer Farbstich + langsames Uhren-Ticken; Geister sichtbar verlangsamt.
 - **Stromausfall:** Basis-Look, dichter Nebel (Sicht ~2 Zellen), Minimap aus, Kugeln und Geister bleiben selbstleuchtend.
@@ -78,4 +78,4 @@ Neue Konditionen = ein Skript unter `scripts/conditions/` plus Registry-Eintrag 
 - Brief anpassen: Twitch darf jetzt auch erschweren (nur über das Kaninchen-Verhältnis).
 
 ## 3. Rechtsprüfung (offen, nicht Teil der Umsetzung)
-Name „ZACman“ vs. „PAC-MAN“; Gesamteindruck 3D-Maze + Punktreihen + farbige Verfolger + blinkender Power-Punkt; Text „Follow the white rabbit“; Konditionsname „Fear & Loathing“; kein „Matrix“ im Store-Text. UI-Bezeichnungen „Matrix-Level“ und „Matrix Ghost“ entfallen ohnehin (Speedrun-Level heißen schlicht nach dem Level-Pool).
+Name: Projekt am 03.10.2026 in „ZAPmaniac“ umbenannt; die Namensnähe „ZACman“/„PAC-MAN“ ist damit erledigt, der neue Name gehört trotzdem in die Markenrecherche. Weiter offen: Gesamteindruck 3D-Maze + Punktreihen + farbige Verfolger + blinkender Power-Punkt; Text „Follow the white rabbit“; Konditionsname „Fear & Loathing“; kein „Matrix“ im Store-Text. UI-Bezeichnungen „Matrix-Level“ und „Matrix Ghost“ entfallen ohnehin (Speedrun-Level heißen schlicht nach dem Level-Pool).

@@ -1,7 +1,7 @@
 // kond_common.gdshaderinc — building blocks of the rabbit-condition looks
 // (spec docs/design/kaninchen-speedrun.md 1.2), taken over from the art-
 // direction prototype tools/art/speedrun_proto/konditionen.patch:
-// own glyph set "ZAC-Code" (8x8, 1-px strokes — no film glyphs, no katakana),
+// own glyph set "ZAP-Code" (8x8, 1-px strokes — no film glyphs, no katakana),
 // hashes, Bayer dither, fwidth-coupled glyphs/lines and the 0.8 s transition
 // wave base look -> condition look.
 //

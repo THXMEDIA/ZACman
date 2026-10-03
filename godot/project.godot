@@ -1,18 +1,19 @@
-; ZACman (Kugelschlucker) — Godot project
+; ZAPmaniac — Godot project
 ; First-person maze game, ported from the web/Three.js prototype.
 
 config_version=5
 
 [application]
 
-config/name="ZACman"
-config/description="Kugelschlucker: ein First-Person-3D-Labyrinthspiel im Pac-Man-Stil."
+config/name="ZAPmaniac"
+config/description="ZAPmaniac: ein First-Person-3D-Labyrinthspiel im Pac-Man-Stil."
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.3", "Forward Plus")
 boot_splash/bg_color=Color(0.0196078, 0.0274510, 0.0627451, 1)
 
 [autoload]
 
+SaveMigration="*res://scripts/save_migration.gd"
 MazeGen="*res://scripts/maze_gen.gd"
 Sfx="*res://scripts/audio_synth.gd"
 Speedrun="*res://scripts/speedrun.gd"

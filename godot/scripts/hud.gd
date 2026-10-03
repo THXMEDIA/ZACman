@@ -343,7 +343,7 @@ func _make_button(text: String) -> Button:
 func _build_start_panel() -> void:
 	start_panel = _overlay_panel(true)
 	var box := _panel_box(start_panel)
-	box.add_child(_title_label("KUGELSCHLUCKER"))
+	box.add_child(_title_label("ZAPMANIAC"))
 	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus."))
 
 	var hs_row := HBoxContainer.new()

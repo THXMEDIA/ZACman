@@ -10,12 +10,13 @@ extends RefCounted
 ## real files do not exist, so any write there shows up as "created").
 
 const SavePathsScript := preload("res://scripts/save_paths.gd")
+const SaveMigrationScript := preload("res://scripts/save_migration.gd")
 
 const SAVE_FILES := [
-	"kugelschlucker_speedrun.json",
-	"kugelschlucker_leaderboards.json",
-	"kugelschlucker_highscore.txt",
-	"kugelschlucker_settings.json",
+	"zapmaniac_speedrun.json",
+	"zapmaniac_leaderboards.json",
+	"zapmaniac_highscore.txt",
+	"zapmaniac_settings.json",
 ]
 
 
@@ -34,12 +35,21 @@ static func end(snapshot: Dictionary) -> bool:
 	return real_fingerprint() == snapshot
 
 
-## {file name: md5 of its content, or "" if it does not exist}.
+## {path: md5 of its content, or "" if it does not exist} — the real save
+## files plus their pre-rename predecessors (old file names in the real
+## folder and in the old user:// folder, see SaveMigration), so a test that
+## migrated or touched a real save would show up too.
 static func real_fingerprint() -> Dictionary:
 	var out := {}
+	var paths: Array[String] = []
 	for name in SAVE_FILES:
-		var p: String = SavePathsScript.default_path(name)
-		out[name] = FileAccess.get_md5(p) if FileAccess.file_exists(p) else ""
+		paths.append(SavePathsScript.default_path(name))
+	for suffix in SaveMigrationScript.FILE_SUFFIXES:
+		var old_name: String = SaveMigrationScript.OLD_PREFIX + suffix
+		paths.append(SavePathsScript.default_path(old_name))
+		paths.append(SaveMigrationScript.legacy_user_dir().path_join(old_name))
+	for p in paths:
+		out[p] = FileAccess.get_md5(p) if FileAccess.file_exists(p) else ""
 	return out
 
 
