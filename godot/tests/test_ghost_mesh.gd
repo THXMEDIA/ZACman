@@ -10,7 +10,30 @@ func _initialize() -> void:
 	var failures := 0
 	var checks := 0
 
-	# --- pixel grid shape: 8 rows x 7 columns, as documented -------------
+	# --- "Schild mit Visier" silhouette (spec 1.1): horns, one visor slit,
+	# a point at the bottom; no dome, no zig-zag skirt -----------------------
+	var rows: Array = GhostMesh.PIXEL_ROWS
+	var first: String = rows[0]
+	var last: String = rows[rows.size() - 1]
+	checks += 1
+	if not (first[0] == "#" and first[first.length() - 1] == "#" and first[first.length() / 2] == "."):
+		failures += 1
+		print("FAIL top row should be two horns (outer pixels set, middle empty), got '%s'" % first)
+	checks += 1
+	if last.count("#") != 1:
+		failures += 1
+		print("FAIL bottom row should be a single-pixel point (no zig-zag skirt), got '%s'" % last)
+	checks += 1
+	var visor_rows := 0
+	for i in range(1, rows.size() - 1):
+		var line: String = rows[i]
+		if line[0] == "#" and line[line.length() - 1] == "#" and line.substr(1, line.length() - 2) == ".".repeat(line.length() - 2):
+			visor_rows += 1
+	if visor_rows != 1:
+		failures += 1
+		print("FAIL there should be exactly one visor slit row (#.....#), got %d" % visor_rows)
+
+	# --- pixel grid shape: ROWS x COLS, as documented ----------------------
 	checks += 1
 	if GhostMesh.PIXEL_ROWS.size() != GhostMesh.ROWS:
 		failures += 1
