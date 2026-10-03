@@ -34,7 +34,18 @@ const GHOST_ABFAENGER := {"role": "abfaenger", "color": Color("e2ff3a"), "glow":
 const GHOST_STREUNER := {"role": "streuner", "color": Color("a65cff"), "glow": Color("c79bff")} # all levels (studio head, 03.10.2026)
 const GHOST_LAUERER := {"role": "lauerer", "color": Color("ffa41f"), "glow": Color("ffc56e")}
 const GHOST_NACHZUEGLER := {"role": "nachzuegler", "color": Color("ff36c8"), "glow": Color("ff85dd")}
-const GHOST_FRIGHTENED := Color("bdfcef")
+## Frightened ghosts (UX-W2, 03.10. review): cerulean #14A7CC instead of the
+## old near-white mint #BDFCEF, which was easy to mistake for the pellets
+## (#FFF0C8) and the rabbit white (#F2F2ED). Chosen by a search over hue /
+## saturation / value for the largest perceptual distance (OKLab) to every
+## colour a frightened ghost must never be confused with — the five ghost
+## colours, pellets, rabbit white, Matrix green and head — while keeping a
+## clear distance (>= 0.1 OKLab) to the walls (top edge #1EF2C8, Lagune/Riff
+## gradients) and both Kippbild palettes, and staying out of the blue band
+## 215–250° (too close to the original's frightened blue): hue 192° (cold,
+## the only cold colour among the ghost states), closest critical colour the
+## Streuner violet at ΔE 0.24. tests/test_city_themes.gd checks all of it.
+const GHOST_FRIGHTENED := Color("14a7cc")
 
 
 ## The Speedrun levels: Pac-Man base look "Lagune" (wall/floor shaders, CRT

@@ -40,9 +40,16 @@ var fruit_expire_at := 0.0
 ## level. Picking it up starts a condition (Main._on_rabbit_picked).
 const RABBIT_COLOR := Color("f2f2ed") # rabbit white (spec 1.2)
 var rabbit_cell := Vector2i(-1, -1)
-var rabbit_node: Node3D = null
+var rabbit_node: Node3D = null # container on the floor of the rabbit cell (light cone stays on the floor)
+var rabbit_figure: Node3D = null # the voxel rabbit inside it: floats, bobs and turns
 var rabbit_alive := false
 var rabbit_material: StandardMaterial3D = null
+## UX-W3: hovering height of the figure's feet, bob amplitude / frequency and
+## turn rate — every motion below 0.5 Hz.
+const RABBIT_HOVER := 0.22
+const RABBIT_BOB := 0.05
+const RABBIT_BOB_HZ := 0.4
+const RABBIT_TURN_RAD_S := 1.5 # one turn in ~4.2 s = 0.24 Hz
 
 var walls_body: StaticBody3D
 var normal_wall_mmi: MultiMeshInstance3D
@@ -107,6 +114,7 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	fruit_alive = false
 	rabbit_cell = Vector2i(-1, -1)
 	rabbit_node = null
+	rabbit_figure = null
 	rabbit_alive = false
 	rabbit_material = null
 	word_wall_root = null
@@ -608,27 +616,79 @@ func set_look(look_id: String) -> bool:
 ## Sets a shader uniform on the current look's wall and floor materials
 ## (for one shared condition shader with a `look`/`transition` uniform, see
 ## spec 1.2). Materials without that uniform ignore it.
+## W2: no temporary array — this runs every frame a uniform changes.
 func set_look_param(param: String, value) -> void:
-	for m in [normal_wall_mmi.material_override, floor_mesh.material_override]:
-		if m is ShaderMaterial:
-			m.set_shader_parameter(param, value)
+	var wm: Material = normal_wall_mmi.material_override
+	if wm is ShaderMaterial:
+		wm.set_shader_parameter(param, value)
+	var fm: Material = floor_mesh.material_override
+	if fm is ShaderMaterial and fm != wm:
+		fm.set_shader_parameter(param, value)
 
 
-## The white rabbit's figure: the blocky pixel rabbit (pixel_rabbit_mesh.gd)
-## in rabbit white, with a soft light so it reads from down the corridor.
+## The white rabbit (UX-W3): a voxel rabbit in rabbit white that floats a
+## little above the floor and slowly turns (pixel_rabbit_mesh.gd), a soft
+## light around it and a weak light cone on the floor under it — a spot
+## light from above plus a faint glow disk, so the cell reads as "something
+## is here" from down the corridor. The container stays on the floor; only
+## the figure moves.
 func _build_rabbit_mesh(cell: Vector2i) -> void:
-	var mesh := PixelRabbitMeshScript.build({"color": RABBIT_COLOR})
-	mesh.name = "WhiteRabbit"
-	mesh.scale = Vector3.ONE * 1.4
-	mesh.position = Vector3(cell.y * CELL, 0.6, cell.x * CELL)
-	rabbit_material = mesh.multimesh.mesh.material
+	var root := Node3D.new()
+	root.name = "WhiteRabbit"
+	root.position = Vector3(cell.y * CELL, 0.0, cell.x * CELL)
+	var figure := PixelRabbitMeshScript.build({"color": RABBIT_COLOR})
+	figure.name = "Figure"
+	figure.position.y = RABBIT_HOVER
+	root.add_child(figure)
+	rabbit_material = PixelRabbitMeshScript.body_material(figure)
+
 	var light := OmniLight3D.new()
 	light.light_color = Color(0.95, 0.95, 1.0)
-	light.omni_range = 2.8
-	light.light_energy = 0.9
-	mesh.add_child(light)
-	add_child(mesh)
-	rabbit_node = mesh
+	light.omni_range = 2.6
+	light.light_energy = 0.7
+	light.position.y = 0.7
+	root.add_child(light)
+
+	var spot := SpotLight3D.new()
+	spot.name = "LightCone"
+	spot.light_color = RABBIT_COLOR
+	spot.light_energy = 1.4
+	spot.spot_range = 3.4
+	spot.spot_angle = 24.0
+	spot.spot_attenuation = 0.6
+	spot.position.y = 2.9
+	spot.rotation.x = -PI / 2.0 # straight down
+	root.add_child(spot)
+
+	var disk := MeshInstance3D.new()
+	disk.name = "FloorGlow"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(1.5, 1.5)
+	disk.mesh = plane
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1, 1, 1, 1))
+	grad.set_color(1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 64
+	tex.height = 64
+	var dm := StandardMaterial3D.new()
+	dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	dm.albedo_texture = tex
+	dm.albedo_color = Color(RABBIT_COLOR, 0.22)
+	dm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	disk.material_override = dm
+	disk.position.y = 0.02
+	root.add_child(disk)
+
+	add_child(root)
+	rabbit_node = root
+	rabbit_figure = figure
 	rabbit_alive = true
 
 
@@ -923,10 +983,10 @@ func _process(delta: float) -> void:
 				power_nodes[i].scale = Vector3.ONE * s
 	if fruit_alive and fruit_node != null:
 		fruit_node.rotate_y(delta * 1.4)
-	if rabbit_alive and rabbit_node != null:
+	if rabbit_alive and rabbit_figure != null:
 		# slow turn (~0.24 Hz) and bob (0.4 Hz): all motion below 0.5 Hz
-		rabbit_node.rotate_y(delta * 1.5)
-		rabbit_node.position.y = 0.6 + sin(_t * TAU * 0.4) * 0.05
+		rabbit_figure.rotate_y(delta * RABBIT_TURN_RAD_S)
+		rabbit_figure.position.y = RABBIT_HOVER + sin(_t * TAU * RABBIT_BOB_HZ) * RABBIT_BOB
 	for i in landmark_lights.size():
 		var light: OmniLight3D = landmark_lights[i]
 		light.light_energy = 1.0 + sin(_t * 3.0 + i * 0.7) * 0.55

@@ -226,6 +226,56 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL other_explorer_id should fall back to the same id with only 1 explorer city registered, got '%s'" % CityThemes.other_explorer_id("manhattan"))
 
+	# --- UX-W2 (03.10. review): frightened ghosts in a clearly separate colour
+	# — not near-white, not in the blue band 215-250 deg (too close to the
+	# original), and perceptually far (OKLab) from every ghost colour, the
+	# pellets, rabbit white, Matrix green/head and both Kippbild palettes, the
+	# wall lines and level gradients ---
+	var fr: Color = CityThemes.GHOST_FRIGHTENED
+	checks += 1
+	if fr.h * 360.0 >= 215.0 and fr.h * 360.0 <= 250.0:
+		failures += 1
+		print("FAIL frightened colour must not sit in the blue band 215-250 deg (h=%.1f)" % (fr.h * 360.0))
+	checks += 1
+	if fr.s < 0.6 or fr.v < 0.6:
+		failures += 1
+		print("FAIL frightened colour must be saturated and bright, not near-white (s=%.2f v=%.2f)" % [fr.s, fr.v])
+	checks += 1
+	if not normal.ghost_frightened_color.is_equal_approx(fr) or not normal.minimap_frightened_color.is_equal_approx(fr):
+		failures += 1
+		print("FAIL the theme must use GHOST_FRIGHTENED for ghosts and minimap")
+	# must never be confused with (game objects): large distance
+	var critical := {
+		"jaeger": CityThemes.GHOST_JAEGER.color, "abfaenger": CityThemes.GHOST_ABFAENGER.color,
+		"streuner": CityThemes.GHOST_STREUNER.color, "lauerer": CityThemes.GHOST_LAUERER.color,
+		"nachzuegler": CityThemes.GHOST_NACHZUEGLER.color, "pellet": CityThemes.LOOK_PELLET,
+		"rabbit white": Color("f2f2ed"), "matrix green": Color("00d94d"), "matrix head": Color("4dff88"),
+	}
+	# must stay apart from (surroundings): clear distance
+	var surroundings := {
+		"top edge": CityThemes.LOOK_LINE_TOP, "lagune": CityThemes.LOOK_BASE_LAGUNE, "riff": CityThemes.LOOK_BASE_RIFF,
+		"kippbild a low": Color("2b0a3d"), "kippbild a mid": Color("b3175c"), "kippbild a high": Color("f26b33"),
+		"kippbild b low": Color("072e33"), "kippbild b mid": Color("0f8c85"), "kippbild b high": Color("4dccf2"),
+	}
+	for k in critical:
+		checks += 1
+		var d := _oklab_distance(fr, critical[k])
+		if d < 0.2:
+			failures += 1
+			print("FAIL frightened colour too close to %s (OKLab %.3f < 0.2)" % [k, d])
+	for k in surroundings:
+		checks += 1
+		var d2 := _oklab_distance(fr, surroundings[k])
+		if d2 < 0.1:
+			failures += 1
+			print("FAIL frightened colour too close to %s (OKLab %.3f < 0.1)" % [k, d2])
+	# the kond_wall shader's Matrix head is the green used above, not near-white
+	checks += 1
+	var kw: String = (load("res://shaders/kond_wall.gdshader") as Shader).code
+	if kw.find("mx_head : source_color = vec3(0.30, 1.0, 0.53)") == -1:
+		failures += 1
+		print("FAIL Matrix glyph heads should be green #4DFF88 in kond_wall.gdshader")
+
 	print("")
 	if failures == 0:
 		print("ALL %d CITY THEME CHECKS PASSED" % checks)
@@ -233,3 +283,22 @@ func _initialize() -> void:
 	else:
 		print("%d/%d CITY THEME CHECKS FAILED" % [failures, checks])
 		quit(1)
+
+
+
+## Perceptual distance of two sRGB colours in OKLab (Björn Ottosson).
+static func _oklab(c: Color) -> Vector3:
+	var lin := func(x: float) -> float: return x / 12.92 if x <= 0.04045 else pow((x + 0.055) / 1.055, 2.4)
+	var r: float = lin.call(c.r)
+	var g: float = lin.call(c.g)
+	var b: float = lin.call(c.b)
+	var l := pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1.0 / 3.0)
+	var m := pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1.0 / 3.0)
+	var s := pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1.0 / 3.0)
+	return Vector3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)
+
+
+static func _oklab_distance(a: Color, b: Color) -> float:
+	return _oklab(a).distance_to(_oklab(b))
