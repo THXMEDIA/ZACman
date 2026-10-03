@@ -1,6 +1,6 @@
 # Spezifikation: Explorer-Stadt Tokyo („Natriumregen“)
 
-**Stand:** 03.10.2026 · v1 (M1 umgesetzt auf `feature/tokyo-explorer`)
+**Stand:** 03.10.2026 · v2 (M1 und M2 umgesetzt auf `feature/tokyo-explorer`)
 **Grundlage:** Stil-Vorlage `studio/zapmaniac-tokyo-stil-v1.md`, Richtung A „Natriumregen“,
 freigegeben vom Inhaber am 03.10.2026 (E6, keine Änderungswünsche). Prototypen und
 Vorschlagsbilder: Branch `art/tokyo-vorschlaege`, `tools/art/tokyo_proto/` und
@@ -34,8 +34,10 @@ verdoppelt.** Gebäude, Menschen und Verkehr bestehen nur aus Neonröhren-Umriss
 | Akzent Magenta | `#FF2E88` | **nur** Screens und Akzentringe des Rundturms |
 | Kugeln | `#FFD98A`, Kern `#FFF8E6` | **exklusiv** für Kugeln |
 | U-Bahn | `#39FF6A` | **exklusiv**, einzige gefüllte Fläche, pulsiert 0,5 Hz |
-| Scheinwerfer / Rücklicht | `#FFFFFF` / `#FF2A1A` | nur Verkehr (M2) |
-| Passanten | `#A49A8C` | ~50 % Helligkeit (M2) |
+| Scheinwerfer / Rücklicht | `#FFFFFF` / `#FF2A1A` | nur Verkehr; Karosserie in Kaltweiß, gedämpft |
+| Passanten | `#A49A8C` | ~50 % der Gebäudelinien auf dem Bildschirm (nach Filmic-Tonemapping, Test) |
+| Asphalt / Gehweg | `#0B0A0C` / `#100E0F` | nass; Gehweg minimal heller |
+| Regen | `#C8C0B4` | Grundhelligkeit sehr gering, Farbe kommt aus dem Gegenlicht |
 
 ### 2.2 Typografie
 
@@ -64,7 +66,7 @@ verdoppelt.** Gebäude, Menschen und Verkehr bestehen nur aus Neonröhren-Umriss
    höchstens zwei Screens pro Blickachse.
 3. Kein Violett, Cyan oder Blau in der Welt (Abgrenzung zum Genre-Standard und zu TRON).
 4. Sockellinie (2,3 m) und Bordstein immer sichtbar; Sockellinie = Kollision.
-5. Passanten ~50 % Helligkeit (M2), Helligkeit nach oben auf ~30 %.
+5. Passanten ~50 % Helligkeit, Helligkeit nach oben auf ~30 %.
 6. Kein Headbob, kein Flackern ≥ 3 Hz, keine Vollbild-Blitze (rote Linie E8e gilt auch hier).
 
 ## 3. Shibuya als Platzhalter (`godot/scripts/tokyo_maze.gd`)
@@ -132,6 +134,11 @@ ununterbrochene Goldlinie (eine Kugel pro Zelle, 2 m Abstand) zur U-Bahn.
   (`wall_footprint_scale` 1,0); die Sockellinie wird aus der Grenze Wand/offen des
   Gitters erzeugt, ihre Innenseite liegt auf der Kollisionsfläche (Test).
 
+- **M2:** `explorer_cities.gd` Verkehr `"tokyo"` → Main legt `tokyo_life.gd`
+  unter `obstacle_root` an (Level-Seed der Stadt, Komfort-Werte) und ruft es
+  jeden Frame auf; `_clear_explorer_obstacles` räumt es ab. Der Boden bekommt
+  seine Parameter über `CityTheme.floor_setup_script` (`tokyo_wet.gd`).
+
 ### 4.2 Technische Auflagen (aus der technischen Prüfung, verbindlich)
 
 1. **SSR statt Zweitrender-Spiegel** (kein SubViewport mit gespiegelter Kamera wie im Prototyp).
@@ -151,47 +158,150 @@ ununterbrochene Goldlinie (eine Kugel pro Zelle, 2 m Abstand) zur U-Bahn.
 
 ### 4.3 Budgets
 
-- **Draw Calls der Statik ≤ 20** (M1: Wand-MultiMesh, Boden, 4 Linienfarben, Masse,
-  Fahrbahnfarbe, Ladenfronten, 2 Screens, 6 Schriftzüge). Kugeln zählen nicht dazu
-  (dynamisch; Umstellung auf MultiMesh ist M2).
-- **Lichter ≤ 10** in der Szene (8 Laternen, 2 Screens) plus U-Bahn und Spielerlampe.
+- **Draw Calls der Statik ≤ 20** (Stand M2: 18 im Compatibility-Renderer —
+  Wand-MultiMesh, Boden, 4 Linienfarben, Masse, Fahrbahnfarbe, Ladenfronten,
+  2 Screens, 1 Screen-Schrift, 5 Schilder, Bodenspiegelung; in Forward+ 17,
+  dort entfällt die Bodenspiegelung zugunsten von SSR).
+- **Draw Calls Tokyo gesamt ≤ 32** (Test `test_tokyo_life.gd`), Stand M2 **28**:
+
+  | Gruppe | Draw Calls | Inhalt |
+  |---|---|---|
+  | Statik | 18 | siehe oben |
+  | Kugeln | 1 | alle Kugeln als **eine** MultiMesh (auch Manhattan und Speedrun) |
+  | U-Bahn-Ausgang | 3 | Portal (gefüllte Fläche), Rahmen, Schild 地下鉄 |
+  | Bewegte Stadt (`tokyo_life.gd`) | 6 | Regen, Autos, Passanten (inkl. Scramble-Welle), Halos, Lichtkegel, Lichtstreifen |
+
+- **Additive Elemente ≤ 20 Draw Calls**, Stand M2 **6**: Ladenfronten,
+  Bodenspiegelung, Regen, Halos, Lichtkegel, Lichtstreifen.
+- Zusätzlich im Compatibility-Renderer eine Kopie des Bildes für die
+  Bodenspiegelung (Bildschirmtextur), in Forward+ die SSR-Pässe.
+- **Instanzen:** Regen 8.000 (sichtbar 5.600 mit „Effekte reduzieren“,
+  2.800 mit „Regen reduzieren“), 16 Autos, 28 Passanten + 112 in der
+  Scramble-Welle, 73 Halos (8 Laternen, U-Bahn, 4 je Auto), 41 Kegel
+  (8 Laternen, U-Bahn, 2 je Auto), 80 Lichtstreifen (5 je Auto).
+- **Lichter ≤ 10** in der Szene (8 Laternen, 2 Screens) plus U-Bahn und
+  Spielerlampe; Boden und Regen werten je höchstens **8** Lichter aus (die
+  nächsten zur Kamera; der Regen zählt die Scheinwerfer mit).
+- **Pro Frame:** keine neuen Objekte, Ressourcen oder Knoten; die CPU setzt
+  nur Instanz-Transforms (Autos, Personen, Autolichter) und zwei kurze
+  Lichtlisten (Test über 600 Frames).
 - Linien-Röhren: M1 ~1.900 Segmente (ca. 15.000 Vertices) in 4 Meshes.
 
 ### 4.4 Performance-Ziel
 
 **Vorläufig 60 fps bei 1080p auf GTX-1660-Klasse** (vom Studio Head gesetzt,
 Bestätigung durch den Inhaber offen). Erwartete Mehrlast ggü. Manhattan laut
-code-reviewer 3–5 ms GPU mit Regen und SSR. Messung mit M2 (Regen, SSR,
-Passanten) auf echter Hardware; die Sandbox rendert nur im Software-Renderer
+code-reviewer 3–5 ms GPU mit Regen und SSR. Messung auf echter Hardware steht
+aus (M2 ist gebaut); die Sandbox rendert nur im Software-Renderer
 (Compatibility, ohne SSR) und kann das Ziel nicht belegen.
+
+### 4.5 Umsetzung M2 (bewegte Stadt)
+
+- **Nasser Boden** (`shaders/tokyo_floor.gdshader`, `tokyo_wet.gd`): Pfützenmaske
+  einmal pro Levelaufbau gebacken (FastNoiseLite, 512², Level-Seed), dazu
+  Rinnsteine entlang der Bordsteine. Pfützen scharf und glänzend
+  (Roughness 0,035), Asphalt halbnass (0,26–0,42) — das ist die
+  Roughness-Maske für SSR. Bis zu 8 Lichtpfützen und gestreckte
+  Reflexstreifen der 8 nächsten Lichter (Laternen, Screens, U-Bahn),
+  Ladenfront-Glow aus der Zellkarte, Himmelsreflex und Grundhelligkeit
+  (Boden nie schwarz). Fahrbahnfarbe in Pfützen dunkler.
+- **Spiegelung ohne SSR** (`shaders/tokyo_floor_reflect.gdshader`, nur wenn
+  kein RenderingDevice da ist, also im Compatibility-Renderer): eine dünne
+  additive Schicht über Boden und Fahrbahnfarbe liest das fertige opake Bild
+  an der am Horizont gespiegelten Blickrichtung (Bildschirmtextur), verwischt
+  es senkrecht wie auf nassem Asphalt, scharf in Pfützen. Kein Zweitrender,
+  keine SubViewport-Kamera (Auflage 1 bleibt erfüllt). Näherung: gespiegelt
+  wird, was weit genug weg ist; nahe, niedrige Dinge spiegeln ungenau.
+  In Forward+ entfällt die Schicht, SSR übernimmt, die Reflexstreifen
+  laufen gedämpft weiter (`fake_refl` 0,45).
+- **Regen** (`shaders/tokyo_rain.gdshader`): 8.000 Instanzen ohne
+  Transforms; Ort aus `INSTANCE_ID`, Fallen, Wind und Umbrechen in einer Box
+  (34 × 20 × 34 m) um die Kamera im Vertex-Shader; Aufhellung im Gegenlicht
+  der 8 nächsten Lichter (inkl. Scheinwerfer), Ausblenden 0,7–2,6 m vor der
+  Kamera und zum Rand der Box; über Kugelzellen 75 % weniger Tropfen.
+- **Verkehr** (`tokyo_life.gd`, `tokyo_figures.gd`, `shaders/tokyo_car.gdshader`):
+  Linksverkehr, je Achse zwei geschlossene Schleifen (Wenden hinter den
+  Randgebäuden bzw. vor dem Bahnhofsvorplatz), 4 Autos je Schleife,
+  Folgeabstand, Halt an den Haltelinien vor den Zebras und vor dem Spieler
+  in der Spur. Die CPU rechnet nur die Position. Lichtstreifen der Autos
+  (`shaders/tokyo_streak.gdshader`) am Spiegelpunkt des Lichts, zur Kamera
+  gestreckt (von oben kürzer), über die Zellkarte verdeckt, wenn ein Gebäude
+  dazwischen liegt. Hindernis wie Manhattan: Main schiebt den Spieler aus
+  einer Kapsel entlang der Autoachse (Radius 1,05 m).
+- **Passanten und Scramble** (`shaders/tokyo_walker.gdshader`): Gang im
+  Vertex-Shader (Beine um die Hüfte, Arme um die Schulter, Schirm wippt;
+  INSTANCE_CUSTOM Phase, Schrittfrequenz, Helligkeit, Schirm ja/nein,
+  85 % mit Schirm). Ampelzyklus 80 s: 0–26 s Nord-Süd grün, 26–30 s alle rot,
+  30–56 s Ost-West grün, 56–60 s alle rot, 60–80 s **All Walk**; Start im
+  Zyklus bei 36 s (erster All Walk nach ~24 s). Die Welle (4 × 28) sammelt
+  sich ab ~35 s an den Ecken (aus Ladentüren), quert gerade über die Zebras
+  oder diagonal über das ganze Feld und ist nach spätestens 16,5 s drüben,
+  danach verschwindet sie in Läden. Passanten sind harmlos (weicher Push wie
+  Manhattan, 0,35 m). Fußgängerton: zwei kurze synthetische Sinus-Glissandi,
+  dreimal (`Sfx.crossing_signal`). Es gibt bewusst keine sichtbaren
+  Fußgängerampeln (Grün ist exklusiv für die U-Bahn).
+- **Halos und Lichtkegel** (`shaders/tokyo_halo.gdshader`,
+  `shaders/tokyo_cone.gdshader`): je eine MultiMesh, Farbe × Energie und
+  Pulsfrequenz in INSTANCE_CUSTOM; U-Bahn mit grünem Halo und Kegel, 0,5 Hz.
+  Halos und Kegel blenden direkt vor der Kamera aus (kein Vollbild-Blitz).
+- **Kugeln als MultiMesh** (`maze_view.gd`): eine Instanz je Kugel, gegessen
+  = Nullgröße. Manhattan bleibt pixelgleich (Vergleich mit
+  `qa_explorer_shots.gd`: 0 abweichende Pixel).
+- **Komfort:** „Regen reduzieren“ (Settings v4, neben „Effekte reduzieren“
+  in derselben Zeile des Komfort-Blocks): 35 % der Tropfen, Helligkeit 0,6;
+  „Effekte reduzieren“ allein: 70 %, 0,8; beide: 35 %, 0,5.
 
 ## 5. Meilensteine
 
 | | Inhalt | Status |
 |---|---|---|
 | **M1** (ca. 2 Wochen) | Explorer-Code allgemein; Shibuya-Gitter mit offenem Kreuzungsfeld, U-Bahn-Ausgang, Kugelspuren; Linien-Builder ins Spiel; Font gebündelt; Tokyo im einfachen Linien-Look spielbar (nasser Boden über Roughness, ruhiger Nachthimmel) | **umgesetzt** (03.10.2026) |
-| **M2** (ca. 2–3 Wochen) | Boden von A mit SSR-Feinschliff und vorgebackener Pfützenmaske (≤ 8 Lichtpfützen); Regen im Shader (≤ 8.000, lichter über Kugeln, „Regen reduzieren“); Scramble mit Ampelphasen; Passanten und Autos als MultiMesh mit Shader-Animation (Schirme, Scheinwerfer weiß vorn/rot hinten); Halos und Lichtkegel als MultiMesh; Kugeln als MultiMesh; danach Performance-Messung und QA-Playtest | offen |
+| **M2** (ca. 2–3 Wochen) | Boden von A mit SSR-Feinschliff und vorgebackener Pfützenmaske (≤ 8 Lichtpfützen); Regen im Shader (≤ 8.000, lichter über Kugeln, „Regen reduzieren“); Scramble mit Ampelphasen; Passanten und Autos als MultiMesh mit Shader-Animation (Schirme, Scheinwerfer weiß vorn/rot hinten); Halos und Lichtkegel als MultiMesh; Kugeln als MultiMesh; danach Performance-Messung und QA-Playtest | **umgesetzt** (03.10.2026; Performance-Messung auf Hardware und QA-Playtest offen) |
 | **M3** (ca. 1–2 Wochen) | Feinschliff, Übergang Neon → Matrix-ASCII beim U-Bahn-Abstieg, Capsule mit Titelschrift (Kugelreihe groß im Vordergrund), Rechtsprüfung Gebäudeformen/Schilder, Reviews | offen |
 
 ## 6. Tests
 
 - `godot/tests/test_tokyo.gd`: Gitter zusammenhängend, Rand geschlossen, Layout ohne
   Lücken; U-Bahn erreichbar und in der Bahnhofsfassade; Kreuzungsfeld offen (7 × 7);
-  Kugelspuren als ununterbrochene Linien zur U-Bahn; Draw-Call- und Lichtbudget;
-  Sockellinie = Kollisionsfläche (auf 1 mm) und deckt die ganze Straßenkante ab;
-  Determinismus (gleicher Seed → gleiche Stadt, anderer Seed → andere Dekoration,
-  gleiche Kollision); Palette und Lesbarkeitsregeln; keine Marken.
+  Kugelspuren als ununterbrochene Linien zur U-Bahn; Draw-Call- und Lichtbudget
+  der Statik; Sockellinie = Kollisionsfläche (auf 1 mm) und deckt die ganze
+  Straßenkante ab; Determinismus (gleicher Seed → gleiche Stadt, anderer Seed →
+  andere Dekoration, gleiche Kollision); Palette und Lesbarkeitsregeln; keine Marken.
+- `godot/tests/test_tokyo_life.gd` (M2): sechs MultiMeshes, Regen ≤ 8.000 und
+  Bewegung im Shader, 25–30 Passanten + Welle ≥ 100, Gang über INSTANCE_CUSTOM,
+  Passanten ~50 % der Gebäudelinien auf dem Bildschirm, U-Bahn-Puls < 3 Hz;
+  **Draw Calls gesamt ≤ 32 und additiv ≤ 20**; Kugel-MultiMesh; Pfützenmaske
+  gebacken und seed-abhängig, Roughness-Maske, ≤ 8 Lichter; Spiegelung nur ohne
+  SSR; Regen lichter über Kugeln; Komfort-Optionen; **keine neuen Objekte,
+  Ressourcen, Knoten in 600 Frames**; Determinismus mit dem Seed;
+  **Scramble-Phasen** (Verkehr fließt, All Walk nach ~24 s, Ton-Signal, beide
+  Richtungen rot, Autos halten, Welle ≥ 100 quert gerade und diagonal, Feld beim
+  Phasenende frei, danach wieder Verkehr); Autos halten vor dem Spieler.
 - `godot/tests/bot_test.gd`: Explorer-Auswahl am Startscreen, Tokyo-Lauf (HUD, keine
   Geister, Spieler stoppt physikalisch an der Fassade, Kugeln ohne Punkte, NEUSTART),
-  U-Bahn → Speedrun mit **Theme-Reset** (Glow, SSR, Volumetrik, Tonemap, Lampe, Sichtweite).
+  M2 in Main (bewegte Stadt mit Level-Seed, Auto als Hindernis, Passanten harmlos,
+  „Regen reduzieren“ gespeichert und synchron, „Effekte reduzieren“ dämpft den
+  Regen, Ton zum All Walk), U-Bahn → Speedrun mit **Theme-Reset** (Glow, SSR,
+  Volumetrik, Tonemap, Lampe, Sichtweite; Regen und Verkehr abgeräumt).
 - `godot/tests/test_city_themes.gd`: Speedrun und Manhattan behalten die Standardwerte.
+- `godot/tests/test_audio_synth.gd`: Fußgängerton vorhanden und kurz.
 - Manhattan unverändert: alle bisherigen Tests plus Pixelvergleich mit
   `tools/qa/qa_explorer_shots.gd` (`SHOT_SET=manhattan`, deterministisch).
+- Art-Abnahme: `tools/qa/qa_explorer_shots.gd` (Totale im Verkehr und im Scramble,
+  Straßenblick mit Regen, „Regen reduzieren“, U-Bahn, Gasse, Scramble in Augenhöhe).
 
 ## 7. Offene Punkte
 
-- Performance-Ziel vom Inhaber bestätigen lassen; Messung auf GTX-1660-Klasse mit M2.
-- SSR-Wirkung ist in der Sandbox nicht sichtbar (Compatibility-Renderer); erste
-  Abnahme des nassen Bodens auf echter Hardware.
+- Performance-Ziel vom Inhaber bestätigen lassen; **Messung auf GTX-1660-Klasse
+  mit M2** (Forward+, SSR, Regen, Verkehr) steht aus.
+- SSR-Wirkung, echtes Glow und die Forward+-Kosten sind in der Sandbox nicht
+  sichtbar (nur Compatibility-Renderer). Die Abnahme dort zeigt die Spiegelung
+  ohne SSR; der nasse Boden in Forward+ (SSR + gedämpfte Streifen,
+  `fake_refl` 0,45) muss auf echter Hardware abgenommen werden.
+- Die Spiegelung ohne SSR ist eine Bildschirm-Näherung: nahe, niedrige Objekte
+  (Kugeln, Autos direkt vor der Kamera) spiegeln nicht korrekt; von oben
+  (Totale) gibt es kaum Spiegelung.
+- Die Scramble-Welle läuft jeden Zyklus gleich (deterministisch, keine
+  Variation pro Zyklus); in der Mitte der Diagonalen wird es dicht.
 - Gebäudeformen und Schilder auf die Rechtsliste (M3).
-- Tokyo hat noch keinen Verkehr und keine Passanten (M2); bis dahin ist die Stadt leer.
+- M3: Übergang Neon → ASCII beim U-Bahn-Abstieg, Capsule, Reviews.

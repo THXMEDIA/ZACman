@@ -105,8 +105,8 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   (nie ein zweiter Wandsatz). Der alte Matrix-Regen-Shader und der
   Psychedelik-Effekt sind entfernt.
 - **Startbildschirm und Menüs** (`hud.gd`, Spezifikation 1.2 und 3): von
-  oben nach unten Titel, **Komfort-Block** („Effekte reduzieren“,
-  Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
+  oben nach unten Titel, **Komfort-Block** („Effekte reduzieren“ und
+  „Regen reduzieren“ in einer Zeile, Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
   Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
   und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
   **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO**
@@ -165,7 +165,7 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   datengetriebene Variante siehe `tools/osm_to_chunks.py` im
   ReclaimTheStreets-Projekt, lokal ausführbar.
 - **Explorer-Stadt Tokyo** (Spezifikation `docs/design/tokyo-explorer.md`,
-  Look „Natriumregen“, Meilenstein M1): eine gröbere Gitter-Annäherung an die
+  Look „Natriumregen“, Meilensteine M1 und M2): eine gröbere Gitter-Annäherung an die
   Umgebung einer großen Scramble-Kreuzung vor einem Bahnhof
   (`tokyo_maze.gd`, 47 × 47 Zellen, offenes 7 × 7-Kreuzungsfeld, Gassen,
   U-Bahn-Ausgang 地下鉄 in der Bahnhofsfassade). Die Stadt besteht nur aus
@@ -180,8 +180,26 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Explorer-Städte sind allgemein (`explorer_cities.gd`,
   `Main.begin_explorer_game(city_id)`); der Theme-Wechsel setzt Glow, SSR,
   Volumetrik, Tonemapping, Spielerlampe und Sichtweite immer aus dem Theme,
-  der Speedrun leuchtet nach Tokyo also nicht nach. Regen, Pfützen-SSR,
-  Scramble mit Ampelphasen, Passanten und Autos folgen in M2.
+  der Speedrun leuchtet nach Tokyo also nicht nach.
+  **M2 – die Stadt lebt** (`tokyo_life.gd`, sechs MultiMeshes, Animation in
+  den Shadern, keine Allokationen pro Frame, deterministisch mit dem
+  Level-Seed): nasser Boden mit vorgebackener Pfützenmaske, Roughness-Maske
+  für SSR, bis zu 8 Lichtpfützen mit gestreckten Reflexstreifen und
+  Ladenfront-Glow (`tokyo_floor.gdshader`, `tokyo_wet.gd`); ohne SSR
+  (Compatibility-Renderer) zusätzlich eine Bildschirm-Spiegelung am Horizont
+  (`tokyo_floor_reflect.gdshader`). Regen aus 8.000 Tropfen, die im
+  Vertex-Shader um die Kamera fallen, im Gegenlicht aufhellen und über den
+  Kugelspuren lichter sind. Drahtautos im Linksverkehr mit weißen
+  Scheinwerfern, roten Rücklichtern und Lichtstreifen auf dem Asphalt (sie
+  halten an der Ampel und vor dem Spieler, Hindernis wie in Manhattan);
+  28 Passanten mit Schirmen (Gang im Vertex-Shader). Scramble-Zyklus 80 s:
+  60 s Verkehr, 20 s „All Walk“ mit einer Welle von 112 Personen gerade und
+  diagonal, angekündigt von einem synthetischen Fußgängerton. Halos und
+  Lichtkegel (Laternen, Scheinwerfer, U-Bahn mit 0,5 Hz) als MultiMesh.
+  Komfort: „Regen reduzieren“ (35 % der Tropfen, gedämpft); „Effekte
+  reduzieren“ dämpft den Regen ebenfalls. Alle Kugeln (auch Manhattan und
+  Speedrun) sind jetzt eine MultiMesh. Draw-Call-Bilanz in
+  `docs/design/tokyo-explorer.md` 4.3.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte
