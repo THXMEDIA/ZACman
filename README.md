@@ -16,7 +16,7 @@ godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
   shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Twitch, Chat-Abstimmung, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Twitch, Chat-Abstimmung, Bot-Simulation)
 tools/qa/          QA-Skripte: Screenshots (qa_*_shots.gd), Messung der Kaninchen-Wette (qa_rabbit_balance.gd)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
@@ -109,8 +109,8 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
   Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
   und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
-  **SPEEDRUN**, **BESTENLISTE**, **EXPLORER-LEVEL** (Manhattan, von Anfang an
-  spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
+  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO**
+  (von Anfang an spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
   Spiel-HUD (Chips, Minimap, Energie) erscheint nur im laufenden Spiel; alle
   Chips sind mindestens 170 px breit. Pause: WEITER / NEUSTART / HAUPTMENÜ
   (im Speedrun mit Rückfrage „Lauf abbrechen?“; ein abgebrochener Lauf
@@ -164,6 +164,24 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Overpass-Daten sind aus dieser Sandbox nicht erreichbar — für eine
   datengetriebene Variante siehe `tools/osm_to_chunks.py` im
   ReclaimTheStreets-Projekt, lokal ausführbar.
+- **Explorer-Stadt Tokyo** (Spezifikation `docs/design/tokyo-explorer.md`,
+  Look „Natriumregen“, Meilenstein M1): eine gröbere Gitter-Annäherung an die
+  Umgebung einer großen Scramble-Kreuzung vor einem Bahnhof
+  (`tokyo_maze.gd`, 47 × 47 Zellen, offenes 7 × 7-Kreuzungsfeld, Gassen,
+  U-Bahn-Ausgang 地下鉄 in der Bahnhofsfassade). Die Stadt besteht nur aus
+  Licht und Linien: schwarze Masse, Neonröhren-Konturen aus dem
+  Linien-Builder (`neon_lines.gd`, eine Mesh-Instanz pro Farbe), Sockellinie
+  auf 2,3 m genau an der Kollisionskante, Bordstein, Ladenfronten, zwei
+  Screens, Natriumlaternen, nasser glänzender Boden, Glow
+  (`tokyo_scenery.gd`, Palette `tokyo_style.gd`). Schilder nur mit
+  Allgemeinwörtern im gebündelten Noto-Sans-CJK-Subset (OFL,
+  `docs/art/lizenzen.md`); keine Marken, Rundturm als Achteck verfremdet.
+  Dekoration und Kugelspuren kommen aus dem Level-Seed der Stadt.
+  Explorer-Städte sind allgemein (`explorer_cities.gd`,
+  `Main.begin_explorer_game(city_id)`); der Theme-Wechsel setzt Glow, SSR,
+  Volumetrik, Tonemapping, Spielerlampe und Sichtweite immer aus dem Theme,
+  der Speedrun leuchtet nach Tokyo also nicht nach. Regen, Pfützen-SSR,
+  Scramble mit Ampelphasen, Passanten und Autos folgen in M2.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte
@@ -275,11 +293,13 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   sind keine hartkodierten `if/else`-Zweige mehr in `maze_view.gd`, sondern
   zwei Instanzen einer `CityTheme`-Resource (Wand-Wort & -Palette, optionaler
   Wahrzeichen-Provider wie `manhattan_maze.gd`, Boden-/Decken-Material,
-  Umgebungsfarben/-Fog, Power-up-An/Aus). Eine neue, stilistisch komplett
-  andere Stadt (Paris im Aquarell-Look, Tokio/Shibuya als Neonröhren-
-  Cyberpunk-Regenszene, Rio im Pop-Art-Stil, ...) wird dadurch reiner Content:
-  eine neue `CityTheme` in `city_themes.gd` registrieren, `maze_view.gd`/
-  `main.gd` müssen dafür nicht angefasst werden. Architektur-Hintergrund und
+  Umgebungsfarben/-Fog, Post-Processing, Power-up-An/Aus, optional eigener
+  Szenerie-Builder und eigene Kugelspuren). Eine neue, stilistisch komplett
+  andere Stadt (Paris im Aquarell-Look, Rio im Pop-Art-Stil, ...) wird dadurch
+  reiner Content: eine `CityTheme` in `city_themes.gd` und ein Eintrag in
+  `explorer_cities.gd` (Gitter-Skript, Level-Seed, U-Bahn); `maze_view.gd`/
+  `main.gd` müssen dafür nicht angefasst werden. Tokyo ist die erste Stadt
+  auf diesem Weg. Architektur-Hintergrund und
   Prioritäten dazu stehen im Claude-Projekt-Dokument "Explorer-Level-
   Erweiterung, Leaderboard & Konditionen".
 - **Weißes Kaninchen und Konditionen** (Spezifikation
