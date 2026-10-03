@@ -215,16 +215,39 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal and manhattan themes should have different background colors")
 
-	# --- other_explorer_id: falls back to the same id when it's the only
-	# registered explorer city (today: just Manhattan) ---
+	# --- other_explorer_id: the other registered explorer city (Manhattan <->
+	# Tokyo); falls back to the same id for an unknown/only city ---
 	checks += 1
-	if CityThemes.EXPLORER_IDS.find("manhattan") < 0:
+	if CityThemes.EXPLORER_IDS.find("manhattan") < 0 or CityThemes.EXPLORER_IDS.find("tokyo") < 0:
 		failures += 1
-		print("FAIL EXPLORER_IDS should list 'manhattan'")
+		print("FAIL EXPLORER_IDS should list 'manhattan' and 'tokyo'")
 	checks += 1
-	if CityThemes.other_explorer_id("manhattan") != "manhattan":
+	if CityThemes.other_explorer_id("manhattan") != "tokyo" or CityThemes.other_explorer_id("tokyo") != "manhattan":
 		failures += 1
-		print("FAIL other_explorer_id should fall back to the same id with only 1 explorer city registered, got '%s'" % CityThemes.other_explorer_id("manhattan"))
+		print("FAIL other_explorer_id should switch between manhattan and tokyo, got '%s' / '%s'" % [CityThemes.other_explorer_id("manhattan"), CityThemes.other_explorer_id("tokyo")])
+	# every explorer city has its theme and its Main registry entry
+	for eid in CityThemes.EXPLORER_IDS:
+		checks += 1
+		var ec: Dictionary = load("res://scripts/explorer_cities.gd").get_city(eid)
+		if ec.is_empty() or CityThemes.get_theme(ec.theme).id != eid:
+			failures += 1
+			print("FAIL explorer city '%s' has no registry entry or theme" % eid)
+	# --- theme switch resets post-processing: the speedrun and Manhattan keep
+	# a fresh Environment's values, only Tokyo turns glow/SSR on ---
+	for tid in ["normal", "manhattan"]:
+		var tt = CityThemes.get_theme(tid)
+		var fresh := Environment.new()
+		checks += 1
+		if tt.env_glow_enabled or tt.env_ssr_enabled or tt.env_volumetric_fog_enabled or tt.env_tonemap_mode != fresh.tonemap_mode \
+				or not is_equal_approx(tt.env_tonemap_exposure, fresh.tonemap_exposure) or not is_equal_approx(tt.env_tonemap_white, fresh.tonemap_white) \
+				or not is_equal_approx(tt.env_fog_sky_affect, fresh.fog_sky_affect) or not is_equal_approx(tt.camera_far, 100.0):
+			failures += 1
+			print("FAIL theme '%s' must keep the default post-processing (no glow/SSR/volumetrics, linear tonemap)" % tid)
+		for gi in 7:
+			checks += 1
+			if not is_equal_approx(tt.env_glow_levels[gi], fresh.get_glow_level(gi)):
+				failures += 1
+				print("FAIL theme '%s' glow level %d differs from the Environment default" % [tid, gi])
 
 	# --- UX-W2 (03.10. review): frightened ghosts in a clearly separate colour
 	# — not near-white, not in the blue band 215-250 deg (too close to the

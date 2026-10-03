@@ -685,6 +685,68 @@ func _run_checks() -> void:
 	main.begin_game()
 	await get_tree().process_frame
 
+	# ---- Tokyo Explorer city (docs/design/tokyo-explorer.md, M1): chosen on
+	# the start screen, calm like Manhattan, its own neon look; the subway
+	# exit leads into a speedrun and the speedrun must not keep Tokyo's
+	# glow / SSR / volumetrics (theme reset) ----
+	_check("start screen: explorer choice Manhattan / Tokyo", main.hud.manhattan_btn.visible and main.hud.tokyo_btn != null and main.hud.tokyo_btn.visible and main.hud.tokyo_btn.text == "TOKYO")
+	var speedrun_far: float = main.player.camera.far
+	var speedrun_light: Color = main.player.light.light_color
+	main.hud.explorer_pressed.emit("tokyo")
+	await get_tree().process_frame
+	var tokyo_theme = load("res://scripts/city_themes.gd").get_theme("tokyo")
+	_check("tokyo: the TOKYO button starts the Tokyo explorer city", main.running and main.playing_explorer and main.explorer_city_id == "tokyo" and not main.playing_manhattan)
+	_check("tokyo: HUD level chip says TOKYO", main.hud.level_label.text == "TOKYO", main.hud.level_label.text)
+	_check("tokyo: no ghosts, no power pellets, no rabbit", main.enemies.is_empty() and main.maze_view.power_cells.is_empty() and main.maze_view.rabbit_node == null)
+	_check("tokyo: timer / score / lives chips are hidden", main.hud.timer_label.get_parent().get_parent().visible == false and main.hud.score_label.get_parent().get_parent().visible == false)
+	_check("tokyo: the neon line city is built", main.maze_view.scenery_root != null and main.maze_view.city_theme.id == "tokyo")
+	_check("tokyo: exactly one subway exit (地下鉄), in the station facade", main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("tokyo_metro_station.gd"))
+	_check("tokyo: pellets lead the way", main.maze_view.pellet_cells.size() > 40, "got %d" % main.maze_view.pellet_cells.size())
+	_check("tokyo: level seed from the city registry", main.maze_view.scenery_seed == 7310)
+	var tenv: Environment = main.world_env.environment
+	_check("tokyo: glow and SSR on, filmic tonemap", tenv.glow_enabled and tenv.ssr_enabled and tenv.tonemap_mode == Environment.TONE_MAPPER_FILMIC and not tenv.volumetric_fog_enabled)
+	_check("tokyo: warm player lamp, far plane for the skyline", main.player.light.light_color.is_equal_approx(tokyo_theme.player_light_color) and is_equal_approx(main.player.camera.far, tokyo_theme.camera_far))
+	_check("tokyo: player starts on the southern avenue looking north", main.player.cell() == main.start_cell and is_equal_approx(main.player.yaw, 0.0))
+	# Collision sits exactly at the neon base line: walk west on the sidewalk
+	# (cell row 30, col 20) into the facade of the block at x = 39 m.
+	main.player.global_position = Vector3(40.6, main.player.global_position.y, 60.0)
+	main.player.yaw = PI / 2.0
+	main.player.move_input = Vector2(0, 1)
+	for i in 30:
+		await get_tree().physics_frame
+	main.player.move_input = Vector2.ZERO
+	var stop_x: float = main.player.global_position.x
+	_check("tokyo: the player stops exactly at the facade (base line = collision)", absf(stop_x - (39.0 + main.player.PLAYER_RADIUS)) < 0.03, "x=%.3f" % stop_x)
+	var tokyo_score: int = main.score
+	var tokyo_left: int = main.maze_view.remaining_pickups()
+	for cell in main.maze_view.pellet_cells.slice(0, 5):
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+		await get_tree().process_frame
+	_check("tokyo: pellets are eaten but give no score", main.maze_view.remaining_pickups() <= tokyo_left - 5 and main.score == tokyo_score, "left %d -> %d, score %d -> %d" % [tokyo_left, main.maze_view.remaining_pickups(), tokyo_score, main.score])
+	main.hud.restart_pressed.emit() # NEUSTART restarts Tokyo, not Manhattan or a speedrun
+	await get_tree().process_frame
+	_check("tokyo: NEUSTART restarts Tokyo", main.running and main.explorer_city_id == "tokyo" and main.playing_explorer)
+	var tmetro = main.metro_stations[0]
+	main.skip_start_intro = false
+	main.player.global_position = Vector3(tmetro.position.x, main.player.global_position.y, tmetro.position.z - 0.5)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().create_timer(1.6).timeout
+	_check("tokyo: the subway exit ends the Tokyo run", main.playing_explorer == false)
+	_check("tokyo: the subway exit starts a speedrun level", main.running and main.level_id != "")
+	var renv: Environment = main.world_env.environment
+	_check("theme reset Tokyo -> speedrun: glow off", renv.glow_enabled == false)
+	_check("theme reset Tokyo -> speedrun: SSR off", renv.ssr_enabled == false)
+	_check("theme reset Tokyo -> speedrun: volumetric fog off", renv.volumetric_fog_enabled == false)
+	_check("theme reset Tokyo -> speedrun: linear tonemap, exposure 1", renv.tonemap_mode == Environment.TONE_MAPPER_LINEAR and is_equal_approx(renv.tonemap_exposure, 1.0) and is_equal_approx(renv.tonemap_white, 1.0))
+	_check("theme reset Tokyo -> speedrun: background, fog, sky affect of the speedrun", renv.background_color.is_equal_approx(normal_theme.env_bg_color) and is_equal_approx(renv.fog_density, normal_theme.env_fog_density) and is_equal_approx(renv.fog_sky_affect, 1.0))
+	_check("theme reset Tokyo -> speedrun: player lamp and far plane restored", main.player.light.light_color.is_equal_approx(speedrun_light) and is_equal_approx(main.player.camera.far, speedrun_far))
+	_check("theme reset Tokyo -> speedrun: the speedrun look is built (no neon city)", main.maze_view.scenery_root == null and main.maze_view.city_theme.id == "normal")
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)
 	main.start_condition(ConditionsScript.get_condition("matrix"))
