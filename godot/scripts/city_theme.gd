@@ -178,8 +178,8 @@ var env_ambient_energy := 0.9
 ## Matrix-style Explorer level would set this true.
 var has_power_ups := true
 ## Whether MazeView starts in the word-built-world skin permanently (true
-## for Manhattan); every other theme never shows it (the Word Mode pickup
-## of the speedrun levels is gone). Kept separate from has_power_ups so
+## for Manhattan); every other theme never shows it (the speedrun levels
+## have no word skin). Kept separate from has_power_ups so
 ## a future non-word-built theme (e.g. a shader-only NPR look) can be a
 ## permanent, power-up-free explorer without implying the letterform skin.
 var permanently_word_built := false

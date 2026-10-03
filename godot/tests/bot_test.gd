@@ -418,8 +418,8 @@ func _run_checks() -> void:
 	# is the effect clock that pause freezes — see Main's real_now doc
 	# comment. Reuses the still-running game from the twitch-command checks
 	# above rather than calling begin_game() again, which would reset
-	# twitch_assisted and break the "marks this run as assisted" check
-	# right after this block.
+	# level_chat_assisted and break the "chat board" check right after
+	# this block.
 	var now_before_pause: float = main.now
 	var real_now_before_pause: float = main.real_now
 	main.paused = true

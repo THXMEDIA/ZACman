@@ -214,7 +214,7 @@ func play_arcade_music() -> void:
 ## (Manhattan) level — warm held chords, a laid-back sine bass and a soft
 ## brushed-shaker pulse, aiming for the mellow, jazzy Roudoudou / Air / The
 ## Herbaliser feel the Explorer run asked for. Call at the start of an
-## Explorer run (Main._start_explorer_run).
+## Explorer run (Main.begin_manhattan_game).
 func play_explorer_music() -> void:
 	_set_music("explorer", _explorer_music)
 

@@ -14,9 +14,9 @@ bleibt spielbar, wird aber nicht mehr parallel weiterentwickelt.
 ```
 godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
-  shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; matrix_rain, mario_vista (nicht mehr im Speedrun)
+  shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Manhattan, Twitch, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Manhattan, Twitch, Chat-Abstimmung, Bot-Simulation)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
 tests/             Node-Tests für die JS-Referenzimplementierung
@@ -99,17 +99,10 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   per Scrollen.
 - **Speedrun-Unterstützung**: Live-Timer, Bestzeiten und Bestenlisten
   **pro Level, Brett und Modus** (`speedrun.gd`, `leaderboard.gd`;
-  Schlüssel `level|brett[|modus]`, siehe `levels.gd::board_key`). Die
-  Kondition ist nicht mehr Teil des Schlüssels; jeder Speedrun-Lauf zählt
-  vorläufig auf das Brett `woche` (`Levels.BOARD_WEEK`, Kaninchen der Woche).
-  Alte Bretter mit Konditions-Schlüsseln (`|none`, `|matrix_ghost`,
-  `|fear_and_loathing`) bleiben unverändert in der Datei, werden aber nicht
-  mehr angezeigt; die Migration samt Chaos- und Chat-Brett folgt in
-  Etappe 3.
-  Modi: `solo`, `chat` (sobald ein Twitch-Befehl im Level gewirkt hat),
-  `pvp` und `coop` (reserviert für den geplanten Mehrspieler, noch ohne
-  Spielmodus). Alte Spielstände werden beim Laden migriert; Spielstände
-  tragen ein Versionsfeld (`SAVE_VERSION`), Werte werden beim Laden auf
+  Schlüssel `level|brett|modus`, z. B. `klassik-2|woche|solo`, siehe
+  `levels.gd::board_key`). Die Kondition ist nicht Teil des Schlüssels.
+  Details unter **Bretter** weiter unten. Spielstände tragen ein
+  Versionsfeld (`SAVE_VERSION`, derzeit 3), Werte werden beim Laden auf
   Typ geprüft, geschrieben wird atomar über eine `.tmp`-Datei. Tests nutzen
   einen eigenen Speicherordner (`save_paths.gd`, `tests/save_isolation.gd`)
   und fassen echte Spielstände nicht an. Die Uhr läuft
@@ -143,12 +136,29 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte
-  Speedruns nicht beeinflusst werden). Zuschauer können mit `!power`
-  (Frightened-Modus auslösen) und `!fruit` (Bonusfrucht spawnen) helfen —
-  beide Effekte können den Spieler nur unterstützen, nie das Spiel beenden
-  oder die Eingabe blockieren. Wirkt ein Befehl, geht die Zeit dieses Levels
-  auf die eigene Chat-Bestzeit und die Chat-Bestenliste, nie auf die
-  Solo-Rekorde.
+  Speedruns nicht beeinflusst werden). Befehle:
+  - `!power` (Frightened-Modus) und `!fruit` (Bonusfrucht) helfen nur, nie
+    beenden oder blockieren sie etwas. Jeder hat einen globalen Cooldown
+    von 20 s Spielzeit (`Main.CHAT_COMMAND_COOLDOWN_S`, Code-W8): etwa drei
+    Frightened-Fenster (7 s), also kein Dauer-Frightened und kein
+    Combo-Reset-Spam; in einem Level des Pools (Zielzeit 115–225 s) bleibt
+    der Chat trotzdem 5- bis 11-mal sichtbar. Global statt pro Nutzer, weil
+    ein Cooldown pro Nutzer mit vielen Zuschauern wirkungslos wäre.
+  - `!gut` und `!schlecht` stimmen über das weiße Kaninchen ab
+    (Spezifikation 2.6, `chat_vote.gd`): eine Stimme pro Nutzer im
+    gleitenden 60-s-Fenster, die letzte zählt. Gut-Anteil = 60 % + 30
+    Prozentpunkte × (gut − schlecht) / (gut + schlecht), begrenzt auf
+    20–80 % (mit dieser Formel ist 30 % das Minimum); unter 3 verschiedenen
+    Stimmen gilt 60 %. Gelesen wird bei der Kaninchen-Aufnahme. Hat der
+    Chat den Anteil verschoben (≥ 3 Stimmen und ≠ 60 %), zieht ein
+    Generator mit echtem Zufall mit dieser Gewichtung (weiter über
+    `pick_condition`). Das ist der einzige Weg, auf dem der Chat ein Level
+    auch erschweren kann. Anzeige im Chat-Modus: Chip „Kaninchen: 72 %
+    gut“ mit grün/magenta Balken; die Titelkarte zeigt „Chat 72 % →
+    MATRIX“.
+  - Hatte der Chat in einem Level eine Hand im Spiel (wirksames
+    `!power`/`!fruit` oder verschobenes Kaninchen), zählt das Level auf das
+    Brett `chat`, nie auf `woche` oder `chaos` (`Main._mark_chat_assisted`).
 - **Word-Mode / das "Wort-Welt"-Aussehen** (`godot/scripts/word_mesh.gd`):
   jedes Objekt besteht aus seinem eigenen englischen Namen als echtes
   extrudiertes 3D-Buchstabenmodell (Godots `TextMesh`) — eine Wand ist das
@@ -290,32 +300,60 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
     (`Time.get_datetime_dict_from_system(false)`; das Spiel hat keinen
     Server und keine Zeitzonen-Datenbank, „diese Woche“ beginnt am Montag
     des Spielers). Ein Neustart würfelt nicht neu. Nie globales
-    `randf()`/`randi()`. Für Etappe 3 vorbereitet: `Main._make_rabbit_rng`
-    (Chaos-Modus: `WhiteRabbit.chaos_rng()`) und `Main._rabbit_p_good`
-    (Chat-Gewichtung).
+    `randf()`/`randi()`. Im Chaos-Modus liefert `Main._make_rabbit_rng`
+    stattdessen `WhiteRabbit.chaos_rng()` (zufälliger Seed); die
+    Chat-Gewichtung kommt über `Main._rabbit_p_good`. Alles läuft über
+    `Conditions.pick_condition(rng, p_good)`.
+  - **Musikschicht**: Für die Dauer einer Kondition liegt eine zusätzliche
+    synthetische Schicht über der Arcade-Musik (`audio_synth.gd`,
+    `start_condition_layer`/`stop_condition_layer`): gut ein helles
+    Arpeggio über den Arcade-Akkorden, schlecht ein tiefer, verstimmter
+    Puls auf dem Tritonus. Gleiche Länge und gleiches Tempo wie der
+    Arcade-Loop, synchron gestartet, 0,6 s Einblenden, 0,9 s Ausblenden.
   - Entfallen: Konditionswahl am Startscreen, Word-Mode-Pickup im Speedrun,
     separates Fear-Pickup (`psychedelic_head_mesh.gd`), doppelte Punkte,
     „erst ab Level 2“, Sinus-Rauschen und unangekündigte Steuerungsumkehr.
-- **Leaderboard** (`godot/scripts/leaderboard.gd`, Autoload `Leaderboard`):
-  lokale Bestenlisten, ein Board pro Kombination aus Level × Brett × Modus
-  (`Leaderboard.board_key("klassik-1", "woche")` z. B.; Brett siehe
-  Speedrun-Unterstützung oben). Persistiert
-  lokal als JSON (`user://kugelschlucker_leaderboards.json`), hinter einer
-  kleinen Schnittstelle (`submit_time`/`get_top`) gekapselt, damit ein
-  späteres Steamworks-Backend (GodotSteam Leaderboards, sobald das Projekt
-  eine Steamworks-App-ID hat — siehe `docs/STEAM_ROADMAP.md`) die
-  Persistenz ersetzen kann, ohne Main/HUD anzufassen. Sowohl normale Level
-  (`"normal-<level_index>"`) als auch das Manhattan-Bonuslevel tragen ihre
-  Laufzeit ein.
-- **Explorer-Abschluss-Auswahl**: Wird das Manhattan-Bonuslevel komplett
-  durchgespielt, zeigt das HUD statt direkt zurück zum Hauptmenü ein Panel
-  mit der Bestenliste des gerade gespielten Boards und vier Vorschlägen für
-  den nächsten Lauf — gleiche Stadt/andere Kondition, andere Stadt/gleiche
-  Kondition ("umgekehrt"), beides gleich (Wiederholung) und beides anders.
-  "Andere Stadt" fällt aktuell auf dieselbe Stadt zurück, solange nur
-  Manhattan als Explorer-Level existiert (siehe CityTheme-System oben) —
-  sobald eine zweite Stadt registriert ist, werden alle vier Kombinationen
-  automatisch unterschiedlich, ohne Code-Änderung an diesem Panel.
+- **Bretter und Bestenliste** (`levels.gd`, `speedrun.gd`,
+  `leaderboard.gd`, Spezifikation 2.5): Schlüssel `level|brett|modus`.
+  - Bretter: `woche` (Kaninchen der Woche, Standard), `chaos`
+    (Chaos-Modus) und `chat` (der Chat hatte eine Hand im Level, siehe
+    Twitch). Vorrang: `chat` vor `chaos` vor `woche` (`Main.board_id`).
+  - Modi: `solo`, `pvp` und `coop` (reserviert für den geplanten
+    Mehrspieler). Chat ist seit Etappe 3 ein Brett, kein Modus mehr.
+    Unbekannte Level, Bretter oder Modi werden nicht geschrieben
+    (`Levels.is_valid_board_key`, Code-W8).
+  - Bestzeiten auf dem Wochenbrett speichern die ISO-Kalenderwoche mit
+    (`{"time", "week": "2026-W40"}`); die Allzeit-Bestzeit pro Level nennt
+    ihre Woche. HUD: Chip BESTZEIT („1:23.45 · KW 39“) und Chip BRETT
+    („WOCHE · KW 40“, „CHAOS“, „CHAT“).
+  - Zielzeit-Abzeichen: nur Solo auf dem Wochenbrett, auch mit Matrix
+    (Entscheidung Studio Head: das Kaninchen ist eine freiwillige Wette mit
+    Umweg).
+  - **Chaos-Modus**: Schalter am Startscreen (gespeichert in
+    `kugelschlucker_settings.json`, Version 2), echter Zufall für jedes
+    Kaninchen, eigenes Brett `chaos`, Badge CHAOS.
+  - **Bestenliste**: Button BESTENLISTE am Startscreen; Tabs Woche, Chaos,
+    Chat, Level-Umschalter, Top 10. Auf dem Wochenbrett steht bei jeder
+    Zeit die Kalenderwoche, oben die Allzeit-Bestzeit mit Woche und die
+    Bestzeit der laufenden Woche. Alle Einträge heißen noch „Player“.
+  - **Migration auf Version 3** (beim Laden, idempotent): Bretter mit
+    Konditions-Schlüsseln (`|none`, `|matrix_ghost`, `|fear_and_loathing`,
+    mit oder ohne Modus) sowie die alten Manhattan- und
+    `normal-N`-Bretter wandern unverändert in einen `archive`-Bereich der
+    Datei: behalten, nie angezeigt. Bretter aus Etappe 2
+    (`level|woche[|modus]`) werden übernommen (Woche unbekannt, Anzeige
+    „KW ?“), `level|woche|chat` geht aufs Chat-Brett. Zeiten des alten
+    Bretts „none“ werden **nicht** als Ausgangswert aufs Wochenbrett
+    übernommen: Damals galt eine andere Pflichtstrecke (die heutige
+    Kaninchen-Sackgasse trug eine Pflicht-Kugel; ab dem zweiten Level eines
+    Laufs ersetzten Word-/Fear-Pickups Kugeln, GD-W1/Code-W2), und welche
+    Variante eine Zeit war, steht nicht in der Datei.
+  - Lokal als JSON (`user://kugelschlucker_speedrun.json`,
+    `user://kugelschlucker_leaderboards.json`), hinter einer kleinen
+    Schnittstelle (`submit_time`/`get_top`), damit ein späteres
+    Steamworks-Backend (GodotSteam Leaderboards, siehe
+    `docs/STEAM_ROADMAP.md`) die Persistenz ersetzen kann, ohne Main/HUD
+    anzufassen. Manhattan hat kein Brett.
 - **Verkehrs- und Fußgänger-Vielfalt in Manhattan** (`taxi.gd`,
   `pedestrian.gd`, `man_walking_dog.gd`, `kid_group.gd`, `dad_and_kid.gd`,
   `main.gd::_manhattan_vehicle_pool`): der Verkehr ist jetzt gewichtet
@@ -342,275 +380,16 @@ im laufenden Godot-Physik-Loop — nicht in einer Attrappe.
   endet der Explorer-Lauf und ein Speedrun auf einem zufälligen Level
   beginnt.
 
-- **Mehr Zeichenvielfalt, dunklerer/leuchtenderer Matrix-Regen, mehr
-  Kondition-Item-Spawns, synthetisierte Hintergrundmusik**
-  (`shaders/matrix_rain.gdshader`, `scripts/maze_view.gd`,
-  `scripts/audio_synth.gd`, `scripts/main.gd`, `tests/bot_test.gd`,
-  `tests/test_audio_synth.gd`):
-  - **Zeichenvielfalt**: Die Glyphen-Tabelle des Matrix-Regen-Shaders ist
-    von 10 auf 31 8×8-Bitmap-Zeichen gewachsen (`GLYPH_ROWS`/`GLYPH_COUNT`)
-    — die zusätzlichen 21 sind skriptgeneriert (ein paar zufällige
-    "Striche" plus gelegentliche Querstriche, zu leere/zu volle Muster
-    verworfen), ein Skript-Äquivalent zum Von-Hand-Zeichnen weiterer zwei
-    Dutzend Pixel-Glyphen. `sample_layer()` wählt jetzt aus dem vollen
-    `GLYPH_COUNT`-Bereich statt nur aus den ursprünglichen 9.
-  - **Farbe**: `bg_color` ist deutlich näher an Schwarz gezogen und
-    `glyph_color` ein tieferes, gesättigteres Grün als vorher (statt des
-    eher blassen Mittelgrüns); `EMISSION` ist von `color * 1.5` auf
-    `color * 2.2` angehoben. Zusammen ergibt das eine Wand, die insgesamt
-    dunkler wirkt (mehr Kontrast, mehr Schwarzraum zwischen den Zeichen),
-    während die aufleuchtenden Glyphen selbst stärker/neonhafter glühen —
-    "dunkler UND leuchtender" statt nur insgesamt gedimmt.
-  - **Mehr Kondition-Item-Spawns**: Sowohl das WORD-Pickup (weißes
-    Kaninchen) als auch das Fear-&-Loathing-Pickup spawnen jetzt
-    `WORD_POWERUP_COUNT`/`FEAR_POWERUP_COUNT` (je 2) statt nur je einmal
-    pro Level. `MazeView` hält dafür jetzt Array-Felder
-    (`word_powerup_cells`/`_nodes`/`_alive`, `fear_powerup_cells`/`_nodes`/
-    `_alive`) statt einzelner Werte — dasselbe Parallel-Array-Muster wie
-    bereits bei den Power-Pellets (`power_cells`/`power_nodes`/
-    `power_alive`). Ein neues `_pick_multiple_farthest()` verteilt die
-    mehreren Spawns eines Typs per Farthest-Point-Sampling über
-    unterschiedliche Ecken des Labyrinths, statt sie zu häufen.
-  - **Musik**: Für die "frei verfügbare" Arcade-Musik im Pac-Man-Stil (normale
-    Speedrun-Level) und die Musik im Stil von Roudoudou/Air/The Herbaliser
-    (Explorer-/Manhattan-Level) wurde **keine externe Audiodatei
-    heruntergeladen** — zum einen verbietet die Sandbox, in der dieses
-    Feature gebaut wurde, beliebige Downloads von Drittanbieter-Seiten
-    (nur npm/PyPI/GitHub sind erreichbar), zum anderen widerspräche es dem
-    bereits bestehenden Architekturprinzip von `audio_synth.gd`
-    ("kein Sample-/Asset-File irgendwo — spiegelt den Web-Audio-
-    Synthese-Ansatz des Browser-Prototyps"). Stattdessen komponieren zwei
-    neue, original geschriebene Stücke direkt in GDScript, gerendert mit
-    genau derselben Oszillator+Hüllkurven-Technik wie jeder andere
-    Sound-Effekt in dieser Datei:
-    - `play_arcade_music()`: knackige Square-Wave-Lead-Melodie über
-      Triangle-Bass mit einem leisen Off-Beat-Klick, ein kurzer sich
-      wiederholender ~4,8-s-Loop im I–vi–IV–V-Bounce-Gefühl klassischer
-      Coin-op-Chiptunes. Startet in `Main.begin_game()`.
-    - `play_explorer_music()`: warme gehaltene Dreiklang-Akkorde
-      (Fmaj7–Dm9–Gm7–Cmaj7) auf Triangle, ein gemächlicher Sinus-Bass und
-      ein leiser gebürsteter Noise-Shaker — ein ruhiger, jazziger
-      Downtempo-/Lounge-Loop im Sinne von Roudoudou/Air/The Herbaliser, bei
-      ca. 84 BPM. Startet in `Main._start_explorer_run()` (auch für
-      Manhattan).
-    - Beide Loops verwenden dieselbe `AudioStreamWAV`-Loop-Technik wie die
-      bestehende Sirene (`_siren_loop`), verallgemeinert über einen neuen
-      `_compose_loop()`-Helfer auf mehrstimmige Notenfolgen statt eines
-      einzelnen Dauertons. `Sfx.stop_all()` stoppt jetzt auch die Musik
-      (`stop_music()`), damit ein Game-Over sauber still wird.
-  - Getestet: `tests/bot_test.gd` prüft die neue Glyphenzahl/Farb-/
-    Emission-Defaults im Shader-Quelltext, dass beide Kondition-Item-Typen
-    mit mehr als einem Exemplar spawnen, und dass `Sfx.music_state()` beim
-    Start eines normalen bzw. Manhattan-Laufs auf `"arcade"`/`"explorer"`
-    wechselt. Ein neuer eigener Test, `tests/test_audio_synth.gd`, baut
-    `Sfx` isoliert auf und prüft, dass beide Musik-Loops als nicht-leere,
-    nahtlos schleifende PCM-Buffer gerendert werden und dass
-    `play_*_music()`/`stop_all()`/`music_state()` korrekt zusammenspielen.
-
-- **Speedrun: kein Ausweichen mehr, höhere/engere Wände, dunkleres Matrix-Grün
-  — Explorer: breitere Straßen, echte Fahrspuren + Fußweg**
-  (`godot/scripts/main.gd`, `godot/scripts/maze_view.gd`,
-  `godot/scripts/city_themes.gd`, `godot/scripts/taxi.gd`,
-  `godot/shaders/matrix_rain.gdshader`, `godot/tests/bot_test.gd`,
-  `godot/tests/test_city_themes.gd`):
-  - **Kein seitliches Ausweichen an Geistern** (Speedrun): Die
-    Gegner-Kollision war rein distanzbasiert mit einem `ENEMY_HIT_RADIUS`
-    von `0.62` — bei `PLAYER_RADIUS = 0.34` blieben in einem 2 m breiten
-    Korridor nur 4 cm Lücke zum Vorbeiquetschen. `ENEMY_HIT_RADIUS` ist
-    jetzt `0.85`: breiter als die halbe Korridorbreite, ein Geist blockiert
-    den Korridor also tatsächlich vollständig.
-  - **Höhere, etwas engere Korridore** (Speedrun): `MazeView.WALL_H` von
-    `3.8` auf `4.4` angehoben (nur das "normal"-Theme nutzt diesen Wert
-    direkt — Manhattan hat ein eigenes Höhensystem). Zusätzlich bekommt das
-    "normal"-Theme jetzt `CityTheme.wall_footprint_scale = 1.12`: Die
-    Wände greifen leicht über ihre eigene Zellenfläche hinaus in den
-    Korridor hinein (ein 2 m breiter Korridor wird dadurch ~1,76 m), sowohl
-    visuell als auch in der echten `StaticBody3D`-Kollision.
-  - **Dunkleres Matrix-Grün, an die Ästhetik des Films angelehnt**
-    (`matrix_rain.gdshader`): `glyph_color`/`bg_color` auf ein tieferes,
-    gesättigteres Grün vor nahezu Schwarz gezogen, `EMISSION` von `2.2x`
-    auf `2.6x` angehoben — ein Stil-Abgleich mit der bekannten, oft
-    beschriebenen Bildsprache des Films (monochromes Grün, harter
-    Kontrast, fast schwarzer Hintergrund) rein nach Beschreibung/Augenmaß,
-    nicht anhand eines tatsächlichen Filmstills. Da die insgesamt höheren,
-    engeren, helleren Wände das Vektions-Risiko (Scheinbewegungsgefühl
-    durch eine durchgängig nach unten laufende Textur) erhöhen, wurde
-    `floor_fade_frac` (der statische, nicht scrollende Streifen am
-    Wandfuß) leicht von `0.16` auf `0.19` angehoben.
-  - **Explorer: breitere Straßen, echte Fahrspuren + Fußweg**: Manhattans
-    Gebäude rücken weiter von ihrer Zellenkante ab
-    (`CityTheme.wall_footprint_scale` `0.55` → `0.48` → `0.40`), wodurch
-    die Straßencanyons spürbar breiter werden. Taxis und Fußgänger teilten
-    sich vorher eine einzige Mittellinie — jetzt bekommt der Verkehr zwei
-    versetzte Fahrspuren (`MANHATTAN_VEHICLE_LANE_OFFSET`, eine je
-    Richtung, siehe `taxi.gd::_apply_lane()` — korrekt auch nach einem
-    Richtungswechsel am Straßenende, vorher blieb ein Taxi nach dem Wenden
-    fälschlich in seiner alten Spur) und Fußgänger einen eigenen Gehweg
-    nah an der Häuserfront (`MANHATTAN_SIDEWALK_OFFSET`).
-  - **Review-Fund behoben (kritisch)**: Die erste Fassung ließ zwischen
-    Gehweg und Hauswand weniger Platz als den weichen Verdrängungsradius
-    um einen Fußgänger selbst — der Spieler hätte faktisch nie neben einem
-    Fußgänger vorbeigehen können, was dem expliziten Auftrag
-    ("hier darf man neben Passanten... vorbei") widersprach. Behoben durch
-    einen eigenen, kleineren `MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS` (`0.35`
-    statt der von Fahrzeugen geteilten `0.55`) zusammen mit den oben
-    genannten `wall_footprint_scale`/`MANHATTAN_SIDEWALK_OFFSET`-Werten.
-  - Review-Prozess: Wie in `CLAUDE.md` vorgeschrieben liefen nach der
-    Implementierung die drei Review-Subagenten (`game-designer`,
-    `ux-reviewer`, `code-reviewer`) parallel gegen die geänderten Dateien.
-    Gefunden und behoben: der oben genannte Gehweg-Bug (game-designer,
-    unabhängig bestätigt durch code-reviewer) und der Taxi-Spurwechsel-Bug
-    (unabhängig von game-designer und code-reviewer gefunden). Als
-    Designfrage zurückgestellt (nicht eigenmächtig umgesetzt, siehe
-    `CLAUDE.md`s "größere Designänderungen vorher mit dem Nutzer
-    abstimmen"): die unbegrenzt mit dem Level wachsende Geister-
-    Geschwindigkeit wird durch das neue harte Nicht-Ausweichen spürbarer
-    und wurde vom ux-reviewer erneut als Balancing-Thema aufgeworfen.
-  - Getestet: `bot_test.gd` prüft den neuen `ENEMY_HIT_RADIUS` (kann nicht
-    mehr seitlich an einem gepinnten Gegner vorbeigeschlüpft werden), die
-    neuen Shader-Konstanten, `wall_footprint_scale` in beiden Themes, dass
-    Taxis/Fußgänger tatsächlich auf versetzten Spuren/Gehwegen fahren statt
-    auf der nackten Mittellinie, dass ein Taxi nach dem Wenden die Spur
-    wechselt, und dass die Gehweg-Hauswand-Lücke rechnerisch größer bleibt
-    als der Fußgänger-Verdrängungsradius. `test_city_themes.gd` prüft die
-    neuen `wall_footprint_scale`-Grenzen beider Themes.
-
-- **Geister-Geschwindigkeit gedeckelt** (`godot/scripts/main.gd`,
-  `godot/tests/bot_test.gd`): Jenseits des letzten fest abgestimmten
-  `LEVELS`-Eintrags wuchs das Geistertempo bisher pro weiterem Level
-  unbegrenzt um `extra * 0.15` weiter — der nächtliche Review-Bericht
-  (`docs/review/berichte/2026-10-01.md`, Fund GD-N1) hat das konkret
-  durchgerechnet: Der schnellste Geist erreicht bei Level 13 bereits
-  4,45 m/s, mehr als `PlayerController.PLAYER_SPEED` (4,4 m/s) — ab
-  Level 15 sind alle Geister schneller als der Spieler. In Kombination mit
-  dem neuen harten Nicht-Ausweichen (`ENEMY_HIT_RADIUS`) gäbe es ab dann
-  keine Möglichkeit mehr, einem Geist überhaupt zu entkommen. Neue
-  Konstante `GHOST_SPEED_CAP := 3.96` (≈90 % der Spielergeschwindigkeit,
-  der vom Review selbst vorgeschlagene Wert) deckelt jede
-  Geister-Geschwindigkeit nach oben; die ersten vier abgestimmten Level
-  bleiben davon unberührt (ihr Tempo liegt ohnehin deutlich darunter).
-  Bewusst **nicht** umgesetzt: eine weitere Schwierigkeitssteigerung
-  jenseits des Deckels (z. B. kürzere `FRIGHTENED_DURATION` pro Level, wie
-  vom Review vorgeschlagen) — das ist eine separate Balancing-Entscheidung,
-  die erst mit dir abgestimmt werden sollte, bevor sie umgesetzt wird.
-  - Getestet: `bot_test.gd` prüft, dass Level 4 (der letzte abgestimmte
-    `LEVELS`-Eintrag) weiterhin exakt das alte, ungedeckelte Tempo liefert,
-    dass ein weit in der Zukunft liegendes Level (40) trotz der
-    ungedeckelten alten Formel (~8,65 m/s) nie über `GHOST_SPEED_CAP`
-    hinauskommt, und dass der Deckel selbst unterhalb der
-    Spielergeschwindigkeit liegt.
-
-- **Review-Runde 2026-10-02: Kritisches + 4 Designentscheidungen umgesetzt**
-  (`godot/scripts/main.gd`, `maze_gen.gd`, `speedrun.gd`, `hud.gd`,
-  `player_controller.gd`, `conditions/matrix_ghost.gd`,
-  `conditions/fear_and_loathing.gd`, `enemy.gd`, `godot/tests/*`): nach dem
-  nächtlichen Review-Bericht (`docs/review/berichte/2026-10-01.md`, alle
-  drei Rollen) waren längst nicht alle Befunde umgesetzt — u. a. startete
-  man im Speedrun-Level noch mit Blick zur Wand (GD-W10). Diese Runde hat
-  die 5 kritischen Befunde sowie die 4 Design-Entscheidungen behoben, die
-  der Nutzer dafür einzeln getroffen hat; "Wichtig"/"Nice-to-have" bleibt
-  für eine spätere Runde zurückgestellt.
-  - **Kritisch — Zielzeiten unerreichbar (GD-K1)**: die alten Zielzeiten
-    (55/70/85/100 s) lagen unter der vom Review selbst errechneten
-    harten Untergrenze. Neue Zielzeiten `[87, 120, 147, 151.5]` (errechnete
-    Untergrenze × 1,5, wie vom Review vorgeschlagen); bereits freigeschaltete
-    Boni/gespeicherte Bestzeiten bleiben unangetastet.
-  - **Kritisch — Noclip-Softlock (GD-K2/Code-K1)**: schaltete sich Noclip
-    (Word Mode/Matrix Ghost) ab, während der Spieler außerhalb des
-    Labyrinths oder in einer Wand steckte, blieb er dort gefangen. Neues
-    zentrales `Main._refresh_player_modifiers()` leitet Noclip/aktive
-    Kondition jetzt aus genau einer Quelle ab und ruft bei jeder
-    Abschaltung `_ensure_player_in_open_cell()` auf, das den Spieler nötigenfalls
-    zur nächsten offenen Zelle versetzt. Zusätzlich begrenzt
-    `PlayerController.clamp_z()` (analog zum bestehenden `wrap_tunnel()`)
-    jeden Frame die Nord/Süd-Position, damit ein Noclip-Spieler gar nicht
-    erst durch die unbegrenzte Außenwand läuft.
-  - **Kritisch — Bestzeiten manipulierbar (GD-K3/Code-W7)**: ein neues
-    `Main.twitch_assisted`-Flag (gesetzt von jedem wirksamen Twitch-Befehl,
-    zurückgesetzt bei jedem Level-/Run-Start) sorgt zusammen mit dem
-    bestehenden `debug_mode`-Flag dafür, dass ein unterstützter oder
-    Testbuild-Lauf nie in `Speedrun.best_times`/die Bestenliste geschrieben
-    wird — die Banner-Meldung zeigt stattdessen "nicht gewertet".
-  - **Kritisch — Minimap-Pfeil gespiegelt (GD-K4/UX-K2/Code-W11)**: falsches
-    Vorzeichen bei der Blickrichtungs-Rotation (`p.rotated(yaw)` statt
-    `p.rotated(-yaw)`) plus fehlender Zellen-Mittelpunkt-Offset für
-    Spieler-/Gegner-Marker auf der Minimap behoben.
-  - **Kritisch — CapsuleShape3D-Radius-Clamp (Code-N8, in-engine bestätigt)**:
-    Godot klemmt beim Collider-Aufbau automatisch dasjenige von
-    `radius`/`height`, das als zweites gesetzt wird — die bisherige
-    Reihenfolge (`radius` vor `height`) hatte den echten Kollisionsradius
-    stillschweigend von 0.34 auf 0.2 geschrumpft. Reihenfolge getauscht
-    (`height` zuerst).
-  - **Designentscheidung — Metro-Stationen** ("reiner Explorer, Metro
-    beendet Level", löst den GD-W1-vs-UX-K4-Konflikt): Punkte sind in
-    Manhattan keine Abschlussbedingung mehr, geben aber weiterhin Punkte;
-    einzig das Berühren einer U-Bahn-Station beendet den Lauf und trägt ihn
-    in die Bestenliste ein.
-  - **Designentscheidung — Fear & Loathing** ("Beides kombinieren", löst den
-    UX-K1-vs-GD-W7-Konflikt): die zufällige Wandkollisions-Umschaltung und
-    die unfreiwillige Eigenbewegung im Stillstand sind entfernt; als realer
-    Gegenwert bremsen jetzt alle Geister während des Effekts auf 70 % ab
-    (`Enemy.update`s neuer `speed_mult`-Parameter).
-  - **Designentscheidung — Labyrinth-Mittelspalte/Schleifenanteil** (GD-W4/
-    Code-W9, "Ja, umsetzen"): bei geradem `mid` war die Mittelspalte
-    strukturell immer eine Wand, wodurch beide Labyrinthhälften nur über
-    den einen Wrap-Tunnel verbunden waren. Jetzt werden deterministisch
-    2–3 echte Durchbrüche durch die Mittelspalte erzwungen (seed-basiert,
-    außerhalb des Geisterhauses); zusätzlich ist der Schleifenanteil von
-    0.16 auf 0.4 angehoben. Ein neuer Konnektivitätstest
-    (`connectivity_check_no_wrap`) prüft Erreichbarkeit explizit ohne den
-    Wrap-Tunnel mitzuzählen.
-  - **Designentscheidung — Pause & Timer** (GD-W6/UX-W7/Code-W3, "Pause
-    kostet Zeit"): `now` — die Uhr, gegen die jeder Effekt-Timer
-    (Frightened/Word-Mode/Fear) gemessen wird — lief bisher auch während
-    einer Pause unbemerkt weiter und ließ Effekte so lautlos Zeit verlieren.
-    `now` friert jetzt während einer Pause wirklich ein; die während der
-    Pause verstrichene Realzeit wird separat in `level_paused_elapsed`
-    mitgezählt und der Speedrun-/Bestenlisten-Zeit beim Levelabschluss
-    wieder zugeschlagen — Pausieren bleibt also kein kostenloser Weg, die
-    Uhr anzuhalten.
-  - **Levelstart: Blick zum ersten offenen Nachbarn** (GD-W10, das
-    Beispiel, das diese Review-Runde ausgelöst hat): statt einer fest
-    einprogrammierten Blickrichtung wählt `Main._facing_yaw_for_start()`
-    jetzt von den vier Himmelsrichtungen diejenige mit dem längsten offenen
-    Korridor dahinter (mit hartem Schrittlimit `rows+cols` gegen eine
-    Endlosschleife bei vollständig offenen Zeilen/Spalten).
-  - Getestet: `tests/test_maze.gd` (240 Checks, inkl. neuer
-    No-Wrap-Konnektivität), `tests/test_speedrun.gd` (21 Checks, inkl. der
-    neuen Zielzeiten-Untergrenzen), `tests/test_conditions.gd` (15 Checks,
-    angepasst an das neue Matrix-Ghost-Noclip-Design) und
-    `tests/bot_test.gd` (130 Checks) — neu u. a.: Levelstart ohne
-    Wand-vor-der-Nase, Noclip-Softlock-Erholung, Twitch-Assisted-Lauf wird
-    nicht gewertet, Fear-&-Loathing-Stillstand ohne Eigenbewegung plus
-    tatsächlich angewandte Geister-Verlangsamung, Metro-only-Abschluss
-    (Punkte allein reichen nicht), Pause friert den Effekt-Timer ein und
-    zählt trotzdem zur Speedrun-Zeit, sowie ein Word-Mode/Fear-&-Loathing-
-    Überlappungstest (Code-W1: ein Effekt endet, während ein zweiter noch
-    aktiv ist — Kollision/`active_condition` müssen danach weiterhin
-    korrekt sein).
-  - **Gegen-Review (alle drei Rollen erneut, nach dieser Runde)**: ergab
-    keine neuen kritischen Befunde. Direkt nachgebessert (Code-Review):
-    `_facing_yaw_for_start()` nutzte `MazeGen.is_open()`s Rand-Clamping
-    fälschlich wie ein Wrap-Verhalten, wodurch die Korridor-Längenmessung
-    auf der Tunnelzeile (u. a. Manhattans Startzelle) unsinnige Werte lieferte;
-    scannt jetzt stattdessen explizit bis zum echten Gitterrand.
-    `_nearest_open_cell_world()` prüfte eine geklemmte, gab aber eine
-    gewrappte Spalte zurück — beide Werte sind jetzt identisch. Reihenfolge
-    von `warp_to()`/`_refresh_player_modifiers()` beim Levelstart getauscht
-    (erst versetzen, dann Noclip/Kondition ableiten). `Enemy.update()`
-    wendet `speed_mult` nicht mehr auf bereits gefressene, zum Haus
-    zurückkehrende Geister an (unbeabsichtigter Zusatzvorteil). Als
-    Design-/Balancing-Fragen für eine spätere Runde zurückgestellt (nicht
-    eigenmächtig entschieden): ob die neuen Zielzeiten nach der
-    Labyrinth-Generator-Änderung noch zur beabsichtigten Schwierigkeit
-    passen, ob der reine Metro-Abschluss in Manhattan zusätzliches
-    Feedback (z. B. sichtbare Punktzahl im Ergebnis-Panel) braucht, ob die
-    Geister-Verlangsamung bei Fear & Loathing ein eigenes HUD-Feedback
-    bekommen sollte, eine Versionierung der Labyrinth-Geometrie für
-    Bestzeiten/Bestenlisten (ändert sich die Generator-Logik, vergleichen
-    alte und neue Bestzeiten sonst unbemerkt unterschiedliche Layouts), und
-    ob die "Pause kostet Zeit"-Regel im Pause-Menü selbst sichtbar gemacht
-    werden sollte.
+- **Speedrun-Level im Detail**: Gegner-Kollision ohne seitliches
+  Vorbeischlüpfen (`Main.ENEMY_HIT_RADIUS` 0,85), Wände 4,4 m hoch mit
+  `wall_footprint_scale` 1,12 (Korridore ~1,76 m), Geistertempo ab der
+  zweiten Runde gedeckelt (`Main.GHOST_SPEED_CAP` 3,96 m/s, ≈ 90 % der
+  Spielergeschwindigkeit). Musik: zwei original komponierte, zur Ladezeit
+  synthetisierte Loops (`play_arcade_music` im Speedrun,
+  `play_explorer_music` in Manhattan), keine Audiodateien.
+- **Verlauf**: Ältere Umsetzungsrunden und Review-Runden stehen in der
+  Git-Historie und unter `docs/review/berichte/`; dieser README beschreibt
+  nur den Ist-Stand.
 
 ## Steam-Veröffentlichung
 

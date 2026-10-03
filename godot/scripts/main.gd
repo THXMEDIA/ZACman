@@ -37,15 +37,9 @@ const HIGHSCORE_FILE := "kugelschlucker_highscore.txt" # under SavePaths.root (t
 ## bypassed by any chat with more than a handful of viewers.
 const CHAT_COMMAND_COOLDOWN_S := 20.0
 
-const LEVELS := [
-	{"rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed_base": 10000},
-	{"rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed_base": 20000},
-	{"rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed_base": 30000},
-	{"rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed_base": 40000},
-]
-
-## Past the last defined LEVELS entry, start_level() keeps raising ghost
-## speed by `extra * 0.15` per level forever (see start_level's `extra`) —
+## Once a run has played more levels than the pool has (second round,
+## Levels.POOL), start_level() keeps raising ghost speed by `extra * 0.15`
+## per level (see start_level's `extra`) —
 ## flagged by review finding GD-N1 (docs/review/berichte/2026-10-01.md):
 ## worked out from the actual formula, the fastest ghost hits 4.45 m/s at
 ## level 13, already past PlayerController.PLAYER_SPEED (4.4), and every

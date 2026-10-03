@@ -1,8 +1,8 @@
 extends RefCounted
 ## PixelRabbitMesh — builds a small blocky white pixel-art rabbit (a
 ## MultiMesh of cube voxels, same technique as cloud_mesh.gd/ghost_mesh.gd)
-## for the WORD power-up's pickup visual (see
-## MazeView._build_word_powerup_mesh). "Follow the white rabbit" is a
+## for the white rabbit of the speedrun levels (see
+## MazeView._build_rabbit_mesh). "Follow the white rabbit" is a
 ## generic, public-domain-old motif (Alice in Wonderland, and countless
 ## unrelated uses since) — this is an original blocky silhouette of
 ## Claude's own design, not a depiction of any specific copyrighted
