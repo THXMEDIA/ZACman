@@ -92,13 +92,8 @@ const CityThemesScript := preload("res://scripts/city_themes.gd")
 const ConditionsScript := preload("res://scripts/conditions.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 
-const ENEMY_PALETTE := [
-	{"color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
-	{"color": Color(1.0, 0.365, 0.635), "glow": Color(1.0, 0.62, 0.788)},
-	{"color": Color(0.2, 0.878, 1.0), "glow": Color(0.616, 0.953, 1.0)},
-	{"color": Color(1.0, 0.655, 0.2), "glow": Color(1.0, 0.816, 0.541)},
-	{"color": Color(0.616, 0.361, 1.0), "glow": Color(0.788, 0.639, 1.0)},
-]
+## Ghost colors come from the level look (MazeView.ghost_palette(), see
+## city_themes.gd GHOST_* — no green, no cyan, never the level's gradient).
 
 var hud
 var player: CharacterBody3D
@@ -256,7 +251,7 @@ func start_level(level: Dictionary) -> void:
 	start_cell = LevelsScript.start_cell(MazeGen, maze)
 	level_chat_assisted = false
 
-	maze_view.build(maze, start_cell, "normal", [], [], level_index >= FEAR_FIRST_LEVEL)
+	maze_view.build(maze, start_cell, "normal", [], [], level_index >= FEAR_FIRST_LEVEL, level.get("look", ""))
 	hud.set_explorer_hud(false)
 	_apply_theme_environment("normal")
 	fruit_spawned = false
@@ -290,7 +285,11 @@ func start_level(level: Dictionary) -> void:
 		var enemy := Node3D.new()
 		enemy.set_script(load("res://scripts/enemy.gd"))
 		enemy_root.add_child(enemy)
-		var pal: Dictionary = ENEMY_PALETTE[i % ENEMY_PALETTE.size()]
+		var ghost_colors: Array = maze_view.ghost_palette()
+		var pal: Dictionary = ghost_colors[i % ghost_colors.size()]
+		enemy.frightened_color = maze_view.city_theme.ghost_frightened_color
+		enemy.frightened_emission = maze_view.city_theme.ghost_frightened_emission
+		enemy.emission_energy = maze_view.city_theme.ghost_emission_energy
 		enemy.setup(pal.color, pal.glow, minf(level.ghost_speed + i * 0.05 + extra * 0.15, GHOST_SPEED_CAP)) # GD-N1: capped so ghosts never outrun the player past the tuned levels
 		var cell: Vector2i = house_cells[i % house_cells.size()]
 		enemy.place_in_house(cell)

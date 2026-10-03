@@ -27,6 +27,11 @@ var body_material: StandardMaterial3D
 var word_mesh: MeshInstance3D
 var light: OmniLight3D
 var word_skin_active := false
+## Set by Main from the theme before setup() (CityTheme.ghost_*); the
+## defaults are the original deep-blue frightened look.
+var frightened_color := Color(0.13, 0.2, 0.93)
+var frightened_emission := Color(0.33, 0.47, 1.0)
+var emission_energy := 0.7
 
 var _bob_seed := 0.0
 
@@ -41,7 +46,7 @@ func setup(color: Color, glow: Color, speed: float) -> void:
 	body_material.albedo_color = color
 	body_material.emission_enabled = true
 	body_material.emission = color
-	body_material.emission_energy_multiplier = 0.7
+	body_material.emission_energy_multiplier = emission_energy
 	body_material.metallic = 0.2
 	body_material.roughness = 0.3
 	# Blocky pixel-art ghost (see ghost_mesh.gd) instead of a smooth sphere —
@@ -104,8 +109,9 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, 
 		body_material.emission = Color(0.62, 0.7, 0.85)
 	elif frightened_active and mode != "eaten":
 		mode = "frightened"
-		body_material.albedo_color = Color(0.13, 0.2, 0.93)
-		body_material.emission = Color(0.33, 0.47, 1.0)
+		# all frightened ghosts look the same (CityTheme.ghost_frightened_*)
+		body_material.albedo_color = frightened_color
+		body_material.emission = frightened_emission
 	elif mode == "frightened" and not frightened_active:
 		mode = "chase"
 		body_material.albedo_color = palette_color

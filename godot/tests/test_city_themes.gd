@@ -33,13 +33,43 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL normal theme should not be permanently word-built")
 	checks += 1
-	if not normal.wall_matrix_rain:
+	# Speedrun base look "Lagune" (spec 1.1): the old matrix_rain walls and
+	# the Mario/cloud sky are gone; Matrix becomes a rabbit condition.
+	if normal.wall_shader_path != "res://shaders/pacman_wall.gdshader" or normal.wall_matrix_rain:
 		failures += 1
-		print("FAIL normal theme's walls should use the matrix_rain shader")
+		print("FAIL normal theme's walls should use the pacman_wall shader (not matrix_rain)")
 	checks += 1
-	if not normal.ceil_sky_clouds:
+	if normal.ceil_sky_clouds or normal.floor_shader_path != "res://shaders/pacman_floor.gdshader" or normal.screen_overlay_shader_path != "res://shaders/crt_overlay.gdshader":
 		failures += 1
-		print("FAIL normal theme should have the voxel-cloud sky ceiling enabled")
+		print("FAIL normal theme should have no sky clouds, the pacman floor shader and the CRT overlay")
+	checks += 1
+	if not (normal.level_looks.has("lagune") and normal.level_looks.has("riff") and normal.default_level_look == "lagune"):
+		failures += 1
+		print("FAIL normal theme should offer the level looks lagune/riff, lagune by default")
+	checks += 1
+	var line_blue := []
+	for look_id in normal.level_looks:
+		for role in ["top", "base"]:
+			var c: Color = normal.level_looks[look_id][role]
+			if c.h * 360.0 >= 215.0 and c.h * 360.0 <= 250.0:
+				line_blue.append("%s.%s" % [look_id, role])
+	if not line_blue.is_empty() or (normal.minimap_wall_color.h * 360.0 >= 215.0 and normal.minimap_wall_color.h * 360.0 <= 250.0):
+		failures += 1
+		print("FAIL no wall line / minimap color may sit in the blue hue range 215-250 deg: %s" % [line_blue])
+	checks += 1
+	var lagune_ghosts: Array = normal.level_looks.lagune.ghosts
+	var riff_ghosts: Array = normal.level_looks.riff.ghosts
+	var riff_has_violet := false
+	for g in riff_ghosts:
+		if g.role == "streuner":
+			riff_has_violet = true
+	if lagune_ghosts.size() != 5 or riff_has_violet or riff_ghosts.size() < 4:
+		failures += 1
+		print("FAIL Lagune should have all five ghost colors, Riff no violet Streuner")
+	checks += 1
+	if normal.env_bg_color != Color("05070b") or normal.floor_color != Color("0d0f16") or normal.ceil_color != Color("05070b"):
+		failures += 1
+		print("FAIL room/fog/ceiling should be #05070B and the floor #0D0F16")
 	checks += 1
 	if normal.wall_word_tall != "" or normal.wall_height_min > 0.0 or normal.wall_vertical_text or normal.pellets_follow_metro_trails:
 		failures += 1
@@ -130,6 +160,17 @@ func _initialize() -> void:
 	if not (manhattan.wall_footprint_scale > 0.0 and manhattan.wall_footprint_scale < 1.0):
 		failures += 1
 		print("FAIL manhattan theme's buildings should sit back from their cell edges (wall_footprint_scale < 1.0), got %f" % manhattan.wall_footprint_scale)
+
+	# --- manhattan keeps its own look: none of the Speedrun look fields ---
+	var defaults = load("res://scripts/city_theme.gd").new()
+	checks += 1
+	var leaked := []
+	for field in ["wall_shader_path", "floor_shader_path", "screen_overlay_shader_path", "pellet_color", "pellet_shape", "pellet_size", "pellet_height", "power_color", "power_shape", "power_diamond", "power_blink_hz", "level_looks", "default_level_look", "minimap_wall_color", "minimap_bg_color", "ghost_frightened_color"]:
+		if manhattan.get(field) != defaults.get(field):
+			leaked.append(field)
+	if not leaked.is_empty():
+		failures += 1
+		print("FAIL manhattan must keep the default (pre-Speedrun-look) values, changed: %s" % [leaked])
 
 	# Every hand-authored landmark (manhattan_maze.gd's LANDMARKS) needs a
 	# real height here, or it would silently fall back to a flat default —

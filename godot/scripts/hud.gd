@@ -539,22 +539,30 @@ func _draw_minimap() -> void:
 	var size := minimap.size
 	var sx: float = size.x / float(minimap_maze.cols)
 	var sy: float = size.y / float(minimap_maze.rows)
-	minimap.draw_rect(Rect2(Vector2.ZERO, size), Color(0.008, 0.012, 0.039, 0.4))
+	# Colors follow the level's CityTheme (Speedrun: turquoise walls, never
+	# blue; cream pickups); the defaults are the original minimap colors.
+	var ct = minimap_maze_view.city_theme if minimap_maze_view != null and minimap_maze_view.city_theme != null else null
+	var bg_col: Color = ct.minimap_bg_color if ct != null else Color(0.008, 0.012, 0.039, 0.4)
+	var wall_col: Color = ct.minimap_wall_color if ct != null else Color(0.118, 0.227, 0.478)
+	var pellet_col: Color = ct.pellet_color if ct != null else Color(1.0, 0.82, 0.4)
+	var power_col: Color = ct.power_color if ct != null else Color(1.0, 0.365, 0.635)
+	var frightened_col: Color = ct.minimap_frightened_color if ct != null else Color(0.35, 0.82, 1.0)
+	minimap.draw_rect(Rect2(Vector2.ZERO, size), bg_col)
 	for r in minimap_maze.rows:
 		for c in minimap_maze.cols:
 			if minimap_maze.grid[r][c] == 1:
-				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), Color(0.118, 0.227, 0.478))
+				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), wall_col)
 	if minimap_maze_view != null:
 		for i in minimap_maze_view.pellet_cells.size():
 			if not minimap_maze_view.pellet_alive[i]:
 				continue
 			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
-			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, Color(1.0, 0.82, 0.4))
+			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, pellet_col)
 		for i in minimap_maze_view.power_cells.size():
 			if not minimap_maze_view.power_alive[i]:
 				continue
 			var pw: Vector2i = minimap_maze_view.power_cells[i]
-			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, Color(1.0, 0.365, 0.635))
+			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, power_col)
 	# Review findings GD-K4/UX-K2/Code-W11: the player's real facing
 	# direction is (-sin(yaw), -cos(yaw)) (see player_controller.gd's
 	# _physics_process), but the arrow was rotated by `p.rotated(yaw)` —
@@ -564,7 +572,7 @@ func _draw_minimap() -> void:
 	# +0.5-cell offset the pellets/power-ups above already use, putting
 	# them half a cell off from where they actually are.
 	for e in minimap_enemies:
-		var col: Color = Color(0.35, 0.82, 1.0) if minimap_frightened else e.palette_color
+		var col: Color = frightened_col if minimap_frightened else e.palette_color
 		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
 	if minimap_player != null:
 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0

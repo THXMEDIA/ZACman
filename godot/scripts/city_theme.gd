@@ -114,6 +114,58 @@ var ceil_sky_clouds := false
 ## letters of a tall building's name are visible" bug this fixes.
 var ceil_enabled := true
 
+## ---- Shader-based look (Speedrun "Lagune", spec 1.1) ----
+## Optional .gdshader paths. Empty = the classic StandardMaterial3D /
+## matrix_rain behavior, so a theme that does not set them (Manhattan)
+## looks exactly as before.
+var wall_shader_path := "" # replaces matrix_rain when set; gets the neighbor mask (MultiMesh custom data)
+var floor_shader_path := "" # gets the cell map (MazeView.maze_tex) and the level look's colors
+var screen_overlay_shader_path := "" # full-screen canvas_item overlay (CRT lines), "" = none
+
+## ---- Pickups ----
+## Defaults are the original golden spheres / pink pulsing power pellet.
+var pellet_color := Color(1.0, 0.82, 0.4)
+var pellet_emission := Color(1.0, 0.69, 0.18)
+var pellet_energy := 1.3
+var pellet_shape := "sphere" # "sphere" | "cube"
+var pellet_size := 0.11 # sphere radius / half the cube edge (m)
+var pellet_height := 0.32 # center above the floor (m)
+var power_color := Color(1.0, 0.365, 0.635)
+var power_emission := Color(1.0, 0.184, 0.525)
+var power_energy := 1.6
+var power_shape := "sphere"
+var power_size := 0.26
+var power_diamond := false # stand the cube on its tip (a diamond / "Raute")
+var power_blink_hz := 0.0 # 0 = the old scale pulse; > 0 = on/off blinking (keep below 3 Hz)
+var power_blink_on_fraction := 0.62 # share of each blink period the power pellet is visible
+
+## ---- Level looks (per-level color variants of one theme) ----
+## look id -> {"top": Color, "base": Color, "body": Color, "ghosts": Array}
+## where "ghosts" is a ghost palette like ghost_palette below. MazeView picks
+## the look named by the level data (Levels.POOL[].look), falling back to
+## default_level_look. Empty = the theme has no per-level looks.
+var level_looks: Dictionary = {}
+var default_level_look := ""
+
+## ---- Ghosts ----
+## Colors handed out in order (ghost i gets entry i % size). A level look's
+## own "ghosts" list wins over this one.
+var ghost_palette: Array = [
+	{"role": "jaeger", "color": Color(1.0, 0.231, 0.365), "glow": Color(1.0, 0.42, 0.514)},
+	{"role": "abfaenger", "color": Color(1.0, 0.365, 0.635), "glow": Color(1.0, 0.62, 0.788)},
+	{"role": "streuner", "color": Color(0.2, 0.878, 1.0), "glow": Color(0.616, 0.953, 1.0)},
+	{"role": "lauerer", "color": Color(1.0, 0.655, 0.2), "glow": Color(1.0, 0.816, 0.541)},
+	{"role": "nachzuegler", "color": Color(0.616, 0.361, 1.0), "glow": Color(0.788, 0.639, 1.0)},
+]
+var ghost_emission_energy := 0.7
+var ghost_frightened_color := Color(0.13, 0.2, 0.93)
+var ghost_frightened_emission := Color(0.33, 0.47, 1.0)
+
+## ---- Minimap ----
+var minimap_bg_color := Color(0.008, 0.012, 0.039, 0.4)
+var minimap_wall_color := Color(0.118, 0.227, 0.478)
+var minimap_frightened_color := Color(0.35, 0.82, 1.0)
+
 ## ---- Scene-wide environment (background/fog/ambient) — read by Main ----
 var env_bg_color := Color(0.0196, 0.0275, 0.0627)
 var env_fog_color := Color(0.0196, 0.0275, 0.0627)

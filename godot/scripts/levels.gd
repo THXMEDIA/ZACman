@@ -25,13 +25,17 @@ const CELL_M := 2.0
 ## so it is reachable without planning and beatable with it. (The first
 ## targets, 55/70/85/100 s, were below the physical lower bound of the
 ## levels; the test now guards against that too.)
+##
+## `look` picks the level's color variant of the Speedrun base look (see
+## city_themes.gd normal().level_looks): "lagune" in Klassik I/III, "riff" in
+## Klassik II/IV, the other levels alternate (spec 1.1).
 const POOL := [
-	{"id": "klassik-1", "name": "Klassik I", "rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed": 10003, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 115.0},
-	{"id": "klassik-2", "name": "Klassik II", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 20080, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 170.0},
-	{"id": "klassik-3", "name": "Klassik III", "rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed": 30157, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 205.0},
-	{"id": "klassik-4", "name": "Klassik IV", "rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed": 40234, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 225.0},
-	{"id": "offen", "name": "Offen", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 50003, "loop_prob": 0.45, "breakthroughs": 0, "target_s": 160.0},
-	{"id": "durchbruch", "name": "Durchbruch", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 60003, "loop_prob": 0.16, "breakthroughs": 3, "target_s": 175.0},
+	{"id": "klassik-1", "name": "Klassik I", "rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed": 10003, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 115.0, "look": "lagune"},
+	{"id": "klassik-2", "name": "Klassik II", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 20080, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 170.0, "look": "riff"},
+	{"id": "klassik-3", "name": "Klassik III", "rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed": 30157, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 205.0, "look": "lagune"},
+	{"id": "klassik-4", "name": "Klassik IV", "rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed": 40234, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 225.0, "look": "riff"},
+	{"id": "offen", "name": "Offen", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 50003, "loop_prob": 0.45, "breakthroughs": 0, "target_s": 160.0, "look": "lagune"},
+	{"id": "durchbruch", "name": "Durchbruch", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 60003, "loop_prob": 0.16, "breakthroughs": 3, "target_s": 175.0, "look": "riff"},
 ]
 
 

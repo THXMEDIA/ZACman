@@ -63,7 +63,25 @@ var landmark_lights: Array = [] # Array[OmniLight3D], Manhattan only — pulsed 
 var sky_cloud_nodes: Array = [] # Array[MultiMeshInstance3D], sky-cloud themes only — see _build_sky_clouds; tracked mainly so tests can check their height
 var _t := 0.0
 
-var wall_material: Material # StandardMaterial3D normally, or a matrix_rain ShaderMaterial (see CityTheme.wall_matrix_rain)
+## The level's color variant of a shader look (CityTheme.level_looks entry,
+## {top, base, body, ghosts}); empty when the theme has no level looks.
+var level_look_id := ""
+var level_look: Dictionary = {}
+## Cell map for the floor shader, one pixel per cell: R = wall,
+## G = junction (open cell with >= 3 open neighbors). Shader themes only.
+var maze_tex: ImageTexture
+var floor_mesh: MeshInstance3D
+var screen_overlay: CanvasLayer = null # CRT overlay (CityTheme.screen_overlay_shader_path), else null
+
+## ---- Look switching (prepared for the rabbit conditions, Etappe 2) ----
+## A look is a pair of materials for the SAME wall MultiMesh and floor mesh;
+## set_look() only swaps material_override, it never builds a second set of
+## walls. Today only LOOK_BASE is registered (the theme's own materials).
+const LOOK_BASE := "base"
+var current_look := LOOK_BASE
+var _looks: Dictionary = {} # look id -> {"wall": Material, "floor": Material}
+
+var wall_material: Material # the CURRENT wall material: StandardMaterial3D, matrix_rain or the theme's wall shader (see _make_materials / set_look)
 var pellet_material: StandardMaterial3D
 var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
@@ -76,7 +94,10 @@ var fruit_material: StandardMaterial3D
 ## park on a pellet forever). `metro_cells` (Manhattan only) are the metro-
 ## station cells pellets should route toward — see
 ## CityTheme.pellets_follow_metro_trails / _metro_trail_cells.
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false) -> void:
+##
+## `look_id` names the level's color variant (Levels.POOL[].look, e.g.
+## "lagune"/"riff"); "" or an unknown id uses CityTheme.default_level_look.
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], fear_enabled: bool = false, look_id: String = "") -> void:
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
@@ -94,16 +115,26 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	fear_powerup_nodes.clear()
 	fear_powerup_alive.clear()
 	sky_cloud_nodes.clear()
+	screen_overlay = null
+	_looks.clear()
+	current_look = LOOK_BASE
 
 	maze = new_maze
 	theme = maze_theme
 	city_theme = CityThemesScript.get_theme(theme)
+	level_look_id = ""
+	level_look = {}
+	if not city_theme.level_looks.is_empty():
+		level_look_id = look_id if city_theme.level_looks.has(look_id) else city_theme.default_level_look
+		level_look = city_theme.level_looks.get(level_look_id, {})
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
 	_build_sky_clouds()
 	_build_tunnel_vistas()
 	_build_pellets(start_cell, reserved_cells, metro_cells, fear_enabled)
+	_build_screen_overlay()
+	register_look(LOOK_BASE, wall_material, floor_mesh.material_override)
 	# A permanently-word-built theme (Manhattan) starts in the word-built-
 	# world look; other themes start out looking normal and only switch when
 	# the Word Mode power-up is eaten (see Main._on_word_powerup / set_word_mode).
@@ -111,7 +142,19 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 
 
 func _make_materials() -> void:
-	if city_theme.wall_matrix_rain:
+	maze_tex = null
+	if city_theme.wall_shader_path != "" or city_theme.floor_shader_path != "":
+		_build_maze_tex()
+	if city_theme.wall_shader_path != "":
+		# Speedrun base look: dark mass, glowing top edge, base dashes,
+		# vertical lines only at free wall ends (neighbor mask per instance,
+		# see _build_walls), colors from the level look.
+		var sp_mat := ShaderMaterial.new()
+		sp_mat.shader = load(city_theme.wall_shader_path)
+		sp_mat.set_shader_parameter("cell", CELL)
+		_apply_level_look(sp_mat)
+		wall_material = sp_mat
+	elif city_theme.wall_matrix_rain:
 		# Scrolling green ASCII glyphs baked into the wall surface itself —
 		# see matrix_rain.gdshader. Always fully "ASCII", never a flat real
 		# color, at any distance (unlike the old screen-space post effect).
@@ -129,16 +172,16 @@ func _make_materials() -> void:
 		wall_material = sm
 
 	pellet_material = StandardMaterial3D.new()
-	pellet_material.albedo_color = Color(1.0, 0.82, 0.4)
+	pellet_material.albedo_color = city_theme.pellet_color
 	pellet_material.emission_enabled = true
-	pellet_material.emission = Color(1.0, 0.69, 0.18)
-	pellet_material.emission_energy_multiplier = 1.3
+	pellet_material.emission = city_theme.pellet_emission
+	pellet_material.emission_energy_multiplier = city_theme.pellet_energy
 
 	power_material = StandardMaterial3D.new()
-	power_material.albedo_color = Color(1.0, 0.365, 0.635)
+	power_material.albedo_color = city_theme.power_color
 	power_material.emission_enabled = true
-	power_material.emission = Color(1.0, 0.184, 0.525)
-	power_material.emission_energy_multiplier = 1.6
+	power_material.emission = city_theme.power_emission
+	power_material.emission_energy_multiplier = city_theme.power_energy
 
 	fruit_material = StandardMaterial3D.new()
 	fruit_material.albedo_color = Color(0.486, 1.0, 0.42)
@@ -229,10 +272,14 @@ func _build_walls() -> void:
 	# can't vary its mesh, only each instance's transform).
 	var box_mesh := BoxMesh.new()
 	box_mesh.size = Vector3(CELL, 1.0, CELL)
-	box_mesh.material = wall_material
 
+	# The wall shader needs to know which neighbors are walls (to draw
+	# vertical lines only at free ends): one Color per instance,
+	# r/g/b/a = wall at row-1 / row+1 / col-1 / col+1.
+	var neighbor_mask: bool = city_theme.wall_shader_path != ""
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = neighbor_mask
 	mm.mesh = box_mesh
 	mm.instance_count = wall_cells.size()
 	var fp: float = city_theme.wall_footprint_scale
@@ -242,9 +289,17 @@ func _build_walls() -> void:
 		var basis := Basis().scaled(Vector3(fp, h, fp))
 		var xf := Transform3D(basis, Vector3(cell.y * CELL, h * 0.5, cell.x * CELL))
 		mm.set_instance_transform(i, xf)
+		if neighbor_mask:
+			mm.set_instance_custom_data(i, Color(
+				1.0 if _is_wall(cell.x - 1, cell.y) else 0.0,
+				1.0 if _is_wall(cell.x + 1, cell.y) else 0.0,
+				1.0 if _is_wall(cell.x, cell.y - 1) else 0.0,
+				1.0 if _is_wall(cell.x, cell.y + 1) else 0.0))
 
 	normal_wall_mmi = MultiMeshInstance3D.new()
 	normal_wall_mmi.multimesh = mm
+	# On the instance, not the mesh, so set_look() can swap it in place.
+	normal_wall_mmi.material_override = wall_material
 	add_child(normal_wall_mmi)
 
 	# The word-built-world skin: every wall cell doubles as a 3D letterform,
@@ -310,6 +365,46 @@ func _build_walls() -> void:
 		walls_body.add_child(cs)
 
 
+func _apply_level_look(m: ShaderMaterial) -> void:
+	if level_look.is_empty():
+		return
+	m.set_shader_parameter("line_top", level_look.top)
+	m.set_shader_parameter("line_base", level_look.base)
+	m.set_shader_parameter("body_color", level_look.body)
+
+
+## The ghost colors for this level: the level look's own list if it has
+## one, else the theme's (see CityTheme.ghost_palette).
+func ghost_palette() -> Array:
+	if level_look.has("ghosts"):
+		return level_look.ghosts
+	return city_theme.ghost_palette
+
+
+## Cell map as a texture (one pixel per cell) for the floor shader:
+## R = wall, G = junction (open cell with >= 3 open neighbors).
+func _build_maze_tex() -> void:
+	var img := Image.create(maze.cols, maze.rows, false, Image.FORMAT_RGBA8)
+	for r in maze.rows:
+		for c in maze.cols:
+			var wall: bool = maze.grid[r][c] == 1
+			var open_n := 0
+			if not wall:
+				for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+					var rr: int = r + d.x
+					var cc: int = c + d.y
+					if rr >= 0 and rr < maze.rows and cc >= 0 and cc < maze.cols and maze.grid[rr][cc] != 1:
+						open_n += 1
+			img.set_pixel(c, r, Color(1.0 if wall else 0.0, 1.0 if open_n >= 3 else 0.0, 0.0, 1.0))
+	maze_tex = ImageTexture.create_from_image(img)
+
+
+func _is_wall(r: int, c: int) -> bool:
+	if r < 0 or r >= maze.rows or c < 0 or c >= maze.cols:
+		return false
+	return maze.grid[r][c] == 1
+
+
 func _build_floor_ceiling() -> void:
 	var floor_w: float = maze.cols * CELL
 	var floor_d: float = maze.rows * CELL
@@ -332,9 +427,19 @@ func _build_floor_ceiling() -> void:
 		ceil_mat.emission = city_theme.ceil_emission_color
 		ceil_mat.emission_energy_multiplier = city_theme.ceil_emission_energy
 
-	var floor_mesh := MeshInstance3D.new()
+	floor_mesh = MeshInstance3D.new()
 	floor_mesh.mesh = plane
 	floor_mesh.material_override = floor_mat
+	if city_theme.floor_shader_path != "":
+		# Lit (not unshaded) dark floor with a cell grid and junction frames.
+		var fsm := ShaderMaterial.new()
+		fsm.shader = load(city_theme.floor_shader_path)
+		fsm.set_shader_parameter("cell", CELL)
+		fsm.set_shader_parameter("maze_tex", maze_tex)
+		fsm.set_shader_parameter("maze_size", Vector2(maze.cols, maze.rows))
+		fsm.set_shader_parameter("floor_albedo", city_theme.floor_color)
+		_apply_level_look(fsm)
+		floor_mesh.material_override = fsm
 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
 	add_child(floor_mesh)
 
@@ -442,15 +547,53 @@ func set_word_mode(active: bool) -> void:
 	normal_wall_mmi.visible = not active
 
 
-## Turns the matrix_rain wall shader's psychedelic mode on/off (see
-## shaders/matrix_rain.gdshader's psychedelic_amount uniform) — used by
-## Main for the Fear & Loathing pickup's temporary "LSD trip" wall look.
-## A no-op on themes that don't use the matrix_rain shader at all (Manhattan
-## has no walls_body/wall_material of that kind — Godot silently ignores a
-## shader-parameter set on a material without that uniform).
+## Turns the wall shader's psychedelic mode on/off (psychedelic_amount
+## uniform of pacman_wall.gdshader / matrix_rain.gdshader) — used by Main for
+## the Fear & Loathing pickup's temporary "LSD trip" wall look. Replaced by
+## the condition looks in Etappe 2. A no-op on themes whose wall material is
+## not a shader (Godot ignores a parameter the shader does not declare).
 func set_psychedelic(active: bool) -> void:
 	if wall_material is ShaderMaterial:
 		wall_material.set_shader_parameter("psychedelic_amount", 1.0 if active else 0.0)
+
+
+## ---- Look API (Etappe 2: rabbit conditions switch looks at runtime) ----
+
+## Registers (or replaces) a look: the materials the wall MultiMesh and the
+## floor use while it is active. A null material keeps that surface's base
+## material. build() registers LOOK_BASE with the theme's own materials.
+func register_look(look_id: String, wall_mat: Material, floor_mat: Material) -> void:
+	_looks[look_id] = {"wall": wall_mat, "floor": floor_mat}
+
+
+func has_look(look_id: String) -> bool:
+	return _looks.has(look_id)
+
+
+## Switches the visible look by swapping material_override on the existing
+## wall MultiMesh and floor mesh — the same instances, no second wall set,
+## collision untouched. Returns false (and changes nothing) for an unknown id.
+func set_look(look_id: String) -> bool:
+	if not _looks.has(look_id):
+		return false
+	var base: Dictionary = _looks[LOOK_BASE]
+	var look: Dictionary = _looks[look_id]
+	var wall_mat: Material = look.wall if look.wall != null else base.wall
+	var floor_mat: Material = look.floor if look.floor != null else base.floor
+	wall_material = wall_mat
+	normal_wall_mmi.material_override = wall_mat
+	floor_mesh.material_override = floor_mat
+	current_look = look_id
+	return true
+
+
+## Sets a shader uniform on the current look's wall and floor materials
+## (for one shared condition shader with a `look`/`transition` uniform, see
+## spec 1.2). Materials without that uniform ignore it.
+func set_look_param(param: String, value) -> void:
+	for m in [normal_wall_mmi.material_override, floor_mesh.material_override]:
+		if m is ShaderMaterial:
+			m.set_shader_parameter(param, value)
 
 
 func _pick_farthest_cell(cells: Array, from: Vector2i) -> Vector2i:
@@ -685,28 +828,25 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		for cell in fear_powerup_cells:
 			pellet_cells.erase(cell)
 
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.11
-	sphere.height = 0.22
-	sphere.material = pellet_material
+	var sphere: Mesh = _pickup_mesh(city_theme.pellet_shape, city_theme.pellet_size, pellet_material)
 	for cell in pellet_cells:
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = sphere
-		mesh.position = Vector3(cell.y * CELL, 0.32, cell.x * CELL)
+		mesh.position = Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
 		add_child(mesh)
 		pellet_meshes.append(mesh)
 		pellet_alive.append(true)
 
-	var power_sphere := SphereMesh.new()
-	power_sphere.radius = 0.26
-	power_sphere.height = 0.52
-	power_sphere.material = power_material
+	var power_sphere: Mesh = _pickup_mesh(city_theme.power_shape, city_theme.power_size, power_material)
 	for cell in power_cells:
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = power_sphere
 		mesh.position = Vector3(cell.y * CELL, 0.4, cell.x * CELL)
+		if city_theme.power_diamond:
+			# stood on its tip: a diamond, its own shape next to the cube pellets
+			mesh.basis = Basis.from_euler(Vector3(PI * 0.25, 0.0, PI * 0.25))
 		var light := OmniLight3D.new()
-		light.light_color = Color(1.0, 0.365, 0.635)
+		light.light_color = city_theme.power_color
 		light.omni_range = 2.4
 		light.light_energy = 0.7
 		mesh.add_child(light)
@@ -718,6 +858,40 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		_build_word_powerup_mesh(cell)
 	for cell in fear_powerup_cells:
 		_build_fear_powerup_mesh(cell)
+
+
+func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
+	if shape == "cube":
+		var b := BoxMesh.new()
+		b.size = Vector3.ONE * size * 2.0
+		b.material = mat
+		return b
+	var sp := SphereMesh.new()
+	sp.radius = size
+	sp.height = size * 2.0
+	sp.material = mat
+	return sp
+
+
+## Full-screen overlay (the Speedrun look's CRT lines + vignette) on a
+## CanvasLayer below the HUD (layer 0 < the HUD's 1), so it shades the 3D
+## view but not the HUD text. Child of MazeView, so a rebuild (e.g. into
+## Manhattan) removes it again.
+func _build_screen_overlay() -> void:
+	if city_theme.screen_overlay_shader_path == "":
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "ScreenOverlay"
+	layer.layer = 0
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var m := ShaderMaterial.new()
+	m.shader = load(city_theme.screen_overlay_shader_path)
+	rect.material = m
+	layer.add_child(rect)
+	add_child(layer)
+	screen_overlay = layer
 
 
 func total_pickups() -> int:
@@ -813,8 +987,12 @@ func _process(delta: float) -> void:
 	_t += delta
 	for i in power_nodes.size():
 		if power_alive[i]:
-			var s := 1.0 + sin(_t * 6.0 + i) * 0.14
-			power_nodes[i].scale = Vector3.ONE * s
+			if city_theme != null and city_theme.power_blink_hz > 0.0:
+				# on/off like an arcade energizer, but slow (below 3 Hz)
+				power_nodes[i].visible = fmod(_t * city_theme.power_blink_hz, 1.0) < city_theme.power_blink_on_fraction
+			else:
+				var s := 1.0 + sin(_t * 6.0 + i) * 0.14
+				power_nodes[i].scale = Vector3.ONE * s
 	if fruit_alive and fruit_node != null:
 		fruit_node.rotate_y(delta * 1.4)
 	for i in word_powerup_nodes.size():

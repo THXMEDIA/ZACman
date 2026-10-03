@@ -8,19 +8,49 @@ extends RefCounted
 const ManhattanMazeScript := preload("res://scripts/manhattan_maze.gd")
 const CityThemeScript := preload("res://scripts/city_theme.gd")
 
-## Matrix-ASCII levels' word-built-world skin (the Word Mode power-up look).
-## Flat Matrix green, matching the ASCII look it's switching out of.
+## ---- Speedrun base look "Lagune" (docs/design/kaninchen-speedrun.md 1.1) ----
+## Every wall has the same turquoise glowing top edge; the gradient down to
+## the base changes per level (look "lagune" or "riff", Levels.POOL[].look).
+## No line color may sit in the blue hue range 215-250 deg (legal distance
+## to the arcade original; tests/bot_test.gd and test_city_themes.gd check it).
+const LOOK_LINE_TOP := Color("1ef2c8") # turquoise top edge, all levels
+const LOOK_BASE_LAGUNE := Color("0b7fa8") # gradient to the base, Klassik I/III, Offen
+const LOOK_BASE_RIFF := Color("1fbf5a") # gradient to the base, Klassik II/IV, Durchbruch
+const LOOK_WALL_BODY := Color("06141c") # dark wall mass
+const LOOK_ROOM := Color("05070b") # background, fog and ceiling
+const LOOK_FLOOR := Color("0d0f16") # lit floor (not unshaded: ghost light shows round corners)
+const LOOK_AMBIENT := Color(0.45, 0.55, 0.6)
+const LOOK_FOG_DENSITY := 0.022
+const LOOK_MINIMAP_WALL := Color("128f7c") # deliberately not blue
+const LOOK_PELLET := Color("fff0c8") # cream cubes
+const LOOK_PELLET_EMISSION := Color("ffd98a")
+const LOOK_POWER_EMISSION := Color("ffd27a")
+const LOOK_POWER_BLINK_HZ := 2.0 # below 3 Hz (photosensitivity)
+
+## Ghost colors (spec 1.1). Danger = warm and saturated; no green (clashes
+## with the Matrix condition), no cyan, never the gradient color of the level.
+const GHOST_JAEGER := {"role": "jaeger", "color": Color("ff3049"), "glow": Color("ff6a7a")}
+const GHOST_ABFAENGER := {"role": "abfaenger", "color": Color("e2ff3a"), "glow": Color("efff8a")}
+const GHOST_STREUNER := {"role": "streuner", "color": Color("a65cff"), "glow": Color("c79bff")} # Lagune levels only
+const GHOST_LAUERER := {"role": "lauerer", "color": Color("ffa41f"), "glow": Color("ffc56e")}
+const GHOST_NACHZUEGLER := {"role": "nachzuegler", "color": Color("ff36c8"), "glow": Color("ff85dd")}
+const GHOST_FRIGHTENED := Color("bdfcef")
+
+
+## The Speedrun levels: Pac-Man base look "Lagune" (wall/floor shaders, CRT
+## overlay, cream pickups, "Schild mit Visier" ghosts). The word-built-world
+## fields below are the Word Mode power-up skin, still in Matrix green until
+## Etappe 2 replaces Word Mode with the rabbit conditions.
 static func normal() -> Resource:
 	var t = CityThemeScript.new()
 	t.id = "normal"
-	t.display_name = "Matrix"
+	t.display_name = "Speedrun"
 	t.wall_word = "WALL"
 	t.wall_font_size = 30
 	t.wall_depth_scale = 0.6
 	t.wall_emission_energy = 1.1
 	t.wall_palette = [Color(0.25, 1.0, 0.35)]
 	t.wall_alternate_rotation = true
-	t.wall_matrix_rain = true
 	t.landmark_provider_script = null
 
 	# Corridors a bit tighter/more claustrophobic (per user request): walls
@@ -32,23 +62,55 @@ static func normal() -> Resource:
 	# MazeView constant since it's shared by every theme.
 	t.wall_footprint_scale = 1.12
 
-	# Brown dirt ground + a bright blue "sky" ceiling with blocky white
-	# clouds (see ceil_sky_clouds / cloud_mesh.gd) — a deliberate Super-
-	# Mario/Minecraft mashup against the green Matrix-code walls, per the
-	# user's request.
-	t.floor_color = Color(0.36, 0.22, 0.1)
-	t.floor_roughness = 0.85
-	t.ceil_color = Color(0.35, 0.65, 1.0)
-	t.ceil_emission_enabled = true
-	t.ceil_emission_color = Color(0.35, 0.65, 1.0)
-	t.ceil_emission_energy = 0.35
-	t.ceil_sky_clouds = true
+	# Dark channels, glowing edges; no sky, no clouds, no Mario vista (those
+	# are tied to ceil_sky_clouds), a plain dark ceiling at wall height.
+	t.wall_matrix_rain = false
+	t.wall_shader_path = "res://shaders/pacman_wall.gdshader"
+	t.floor_shader_path = "res://shaders/pacman_floor.gdshader"
+	t.screen_overlay_shader_path = "res://shaders/crt_overlay.gdshader"
+	t.floor_color = LOOK_FLOOR
+	t.floor_roughness = 0.9
+	t.ceil_color = LOOK_ROOM
+	t.ceil_emission_enabled = false
+	t.ceil_sky_clouds = false
 
-	t.env_bg_color = Color(0.35, 0.65, 1.0)
-	t.env_fog_color = Color(0.35, 0.65, 1.0)
-	t.env_fog_density = 0.015
-	t.env_ambient_color = Color(0.55, 0.7, 0.85)
-	t.env_ambient_energy = 1.1
+	var lagune := {"top": LOOK_LINE_TOP, "base": LOOK_BASE_LAGUNE, "body": LOOK_WALL_BODY,
+		"ghosts": [GHOST_JAEGER, GHOST_ABFAENGER, GHOST_STREUNER, GHOST_LAUERER, GHOST_NACHZUEGLER]}
+	# Riff: violet Streuner left out (spec 1.1: violet only in Lagune levels);
+	# a fifth ghost repeats the palette from the start.
+	var riff := {"top": LOOK_LINE_TOP, "base": LOOK_BASE_RIFF, "body": LOOK_WALL_BODY,
+		"ghosts": [GHOST_JAEGER, GHOST_ABFAENGER, GHOST_LAUERER, GHOST_NACHZUEGLER]}
+	t.level_looks = {"lagune": lagune, "riff": riff}
+	t.default_level_look = "lagune"
+	t.ghost_palette = lagune.ghosts
+	t.ghost_emission_energy = 1.4
+	t.ghost_frightened_color = GHOST_FRIGHTENED
+	t.ghost_frightened_emission = GHOST_FRIGHTENED * 0.55
+	t.minimap_wall_color = LOOK_MINIMAP_WALL
+	t.minimap_bg_color = Color(0.0, 0.0, 0.0, 0.9)
+	t.minimap_frightened_color = GHOST_FRIGHTENED
+
+	t.env_bg_color = LOOK_ROOM
+	t.env_fog_color = LOOK_ROOM
+	t.env_fog_density = LOOK_FOG_DENSITY
+	t.env_ambient_color = LOOK_AMBIENT
+	t.env_ambient_energy = 0.9
+
+	# Pickups: small bright cream cubes in a row at ~0.4 m; the power pellet
+	# is the same hue, bigger, stood on its tip (diamond) and blinking slowly.
+	t.pellet_color = LOOK_PELLET
+	t.pellet_emission = LOOK_PELLET_EMISSION
+	t.pellet_energy = 0.9
+	t.pellet_shape = "cube"
+	t.pellet_size = 0.075
+	t.pellet_height = 0.42
+	t.power_color = LOOK_PELLET
+	t.power_emission = LOOK_POWER_EMISSION
+	t.power_energy = 1.4
+	t.power_shape = "cube"
+	t.power_size = 0.2
+	t.power_diamond = true
+	t.power_blink_hz = LOOK_POWER_BLINK_HZ
 
 	t.has_power_ups = true
 	t.permanently_word_built = false

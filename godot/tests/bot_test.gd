@@ -8,6 +8,7 @@ extends Node
 ## Exits with code 0 if every check passes, 1 otherwise.
 
 const SaveIsolation := preload("res://tests/save_isolation.gd")
+const LevelsScript := preload("res://scripts/levels.gd")
 
 var main
 var failures := 0
@@ -30,6 +31,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	await _run_checks()
+	await _run_look_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -118,20 +120,21 @@ func _run_checks() -> void:
 	var start_dr: int = roundi(-cos(start_yaw))
 	_check("level start: player faces an open neighbor cell, not a wall", MazeGen.is_open(main.maze, main.start_cell.x + start_dr, main.start_cell.y + start_dc), "start_cell=%s yaw=%f dr=%d dc=%d" % [main.start_cell, start_yaw, start_dr, start_dc])
 
-	# ---- Matrix wall shader: much more glyph variance, and the new
-	# darker-but-more-luminous color tuning ----
+	# ---- Speedrun base look "Lagune" (spec 1.1): wall/floor shaders.
+	# Replaces the old matrix_rain checks; the Matrix look becomes a rabbit
+	# condition in Etappe 2. More look checks in _run_look_checks(). ----
 	var wall_shader: Shader = main.maze_view.wall_material.shader
-	_check("matrix wall: glyph table has far more than the original 10 shapes", wall_shader.code.find("GLYPH_COUNT = 31") != -1)
-	# Uniforms aren't overridden per-material here (no set_shader_parameter
-	# call — see MazeView._make_materials), so get_shader_parameter() would
-	# just return the "no override" nil rather than the shader's own default;
-	# check the darker/more-saturated defaults straight in the shader source
-	# instead.
-	_check("matrix wall: bg_color default is darker than before", wall_shader.code.find("bg_color = vec3(0.0004, 0.006, 0.002)") != -1)
-	_check("matrix wall: glyph_color default is a deeper, more saturated green", wall_shader.code.find("glyph_color = vec3(0.05, 0.92, 0.18)") != -1)
-	_check("matrix wall: emission boosted for more glow", wall_shader.code.find("EMISSION = color * 2.6") != -1)
-	_check("matrix wall: corridors narrowed via a bigger-than-CELL wall footprint", main.maze_view.city_theme.wall_footprint_scale > 1.0)
-	_check("matrix wall: taller than the previous WALL_H", main.maze_view.WALL_H > 3.8)
+	_check("speedrun wall: pacman_wall shader in use", wall_shader.resource_path == "res://shaders/pacman_wall.gdshader")
+	_check("speedrun wall: psychedelic_amount uniform kept (Fear & Loathing until Etappe 2)", wall_shader.code.find("uniform float psychedelic_amount") != -1)
+	_check("speedrun wall: lines antialiased via fwidth", wall_shader.code.find("fwidth(") != -1)
+	_check("speedrun wall: half_w derived from cell", wall_shader.code.find("cell * 0.5") != -1)
+	_check("speedrun wall: base dashes every 0.5 m", wall_shader.code.find("uniform float dash_len = 0.5;") != -1)
+	var floor_mat = main.maze_view.floor_mesh.material_override
+	_check("speedrun floor: pacman_floor shader in use", floor_mat is ShaderMaterial and floor_mat.shader.resource_path == "res://shaders/pacman_floor.gdshader")
+	_check("speedrun floor: lit, not unshaded (ghost light visible)", floor_mat is ShaderMaterial and _shader_render_mode(floor_mat.shader).find("unshaded") == -1)
+	_check("speedrun look: no wall line color in the blue hue range 215-250 deg", _theme_line_colors_not_blue(main.maze_view.city_theme))
+	_check("speedrun wall: corridors narrowed via a bigger-than-CELL wall footprint", main.maze_view.city_theme.wall_footprint_scale > 1.0)
+	_check("speedrun wall: taller than the previous WALL_H", main.maze_view.WALL_H > 3.8)
 
 	# ---- Background music: an original synthesized "arcade" loop starts a
 	# normal run (see Sfx.play_arcade_music / audio_synth.gd) ----
@@ -142,9 +145,10 @@ func _run_checks() -> void:
 			all_house = false
 	_check("begin_game: enemies start in house", all_house)
 
-	# ---- sky clouds float well above the wall tops, not right at them ----
+	# ---- no sky clouds in the Speedrun look (spec 1.1); should a theme
+	# bring them back, they must still float well above the wall tops ----
 	var mv: Node = main.maze_view
-	_check("sky clouds: at least one spawned on a normal level", mv.sky_cloud_nodes.size() > 0, "got %d" % mv.sky_cloud_nodes.size())
+	_check("sky clouds: none in the Speedrun look", mv.sky_cloud_nodes.size() == 0, "got %d" % mv.sky_cloud_nodes.size())
 	var lowest_cloud_y := INF
 	for cloud in mv.sky_cloud_nodes:
 		lowest_cloud_y = minf(lowest_cloud_y, cloud.position.y)
@@ -804,3 +808,148 @@ func _run_checks() -> void:
 	_check("conditions: clearing the condition removes it from the player", main.current_condition == null and main.player.active_condition == null)
 
 	Speedrun.reset_all()
+
+
+## ---------------- Speedrun look "Lagune", look API, Manhattan unchanged ----------------
+
+const CityThemesScript := preload("res://scripts/city_themes.gd")
+const CityThemeScript := preload("res://scripts/city_theme.gd")
+
+
+func _shader_render_mode(shader: Shader) -> String:
+	for line in shader.code.split("\n"):
+		if line.begins_with("render_mode"):
+			return line
+	return ""
+
+
+func _is_blue_hue(c: Color) -> bool:
+	var hdeg := c.h * 360.0
+	return c.s > 0.05 and hdeg >= 215.0 and hdeg <= 250.0
+
+
+## Every wall line color of every level look plus the minimap wall color.
+func _theme_line_colors_not_blue(ct) -> bool:
+	for look_id in ct.level_looks:
+		for role in ["top", "base"]:
+			if _is_blue_hue(ct.level_looks[look_id][role]):
+				return false
+	return not _is_blue_hue(ct.minimap_wall_color)
+
+
+func _has_tunnel_vista(mv) -> bool:
+	for ch in mv.get_children():
+		if ch is MeshInstance3D and ch.mesh is QuadMesh and ch.mesh.material is ShaderMaterial and ch.mesh.material.shader.resource_path.ends_with("mario_vista.gdshader"):
+			return true
+	return false
+
+
+func _ghost_colors_ok(ghosts: Array, look: Dictionary) -> String:
+	for e in ghosts:
+		var c: Color = e.palette_color
+		var hdeg := c.h * 360.0
+		if c.s > 0.3 and hdeg >= 75.0 and hdeg <= 165.0:
+			return "green ghost %s" % c.to_html(false)
+		if c.s > 0.3 and hdeg > 165.0 and hdeg <= 205.0:
+			return "cyan ghost %s" % c.to_html(false)
+		if c.is_equal_approx(look.base) or c.is_equal_approx(look.top):
+			return "ghost in the level's gradient color %s" % c.to_html(false)
+	return ""
+
+
+func _run_look_checks() -> void:
+	var lagune_base: Color = CityThemesScript.LOOK_BASE_LAGUNE
+	var riff_base: Color = CityThemesScript.LOOK_BASE_RIFF
+	var violet: Color = CityThemesScript.GHOST_STREUNER.color
+
+	# ---- Klassik I: look "lagune" ----
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	var mv = main.maze_view
+	var ct = mv.city_theme
+	_check("look klassik-1: level look is lagune", mv.level_look_id == "lagune", mv.level_look_id)
+	_check("look klassik-1: wall gradient #0B7FA8", Color(mv.wall_material.get_shader_parameter("line_base")).is_equal_approx(lagune_base))
+	_check("look klassik-1: top edge #1EF2C8", Color(mv.wall_material.get_shader_parameter("line_top")).is_equal_approx(Color("1ef2c8")))
+	_check("look klassik-1: wall mass #06141C", Color(mv.wall_material.get_shader_parameter("body_color")).is_equal_approx(Color("06141c")))
+	_check("look klassik-1: floor albedo #0D0F16", Color(mv.floor_mesh.material_override.get_shader_parameter("floor_albedo")).is_equal_approx(Color("0d0f16")))
+	_check("look: background and fog #05070B", main.world_env.environment.background_color.is_equal_approx(Color("05070b")) and main.world_env.environment.fog_light_color.is_equal_approx(Color("05070b")))
+	_check("look: no sky clouds, no Mario vista in the tunnel", mv.sky_cloud_nodes.is_empty() and not _has_tunnel_vista(mv) and not ct.ceil_sky_clouds)
+	_check("look: wall instances carry the neighbor mask", mv.normal_wall_mmi.multimesh.use_custom_data)
+	var overlay = mv.screen_overlay
+	var overlay_ok: bool = overlay != null and overlay.layer < main.hud.layer and overlay.get_child(0).material.shader.resource_path == "res://shaders/crt_overlay.gdshader"
+	_check("look: CRT overlay below the HUD", overlay_ok)
+	if overlay_ok:
+		var crt: Shader = overlay.get_child(0).material.shader
+		_check("look: CRT overlay has 270 lines per image height, no TIME (no flicker)", crt.code.find("line_count = 270.0") != -1 and crt.code.find("TIME") == -1)
+	_check("look: pellets are cream cubes at ~0.4 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is BoxMesh and absf(mv.pellet_meshes[0].position.y - 0.42) < 0.01 and ct.pellet_color.is_equal_approx(Color("fff0c8")))
+	_check("look: power pellet is a diamond blinking below 3 Hz", mv.power_nodes.size() > 0 and mv.power_nodes[0].mesh is BoxMesh and absf(mv.power_nodes[0].rotation.x) > 0.1 and ct.power_blink_hz > 0.0 and ct.power_blink_hz < 3.0)
+	_check("look: minimap walls #128F7C", ct.minimap_wall_color.is_equal_approx(Color("128f7c")))
+	_check("look: no wall line in the blue hue range 215-250 deg (all looks + minimap)", _theme_line_colors_not_blue(ct))
+	var k1_err := _ghost_colors_ok(main.enemies, mv.level_look)
+	_check("look klassik-1: no green, cyan or gradient-colored ghost", k1_err == "", k1_err)
+	var has_violet := false
+	for e in main.enemies:
+		if e.palette_color.is_equal_approx(violet):
+			has_violet = true
+	_check("look klassik-1: Streuner is violet in a Lagune level", has_violet)
+	_check("look: frightened ghosts #BDFCEF", main.enemies[0].frightened_color.is_equal_approx(Color("bdfcef")))
+
+	# ---- Look API (prepared for Etappe 2): swap materials on the same instances ----
+	var wall_mmi = mv.normal_wall_mmi
+	var floor_node = mv.floor_mesh
+	var base_wall = wall_mmi.material_override
+	var base_floor = floor_node.material_override
+	var children_before: int = mv.get_child_count()
+	var collision_before: int = mv.walls_body.get_child_count()
+	_check("look API: base look registered and active", mv.has_look(mv.LOOK_BASE) and mv.current_look == mv.LOOK_BASE and base_wall == mv.wall_material)
+	var test_wall := ShaderMaterial.new()
+	test_wall.shader = base_wall.shader
+	var test_floor := StandardMaterial3D.new()
+	mv.register_look("test_condition", test_wall, test_floor)
+	var switched: bool = mv.set_look("test_condition")
+	_check("look API: switch to another look swaps materials in place", switched and mv.normal_wall_mmi == wall_mmi and mv.floor_mesh == floor_node and wall_mmi.material_override == test_wall and floor_node.material_override == test_floor and mv.wall_material == test_wall and mv.current_look == "test_condition")
+	_check("look API: no second wall set, collision untouched", mv.get_child_count() == children_before and mv.walls_body.get_child_count() == collision_before)
+	mv.set_look_param("psychedelic_amount", 0.5)
+	_check("look API: set_look_param reaches the current look's shader", is_equal_approx(float(test_wall.get_shader_parameter("psychedelic_amount")), 0.5))
+	mv.register_look("wall_only", test_wall, null)
+	mv.set_look("wall_only")
+	_check("look API: a null floor material keeps the base floor", floor_node.material_override == base_floor and wall_mmi.material_override == test_wall)
+	var back: bool = mv.set_look(mv.LOOK_BASE)
+	_check("look API: back to the base look restores the original materials", back and wall_mmi.material_override == base_wall and floor_node.material_override == base_floor and mv.wall_material == base_wall)
+	_check("look API: unknown look id is refused", mv.set_look("does_not_exist") == false and mv.current_look == mv.LOOK_BASE)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("look API: a rebuild starts on the base look again", main.maze_view.current_look == main.maze_view.LOOK_BASE and not main.maze_view.has_look("test_condition"))
+
+	# ---- Klassik II: look "riff" ----
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	mv = main.maze_view
+	_check("look klassik-2: level look is riff", mv.level_look_id == "riff", mv.level_look_id)
+	_check("look klassik-2: wall gradient #1FBF5A", Color(mv.wall_material.get_shader_parameter("line_base")).is_equal_approx(riff_base))
+	var k2_err := _ghost_colors_ok(main.enemies, mv.level_look)
+	_check("look klassik-2: no green, cyan or gradient-colored ghost", k2_err == "", k2_err)
+	var violet_in_riff := false
+	for e in main.enemies:
+		if e.palette_color.is_equal_approx(violet):
+			violet_in_riff = true
+	_check("look klassik-2: no violet Streuner in a Riff level", not violet_in_riff)
+	var looks_ok := true
+	for lv in LevelsScript.POOL:
+		if not ct.level_looks.has(lv.get("look", "")):
+			looks_ok = false
+	_check("look: every pool level names a known look", looks_ok)
+
+	# ---- Manhattan keeps its own look (nothing of the Speedrun look leaks in) ----
+	main.begin_manhattan_game()
+	await get_tree().process_frame
+	mv = main.maze_view
+	var man = CityThemesScript.get_theme("manhattan")
+	var defaults = CityThemeScript.new()
+	_check("manhattan unchanged: no CRT overlay", mv.screen_overlay == null)
+	_check("manhattan unchanged: plain StandardMaterial3D walls and floor", mv.normal_wall_mmi.material_override is StandardMaterial3D and mv.floor_mesh.material_override is StandardMaterial3D and not mv.normal_wall_mmi.multimesh.use_custom_data)
+	_check("manhattan unchanged: floor color", mv.floor_mesh.material_override.albedo_color.is_equal_approx(man.floor_color))
+	_check("manhattan unchanged: no level look", mv.level_look_id == "" and mv.level_look.is_empty())
+	_check("manhattan unchanged: environment", main.world_env.environment.background_color.is_equal_approx(man.env_bg_color) and main.world_env.environment.fog_light_color.is_equal_approx(man.env_fog_color))
+	_check("manhattan unchanged: pellets are the original spheres at 0.32 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is SphereMesh and is_equal_approx(mv.pellet_meshes[0].mesh.radius, 0.11) and is_equal_approx(mv.pellet_meshes[0].position.y, 0.32))
+	_check("manhattan unchanged: original minimap and pickup colors", man.minimap_wall_color == defaults.minimap_wall_color and man.minimap_bg_color == defaults.minimap_bg_color and man.pellet_color == defaults.pellet_color)
