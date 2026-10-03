@@ -31,7 +31,7 @@ const LOOK_POWER_BLINK_HZ := 2.0 # below 3 Hz (photosensitivity)
 ## with the Matrix condition), no cyan, never the gradient color of the level.
 const GHOST_JAEGER := {"role": "jaeger", "color": Color("ff3049"), "glow": Color("ff6a7a")}
 const GHOST_ABFAENGER := {"role": "abfaenger", "color": Color("e2ff3a"), "glow": Color("efff8a")}
-const GHOST_STREUNER := {"role": "streuner", "color": Color("a65cff"), "glow": Color("c79bff")} # Lagune levels only
+const GHOST_STREUNER := {"role": "streuner", "color": Color("a65cff"), "glow": Color("c79bff")} # all levels (studio head, 03.10.2026)
 const GHOST_LAUERER := {"role": "lauerer", "color": Color("ffa41f"), "glow": Color("ffc56e")}
 const GHOST_NACHZUEGLER := {"role": "nachzuegler", "color": Color("ff36c8"), "glow": Color("ff85dd")}
 const GHOST_FRIGHTENED := Color("bdfcef")
@@ -76,10 +76,11 @@ static func normal() -> Resource:
 
 	var lagune := {"top": LOOK_LINE_TOP, "base": LOOK_BASE_LAGUNE, "body": LOOK_WALL_BODY,
 		"ghosts": [GHOST_JAEGER, GHOST_ABFAENGER, GHOST_STREUNER, GHOST_LAUERER, GHOST_NACHZUEGLER]}
-	# Riff: violet Streuner left out (spec 1.1: violet only in Lagune levels);
-	# a fifth ghost repeats the palette from the start.
+	# Riff: the violet Streuner stays too (decision of the studio head,
+	# 03.10.2026: the Riff gradient is green, no clash), so Klassik IV has
+	# five distinguishable ghost colors instead of repeating the Jaeger.
 	var riff := {"top": LOOK_LINE_TOP, "base": LOOK_BASE_RIFF, "body": LOOK_WALL_BODY,
-		"ghosts": [GHOST_JAEGER, GHOST_ABFAENGER, GHOST_LAUERER, GHOST_NACHZUEGLER]}
+		"ghosts": [GHOST_JAEGER, GHOST_ABFAENGER, GHOST_STREUNER, GHOST_LAUERER, GHOST_NACHZUEGLER]}
 	t.level_looks = {"lagune": lagune, "riff": riff}
 	t.default_level_look = "lagune"
 	t.ghost_palette = lagune.ghosts

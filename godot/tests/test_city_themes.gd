@@ -63,9 +63,9 @@ func _initialize() -> void:
 	for g in riff_ghosts:
 		if g.role == "streuner":
 			riff_has_violet = true
-	if lagune_ghosts.size() != 5 or riff_has_violet or riff_ghosts.size() < 4:
+	if lagune_ghosts.size() != 5 or not riff_has_violet or riff_ghosts.size() != 5:
 		failures += 1
-		print("FAIL Lagune should have all five ghost colors, Riff no violet Streuner")
+		print("FAIL Lagune and Riff should both have all five ghost colors incl. the violet Streuner (studio head, 03.10.2026)")
 	checks += 1
 	if normal.env_bg_color != Color("05070b") or normal.floor_color != Color("0d0f16") or normal.ceil_color != Color("05070b"):
 		failures += 1

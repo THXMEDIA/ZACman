@@ -933,7 +933,13 @@ func _run_look_checks() -> void:
 	for e in main.enemies:
 		if e.palette_color.is_equal_approx(violet):
 			violet_in_riff = true
-	_check("look klassik-2: no violet Streuner in a Riff level", not violet_in_riff)
+	_check("look klassik-2: violet Streuner in a Riff level too (studio head 03.10.)", violet_in_riff)
+	main.begin_game("klassik-4")
+	await get_tree().process_frame
+	var k4_colors := {}
+	for e in main.enemies:
+		k4_colors[e.palette_color.to_html(false)] = true
+	_check("look klassik-4: five ghosts, five distinguishable colors", main.enemies.size() == 5 and k4_colors.size() == 5, str(k4_colors.keys()))
 	var looks_ok := true
 	for lv in LevelsScript.POOL:
 		if not ct.level_looks.has(lv.get("look", "")):
