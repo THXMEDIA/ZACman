@@ -703,6 +703,41 @@ func _run_checks() -> void:
 	_check("tokyo: exactly one subway exit (地下鉄), in the station facade", main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("tokyo_metro_station.gd"))
 	_check("tokyo: pellets lead the way", main.maze_view.pellet_cells.size() > 40, "got %d" % main.maze_view.pellet_cells.size())
 	_check("tokyo: level seed from the city registry", main.maze_view.scenery_seed == 7310)
+	# ---- Tokyo M2: rain, traffic, passers-by, scramble (tokyo_life.gd) ----
+	var tk_life = main.tokyo_life
+	_check("tokyo M2: the moving city runs (rain, cars, people)", tk_life != null and tk_life.rain_mmi != null and tk_life.car_count() >= 12 and tk_life.walker_count() >= 125)
+	_check("tokyo M2: seeded with the city's level seed", tk_life != null and tk_life.seed_value == 7310)
+	var tk_car_p: Vector3 = tk_life.car_position(0)
+	var tk_car_f: Vector3 = tk_life.car_fwd[0]
+	var tk_side := Vector3(-tk_car_f.z, 0, tk_car_f.x)
+	main.player.global_position = Vector3(tk_car_p.x, main.player.global_position.y, tk_car_p.z) + tk_side * 0.4
+	main._check_explorer_obstacles()
+	var tk_car_d := Vector2(main.player.global_position.x - tk_car_p.x, main.player.global_position.z - tk_car_p.z).length()
+	_check("tokyo M2: a car is an obstacle (pushed out like Manhattan)", tk_car_d >= tk_life.CAR_RADIUS - 0.01, "%.2f" % tk_car_d)
+	var tk_wi := -1
+	for i in tk_life.walker_count():
+		if tk_life.walker_visible(i):
+			tk_wi = i
+			break
+	var tk_wp: Vector3 = tk_life.walker_position(tk_wi)
+	main.player.global_position = Vector3(tk_wp.x + 0.1, main.player.global_position.y, tk_wp.z)
+	var tk_score_before: int = main.score
+	var tk_lives_before: int = main.lives
+	main._check_explorer_obstacles()
+	_check("tokyo M2: passers-by are harmless (soft push, no score, no life lost)", main.score == tk_score_before and main.lives == tk_lives_before and Vector2(main.player.global_position.x - tk_wp.x, main.player.global_position.z - tk_wp.z).length() >= main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS - 0.01)
+	main.set_reduce_rain(true)
+	_check("tokyo M2: 'Regen reduzieren' stored, switches in sync, applied to the rain", SettingsScript.load_settings().reduce_rain and main.hud.reduce_rain_start.button_pressed and main.hud.reduce_rain_pause.button_pressed and tk_life.rain_visible_count() < 8000)
+	main.set_reduce_rain(false)
+	main.set_reduce_fx(true)
+	_check("tokyo M2: 'Effekte reduzieren' dampens the rain as well", tk_life.rain_visible_count() < 8000 and tk_life.rain_visible_count() > int(8000 * 0.35))
+	main.set_reduce_fx(false)
+	_check("tokyo M2: both off -> full rain, settings stored", tk_life.rain_visible_count() == 8000 and not SettingsScript.load_settings().reduce_rain)
+	_check("tokyo M2: the crossing tone exists (synthetic, short)", Sfx.has_method("crossing_signal") and Sfx.crossing_streams().size() == 2 and Sfx.crossing_streams()[0].get_length() < 0.2)
+	var tk_walk_tone := [0]
+	tk_life.walk_started.connect(func(): tk_walk_tone[0] += 1)
+	tk_life.advance(tk_life.WALK_START - tk_life.cycle_time + 0.1)
+	_check("tokyo M2: All Walk is announced (walk_started)", tk_walk_tone[0] == 1 and tk_life.is_walk_phase())
+	main.player.global_position = Vector3(main.start_cell.y * main.CELL, main.player.global_position.y, main.start_cell.x * main.CELL)
 	var tenv: Environment = main.world_env.environment
 	_check("tokyo: glow and SSR on, filmic tonemap", tenv.glow_enabled and tenv.ssr_enabled and tenv.tonemap_mode == Environment.TONE_MAPPER_FILMIC and not tenv.volumetric_fog_enabled)
 	_check("tokyo: warm player lamp, far plane for the skyline", main.player.light.light_color.is_equal_approx(tokyo_theme.player_light_color) and is_equal_approx(main.player.camera.far, tokyo_theme.camera_far))
@@ -743,6 +778,7 @@ func _run_checks() -> void:
 	_check("theme reset Tokyo -> speedrun: background, fog, sky affect of the speedrun", renv.background_color.is_equal_approx(normal_theme.env_bg_color) and is_equal_approx(renv.fog_density, normal_theme.env_fog_density) and is_equal_approx(renv.fog_sky_affect, 1.0))
 	_check("theme reset Tokyo -> speedrun: player lamp and far plane restored", main.player.light.light_color.is_equal_approx(speedrun_light) and is_equal_approx(main.player.camera.far, speedrun_far))
 	_check("theme reset Tokyo -> speedrun: the speedrun look is built (no neon city)", main.maze_view.scenery_root == null and main.maze_view.city_theme.id == "normal")
+	_check("theme reset Tokyo -> speedrun: no rain, traffic or passers-by left", main.tokyo_life == null)
 	main.skip_start_intro = true
 	main.begin_game()
 	await get_tree().process_frame
