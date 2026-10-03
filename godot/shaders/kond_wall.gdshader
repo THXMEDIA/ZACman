@@ -32,13 +32,18 @@ uniform float transition_radius = 18.0;
 uniform vec3 mx_bg : source_color = vec3(0.0, 0.012, 0.004);       // #000301
 uniform vec3 mx_dim : source_color = vec3(0.0, 0.10, 0.035);       // #001A09
 uniform vec3 mx_glyph : source_color = vec3(0.0, 0.85, 0.30);      // #00D94D
-uniform vec3 mx_head : source_color = vec3(0.80, 1.0, 0.86);       // #CCFFDB
+uniform vec3 mx_head : source_color = vec3(0.30, 1.0, 0.53);       // #4DFF88 — green, not near-white (UX-W2: no confusion with rabbit white / pellets)
 uniform vec3 mx_edge : source_color = vec3(0.0, 0.55, 0.22);       // #008C38
 uniform float mx_fall_speed = 8.0;
 uniform float mx_active_cols = 0.6;
 uniform float mx_near_density = 0.08; // share of drawn pixels right in front of the camera
 uniform float mx_mid_density = 0.72;  // ... at corridor width (grid glass)
 uniform float mx_far_density = 0.94;  // ... far away (maze stays readable)
+// "Effekte reduzieren" (UX-W4): the walls stay recognisably permeable — a
+// little denser right in front of the camera, never denser than mx_reduce_max;
+// only the rain gets calmer.
+uniform float mx_reduce_near = 0.3;
+uniform float mx_reduce_max = 0.8;
 // Fear & Loathing "Kippbild": two palettes of similar brightness
 uniform vec3 fc_a_low : source_color = vec3(0.17, 0.04, 0.24);     // #2B0A3D
 uniform vec3 fc_a_mid : source_color = vec3(0.70, 0.09, 0.36);     // #B3175C
@@ -65,7 +70,7 @@ void fragment() {
 	vec2 p = vec2(u_m, v_m) / glyph_cell;
 	vec2 face_salt = floor(n.xz * 3.0 + 3.5) * 17.0;
 
-	// derivatives in uniform control flow
+	// derivatives in uniform control flow (N3: all of them before any branch)
 	vec2 dp = fwidth(p);
 	float gfw = max(dp.x, dp.y) * 8.0;
 	vec2 gcell = floor(p);
@@ -76,6 +81,14 @@ void fragment() {
 	float d_bot = half_h + rel_y;        // distance to the bottom edge (m)
 	float aa_top = max(fwidth(d_top), 1e-4);
 	float aa_bot = max(fwidth(d_bot), 1e-4);
+
+	// Kippbild stripe coordinate and its derivative, also up front (N3)
+	float colw = 0.22;                          // drip columns 22 cm
+	float dcol = floor(u_m / colw);
+	float drip = (0.10 * sin(u_m * 2.3) + 0.06 * sin(u_m * 5.9 + 1.7) + 0.16 * k_hash1(dcol * 13.7 + face_salt.x)) * (1.0 - 0.6 * reduce_fx);
+	float heat = sin(u_m * 1.3 + TIME * 0.5) * 0.18 * (1.0 - 0.7 * reduce_fx);
+	float s0 = (wpos.y + drip + heat) * 1.1;
+	float aa = max(fwidth(s0), 1e-4);
 
 	vec3 c_alb = base_alb;
 	vec3 c_em = base_em;
@@ -112,9 +125,11 @@ void fragment() {
 		col = mix(mix(mx_bg, mx_dim, lit * 0.9), col, calm);
 		// near (< ~1.2 m) the wall opens almost fully, corridor distance grid
 		// glass, far almost dense -> maze structure stays readable
-		density = mix(mx_near_density, mx_mid_density, smoothstep(0.45, 1.3, dist));
+		float near_d = mix(mx_near_density, mx_reduce_near, reduce_fx);
+		density = mix(near_d, mx_mid_density, smoothstep(0.45, 1.3, dist));
 		density = mix(density, mx_far_density, smoothstep(2.5, 8.0, dist));
-		density = mix(density, 1.0, max(reduce_fx, matrix_solid));
+		density = mix(density, min(density, mx_reduce_max), reduce_fx);
+		density = mix(density, 1.0, matrix_solid);
 		if (!FRONT_FACING) {
 			// inside a wall: back faces as dimmed code -> "I am inside the program"
 			col *= 0.45;
@@ -129,19 +144,21 @@ void fragment() {
 		// steering manipulation acts (flip = 1) the palette tips into its
 		// complement and the stripes flow upward instead of downward. Same
 		// brightness in both states -> no flash, but an unmistakable signal.
-		float dir = mix(1.0, -1.0, step(0.5, flip));
-		float colw = 0.22;                          // drip columns 22 cm
-		float dcol = floor(u_m / colw);
-		float drip = (0.10 * sin(u_m * 2.3) + 0.06 * sin(u_m * 5.9 + 1.7) + 0.16 * k_hash1(dcol * 13.7 + face_salt.x)) * (1.0 - 0.6 * reduce_fx);
-		float heat = sin(u_m * 1.3 + TIME * 0.5) * 0.18 * (1.0 - 0.7 * reduce_fx);
-		float s = (wpos.y + drip + heat) * 1.1 + TIME * 0.12 * dir * (1.0 - 0.7 * reduce_fx);   // calm flow (~0.1 stripes/s)
-		float band = fract(s);
-		float aa = max(fwidth(s), 1e-4);
-		float stripe = smoothstep(0.5 - aa, 0.5 + aa, band) * (1.0 - smoothstep(1.0 - aa, 1.0, band));
+		// The flow direction cross-fades with flip (a downward and an upward
+		// stripe field, mixed) instead of jumping with step() (UX-K1).
+		// "Effekte reduzieren": the world does not tip at all (vflip 0) — Main
+		// shows a thin HUD frame instead.
+		float vflip = smoothstep(0.0, 1.0, flip * (1.0 - reduce_fx));
+		float flow = TIME * 0.12 * (1.0 - 0.7 * reduce_fx);   // calm flow (~0.1 stripes/s)
+		float band_dn = fract(s0 + flow);
+		float band_up = fract(s0 - flow);
+		float stripe_dn = smoothstep(0.5 - aa, 0.5 + aa, band_dn) * (1.0 - smoothstep(1.0 - aa, 1.0, band_dn));
+		float stripe_up = smoothstep(0.5 - aa, 0.5 + aa, band_up) * (1.0 - smoothstep(1.0 - aa, 1.0, band_up));
+		float stripe = mix(stripe_dn, stripe_up, vflip);
 		float h = clamp(wpos.y / wall_top, 0.0, 1.0);
 		vec3 pa = sunset(h, fc_a_low, fc_a_mid, fc_a_high);
 		vec3 pb = sunset(h, fc_b_low, fc_b_mid, fc_b_high);
-		vec3 pal = mix(pa, pb, flip);
+		vec3 pal = mix(pa, pb, vflip);
 		vec3 col = mix(pal * 0.42, pal * 0.76, stripe);
 		// dark skirting: the floor edge always stays readable
 		col *= mix(0.35, 1.0, smoothstep(0.0, 0.35, d_bot));
@@ -160,9 +177,13 @@ void fragment() {
 	// ---------------- transition base -> condition ----------------
 	float th = k_trans_threshold(floor(p), dist, transition_radius);
 	float mask = step(th, transition * 1.0001);
-	float front = (1.0 - smoothstep(0.0, 0.045, abs(transition - th))) * step(0.001, transition) * step(transition, 0.999) * float(look != 0);
-	// in the front the lines decay into glyphs in rabbit white
-	float fl = k_glyph(p, k_glyph_index(floor(p), 9.1, 2.0), gfw, 1.0) * front * (1.0 - 0.6 * reduce_fx);
+	// in the front the lines decay into glyphs in rabbit white — computed only
+	// while a transition runs (N3: uniform branch, gfw was taken above)
+	float fl = 0.0;
+	if (transition > 0.001 && transition < 0.999 && look != 0) {
+		float front = 1.0 - smoothstep(0.0, 0.045, abs(transition - th));
+		fl = k_glyph(p, k_glyph_index(floor(p), 9.1, 2.0), gfw, 1.0) * front * (1.0 - 0.6 * reduce_fx);
+	}
 
 	vec3 out_alb = mix(base_alb, c_alb, mask);
 	vec3 out_em = mix(base_em, c_em, mask);
@@ -173,6 +194,7 @@ void fragment() {
 	if (look == 1 && mask > 0.5 && fl < 0.5) {
 		// rain trails stay solid, except right in front of the camera
 		float keep = inrain > 0.5 ? mix(0.4, 1.0, smoothstep(0.4, 1.2, dist)) : density;
+		keep = max(mix(keep, min(keep, mx_reduce_max), reduce_fx), matrix_solid);
 		if (k_bayer(FRAGCOORD.xy) > keep) {
 			discard;
 		}

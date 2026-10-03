@@ -72,9 +72,10 @@ void fragment() {
 		vec2 f2 = fract(t + 0.5) - 0.5;
 		float small = 1.0 - smoothstep(0.05 - caa, 0.05 + caa, length(f2));
 		vec3 b3 = vec3(0.16, 0.42, 0.45);
-		vec3 c1 = mix(fc_carpet_a1, fc_carpet_a2, flip);
-		vec3 c2 = mix(fc_carpet_a2, fc_carpet_a1, flip);
-		vec3 c3 = mix(fc_carpet_a3, b3, flip);
+		float vflip = smoothstep(0.0, 1.0, flip * (1.0 - reduce_fx)); // reduced: the floor does not tip either
+		vec3 c1 = mix(fc_carpet_a1, fc_carpet_a2, vflip);
+		vec3 c2 = mix(fc_carpet_a2, fc_carpet_a1, vflip);
+		vec3 c3 = mix(fc_carpet_a3, b3, vflip);
 		vec3 col = mix(c1, c2, step(0.32, dia));
 		col = mix(col, c3, max(ring, max(dot_c, small)));
 		col *= 0.8;
@@ -90,8 +91,12 @@ void fragment() {
 
 	float th = k_trans_threshold(floor(p), dist, transition_radius);
 	float mask = step(th, transition * 1.0001);
-	float front = (1.0 - smoothstep(0.0, 0.045, abs(transition - th))) * step(0.001, transition) * step(transition, 0.999) * float(look != 0);
-	float fl = k_glyph(p, k_glyph_index(floor(p), 9.1, 2.0), gfw, 1.0) * front * (1.0 - 0.6 * reduce_fx);
+	// transition glyphs only while a transition runs (N3: uniform branch)
+	float fl = 0.0;
+	if (transition > 0.001 && transition < 0.999 && look != 0) {
+		float front = 1.0 - smoothstep(0.0, 0.045, abs(transition - th));
+		fl = k_glyph(p, k_glyph_index(floor(p), 9.1, 2.0), gfw, 1.0) * front * (1.0 - 0.6 * reduce_fx);
+	}
 	vec3 out_alb = mix(base_alb, c_alb, mask);
 	vec3 out_em = mix(base_em, c_em, mask);
 	out_alb = mix(out_alb, RABBIT_WHITE * 0.3, fl);

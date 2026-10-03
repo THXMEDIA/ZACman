@@ -12,6 +12,9 @@
 // Which neighbors are walls comes from MazeView per instance (INSTANCE_CUSTOM).
 // Every line is antialiased via fwidth() and fades to its mean on distance
 // (no shimmer); the mass is lit, so ghost lights show round corners.
+// N3: every derivative (fwidth) is taken up front, in uniform control flow —
+// the branches below (face direction, free wall ends) differ per fragment,
+// and derivatives inside them are undefined on some GPUs.
 
 uniform vec3 line_top : source_color = vec3(0.118, 0.949, 0.784);  // #1EF2C8
 uniform vec3 line_base : source_color = vec3(0.043, 0.498, 0.659); // #0B7FA8 Lagune; set per level look
@@ -40,11 +43,12 @@ void vertex() {
 	half_w = length(MODEL_MATRIX[0].xyz) * cell * 0.5;
 }
 
-// Antialiased line: d = distance to the center line (m), w = width (m).
+// Antialiased line: d = distance to the center line (m), w = width (m),
+// fw_d = fwidth(d), computed by the caller BEFORE any non-uniform branch (N3).
 // Below one pixel the line is drawn 1 px wide and correspondingly darker
 // instead of breaking up — no shimmer on distance.
-float line_aa(float d, float w) {
-	float fw = max(fwidth(d), 1e-5);
+float line_aa(float d, float w, float fw_d) {
+	float fw = max(fw_d, 1e-5);
 	float wc = max(w, fw);
 	float a = clamp((wc * 0.5 - abs(d)) / fw + 0.5, 0.0, 1.0);
 	return a * clamp(w / fw, 0.0, 1.0);
@@ -59,29 +63,34 @@ void pacman_wall(vec3 cam, out vec3 albedo, out vec3 emission) {
 	albedo = body_color * mix(1.0, 0.45, clamp(y / max(H, 0.01), 0.0, 1.0));
 	vec3 em = vec3(0.0);
 
+	// N3: all derivatives here, before the per-fragment branches.
+	bool face_x = abs(wnorm.x) > 0.5;
+	float along = face_x ? wpos.z : wpos.x;
+	float u = along / dash_len;
+	float h = face_x ? (wpos.z - center.z) : (wpos.x - center.x);
+	float fw_y = fwidth(y);          // = fwidth(top), the heights' lines
+	float fu = fwidth(u);
+	float fw_dash = fu * dash_len;   // d/dx of (fract(u) - 0.5) * dash_len without fract's jump
+	float fw_h = fwidth(h);
+
 	if (wnorm.y > 0.5) {
 		// Top face: hidden behind the ceiling at full wall height; plain mass.
 		albedo = body_color;
 	} else if (abs(wnorm.y) < 0.5) {
 		// Side faces
-		float rim = line_aa(top - edge_w * 0.5, edge_w);
+		float rim = line_aa(top - edge_w * 0.5, edge_w, fw_y);
 		float glow = exp(-max(top, 0.0) * 6.0) * 0.12;                 // halo under the top edge
-		float base = line_aa(y - base_w * 0.5 - 0.01, base_w);
-		bool face_x = abs(wnorm.x) > 0.5;
-		float along = face_x ? wpos.z : wpos.x;
-		float u = along / dash_len;
-		float fu = fwidth(u);
-		float dash = line_aa((fract(u) - 0.5) * dash_len, dash_len * 0.45);
+		float base = line_aa(y - base_w * 0.5 - 0.01, base_w, fw_y);
+		float dash = line_aa((fract(u) - 0.5) * dash_len, dash_len * 0.45, fw_dash);
 		dash = mix(dash, 0.45, clamp(fu * 1.5 - 0.5, 0.0, 1.0));       // on distance: fade to the mean, never moiré
-		float dash_band = line_aa(y - dash_y, dash_h) * dash;
+		float dash_band = line_aa(y - dash_y, dash_h, fw_y) * dash;
 		// vertical line only at free ends (corners/openings readable early)
-		float h = face_x ? (wpos.z - center.z) : (wpos.x - center.x);
 		bool open_neg = face_x ? (nb.r < 0.5) : (nb.b < 0.5);
 		bool open_pos = face_x ? (nb.g < 0.5) : (nb.a < 0.5);
 		float near_fade = smoothstep(1.3, 3.0, length(wpos - cam));
 		float vert = 0.0;
-		if (open_neg) { vert = max(vert, line_aa(h + half_w - base_w, base_w * 1.5) * near_fade); }
-		if (open_pos) { vert = max(vert, line_aa(half_w - h - base_w, base_w * 1.5) * near_fade); }
+		if (open_neg) { vert = max(vert, line_aa(h + half_w - base_w, base_w * 1.5, fw_h) * near_fade); }
+		if (open_pos) { vert = max(vert, line_aa(half_w - h - base_w, base_w * 1.5, fw_h) * near_fade); }
 		float wash = 0.07 * (1.0 - 0.75 * clamp(y / max(H, 0.01), 0.0, 1.0)); // dark turquoise mass instead of pure black
 		em = line_top * max(rim, glow) + line_base * max(base, dash_band) + grad * (vert * 0.85 + wash);
 	}

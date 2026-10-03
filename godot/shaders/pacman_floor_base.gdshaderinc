@@ -27,8 +27,9 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
-float line_aa(float d, float w) {
-	float fw = max(fwidth(d), 1e-5);
+// fw_d = fwidth(d), taken by the caller in uniform control flow (N3).
+float line_aa(float d, float w, float fw_d) {
+	float fw = max(fw_d, 1e-5);
 	float wc = max(w, fw);
 	float a = clamp((wc * 0.5 - abs(d)) / fw + 0.5, 0.0, 1.0);
 	return a * clamp(w / fw, 0.0, 1.0);
@@ -45,18 +46,23 @@ void pacman_floor(out vec3 albedo, out vec3 emission) {
 	}
 	vec2 local = (fract(g) - 0.5) * cell;   // meters from the cell center
 
+	// N3: every derivative before the (per-cell, non-uniform) junction branch.
+	vec2 fw_g = fwidth(g);
+	vec2 fw_m = fw_g * cell;                 // d/dx of the distance to a border, in m
+	vec2 q = abs(local);
+	float d_sq = max(q.x, q.y) - junction_half;
+	float d_ch = (q.x + q.y - (2.0 * junction_half - junction_chamfer)) * 0.70710678;
+	float d = max(d_sq, d_ch);
+	float fw_d = fwidth(d);
+
 	// grid: distance to the nearest cell border
 	vec2 db = cell * 0.5 - abs(local);
-	float grid = max(line_aa(db.x, grid_w), line_aa(db.y, grid_w));
-	float fade = clamp(1.0 - max(fwidth(g.x), fwidth(g.y)) * 6.0, 0.0, 1.0); // fade out far away
+	float grid = max(line_aa(db.x, grid_w, fw_m.x), line_aa(db.y, grid_w, fw_m.y));
+	float fade = clamp(1.0 - max(fw_g.x, fw_g.y) * 6.0, 0.0, 1.0); // fade out far away
 	vec3 em = line_base * grid * grid_strength * fade;
 
 	if (m.g > 0.5) {
-		vec2 q = abs(local);
-		float d_sq = max(q.x, q.y) - junction_half;
-		float d_ch = (q.x + q.y - (2.0 * junction_half - junction_chamfer)) * 0.70710678;
-		float d = max(d_sq, d_ch);
-		float frame = line_aa(d, junction_w);
+		float frame = line_aa(d, junction_w, fw_d);
 		float inner = (1.0 - smoothstep(-0.02, 0.02, d)) * 0.05;
 		em += line_top * (frame * junction_strength + inner);
 	}
