@@ -191,6 +191,29 @@ func _initialize() -> void:
 	ff.close()
 	lb.free()
 
+	# --- GD (03.10. review): the condition the rabbit gave is metadata of
+	# every entry (never part of the key), plus the local date (UX-W6) ---
+	var lm = lb_script.new()
+	lm.reset_all()
+	lm.date_override = "2026-10-03"
+	lm.submit_time("klassik-1", "woche", 120.0, "Player", "solo", "2026-W40", "matrix")
+	lm.submit_time("klassik-1", "woche", 125.0, "Player", "solo", "2026-W40", "")
+	lm.submit_time("klassik-1", "woche", 130.0, "Player", "solo", "2026-W40")
+	lm.submit_time("klassik-1", "woche", 135.0, "Player", "solo", "2026-W40", "kaputt")
+	var ct: Array = lm.get_top("klassik-1", "woche")
+	_check("cond: stored per entry (matrix / '' = no rabbit / '?' = unknown)", ct[0].cond == "matrix" and ct[1].cond == "" and ct[2].cond == "?" and ct[3].cond == "?", str(ct))
+	_check("cond: not part of the key — all four on the same board", ct.size() == 4 and lm._boards.size() == 1, str(lm._boards.keys()))
+	_check("date: stored per entry", ct[0].date == "2026-10-03")
+	lm.reload()
+	var ct2: Array = lm.get_top("klassik-1", "woche")
+	_check("cond and date survive save and load", ct2.size() == 4 and ct2[0].cond == "matrix" and ct2[1].cond == "" and ct2[0].date == "2026-10-03", str(ct2))
+	_write(lm.save_path(), JSON.stringify({"version": 3, "boards": {"klassik-2|woche|solo": [{"name": "Player", "time": 100.0, "week": "2026-W39"}]}}))
+	lm.reload()
+	var old_e: Dictionary = lm.get_top("klassik-2", "woche")[0]
+	_check("an older entry without cond/date loads as unknown", old_e.cond == "?" and old_e.date == "", str(old_e))
+	lm.reset_all()
+	lm.free()
+
 	# --- QA-W6: the real save file was never touched ----------------------
 	_check("the real save files are unchanged", SaveIsolation.end(real_saves))
 

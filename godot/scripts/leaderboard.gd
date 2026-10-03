@@ -18,6 +18,7 @@ extends Node
 ## so that swap is future work, not done here.
 
 const LevelsScript := preload("res://scripts/levels.gd")
+const ConditionsScript := preload("res://scripts/conditions.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 
 const SAVE_FILE := "zapmaniac_leaderboards.json"
@@ -28,7 +29,16 @@ const SAVE_FILE := "zapmaniac_leaderboards.json"
 ##   3: {"version": 3, "boards": {"level|board|mode": [entries]},
 ##      "archive": {old key: [entries]}}; entries {name, time, week} (week
 ##      "2026-W40" on the weekly board, "" = unknown/other boards).
+##      Since the 03.10. review fixes every entry also carries (additive, so
+##      the version stays 3; older entries load with the "unknown" values):
+##        cond  the condition the rabbit gave in that level: a Conditions id,
+##              "" = rabbit left alone, "?" = unknown (older entry) — metadata
+##              only, never part of the key (spec 2.5)
+##        date  local date of the run "YYYY-MM-DD", "" = unknown
 const SAVE_VERSION := 3
+## Entry `cond` values besides a Conditions id (see the version history).
+const COND_NONE := ""
+const COND_UNKNOWN := "?"
 const MAX_ENTRIES_PER_BOARD := 20
 const DEFAULT_PLAYER_NAME := "Player"
 
@@ -41,6 +51,8 @@ var archive: Dictionary = {}
 var loaded_version := 0
 var _loaded := false
 var _read_only := false
+## Tests: the date stored with new entries ("" = today, local time).
+var date_override := ""
 
 
 func _ready() -> void:
@@ -70,11 +82,14 @@ static func board_key(level_id: String, board: String, mode: String = "solo") ->
 
 ## Records a completed run's time on the (level_id, board, mode) board.
 ## `week` ("2026-W40") is stored with the entry on the weekly board only.
+## `cond` is the condition the rabbit gave in the level ("" = none,
+## COND_UNKNOWN when the caller does not know); the entry also gets today's
+## local date.
 ## Returns {rank: int (1-based, -1 if it didn't make the top
 ## MAX_ENTRIES_PER_BOARD or the key is invalid), is_new_best: bool (a
 ## personal best for this player name on this specific board)}. An unknown
 ## level, board or mode records nothing (Code-W8: no silent new boards).
-func submit_time(level_id: String, board: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME, mode: String = "solo", week: String = "") -> Dictionary:
+func submit_time(level_id: String, board: String, time_seconds: float, player_name: String = DEFAULT_PLAYER_NAME, mode: String = "solo", week: String = "", cond: String = COND_UNKNOWN) -> Dictionary:
 	_load()
 	var key := board_key(level_id, board, mode)
 	if not LevelsScript.is_valid_board_key(key):
@@ -88,7 +103,7 @@ func submit_time(level_id: String, board: String, time_seconds: float, player_na
 			previous_best = entry.time
 	var is_new_best: bool = time_seconds < previous_best
 
-	entries.append({"name": player_name, "time": time_seconds, "week": week if board == LevelsScript.BOARD_WEEK else ""})
+	entries.append({"name": player_name, "time": time_seconds, "week": week if board == LevelsScript.BOARD_WEEK else "", "cond": sanitize_cond(cond), "date": today()})
 	entries.sort_custom(func(a, b): return a.time < b.time)
 	if entries.size() > MAX_ENTRIES_PER_BOARD:
 		entries.resize(MAX_ENTRIES_PER_BOARD)
@@ -103,7 +118,8 @@ func submit_time(level_id: String, board: String, time_seconds: float, player_na
 	return {"rank": rank, "is_new_best": is_new_best}
 
 
-## Top `n` entries for a board, fastest first. Each entry: {name, time, week}.
+## Top `n` entries for a board, fastest first. Each entry: {name, time,
+## week, cond, date}.
 func get_top(level_id: String, board: String, n: int = MAX_ENTRIES_PER_BOARD, mode: String = "solo") -> Array:
 	_load()
 	var key := board_key(level_id, board, mode)
@@ -138,6 +154,7 @@ func _load() -> void:
 	f.close()
 	var parsed = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
+		SavePathsScript.backup_corrupt(path) # W4: kept before the next save overwrites it
 		return
 	var version := file_version(parsed)
 	if version > SAVE_VERSION:
@@ -145,13 +162,16 @@ func _load() -> void:
 		_read_only = true
 		return
 	loaded_version = version
+	var broken := false
 	var raw_boards = parsed
 	if version >= 2:
 		raw_boards = parsed.get("boards", {})
 		if typeof(raw_boards) != TYPE_DICTIONARY:
 			raw_boards = {}
+			broken = true
 	for key in raw_boards.keys():
 		var old_key := str(key)
+		broken = broken or count_invalid(raw_boards[key]) > 0
 		var board := sanitize_board(raw_boards[key])
 		if board.is_empty():
 			continue
@@ -163,9 +183,16 @@ func _load() -> void:
 	var raw_archive = parsed.get("archive", {}) if version >= 3 else {}
 	if typeof(raw_archive) == TYPE_DICTIONARY:
 		for key in raw_archive.keys():
+			broken = broken or count_invalid(raw_archive[key]) > 0
 			var board := sanitize_board(raw_archive[key])
 			if not board.is_empty():
 				_put(archive, str(key), board)
+	else:
+		broken = true
+	if broken:
+		# W4: entries of the wrong type were dropped — keep the original file
+		# before the next save writes the cleaned boards over it.
+		SavePathsScript.backup_corrupt(path)
 
 
 ## Merges `board` into target[key] (fastest first, capped).
@@ -190,6 +217,55 @@ static func file_version(parsed: Dictionary) -> int:
 	return 1
 
 
+## Today's local date "YYYY-MM-DD" (or date_override in tests).
+func today() -> String:
+	if date_override != "":
+		return date_override
+	var d := Time.get_datetime_dict_from_system(false)
+	return "%04d-%02d-%02d" % [int(d.year), int(d.month), int(d.day)]
+
+
+## "" (no rabbit), a known condition id, otherwise COND_UNKNOWN.
+static func sanitize_cond(v) -> String:
+	if typeof(v) != TYPE_STRING:
+		return COND_UNKNOWN
+	if v == COND_NONE or v == COND_UNKNOWN:
+		return v
+	for e in ConditionsScript.REGISTRY:
+		if e.id == v:
+			return v
+	return COND_UNKNOWN
+
+
+## "YYYY-MM-DD" or "".
+static func sanitize_date(v) -> String:
+	if typeof(v) != TYPE_STRING:
+		return ""
+	var p: PackedStringArray = v.split("-")
+	if p.size() != 3 or not p[0].is_valid_int() or not p[1].is_valid_int() or not p[2].is_valid_int():
+		return ""
+	return v
+
+
+## How many entries of a raw board sanitize_board would drop for a wrong
+## type (not a Dictionary, no String name, no valid time). A whole board of
+## the wrong type counts as 1. W4 keeps a copy of such a file.
+static func count_invalid(raw) -> int:
+	if typeof(raw) != TYPE_ARRAY:
+		return 1
+	var n := 0
+	for e in raw:
+		if typeof(e) != TYPE_DICTIONARY or not e.has("name") or typeof(e.name) != TYPE_STRING:
+			n += 1
+		elif not e.has("time") or (typeof(e.time) != TYPE_FLOAT and typeof(e.time) != TYPE_INT):
+			n += 1
+		else:
+			var t := float(e.time)
+			if t <= 0.0 or is_nan(t) or is_inf(t):
+				n += 1
+	return n
+
+
 ## Only well-formed entries survive: a Dictionary with a String "name" and a
 ## finite "time" above zero. A broken entry used to make submit_time crash
 ## before saving, so the board never took a time again (Code-W3). Sorted
@@ -209,7 +285,8 @@ static func sanitize_board(raw) -> Array:
 		if t <= 0.0 or is_nan(t) or is_inf(t):
 			continue
 		var week = e.get("week", "")
-		out.append({"name": e.name, "time": t, "week": week if typeof(week) == TYPE_STRING else ""})
+		out.append({"name": e.name, "time": t, "week": week if typeof(week) == TYPE_STRING else "",
+			"cond": sanitize_cond(e.get("cond", COND_UNKNOWN)), "date": sanitize_date(e.get("date", ""))})
 	out.sort_custom(func(a, b): return a.time < b.time)
 	if out.size() > MAX_ENTRIES_PER_BOARD:
 		out.resize(MAX_ENTRIES_PER_BOARD)

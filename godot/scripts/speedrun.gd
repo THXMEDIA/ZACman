@@ -63,7 +63,7 @@ func reload() -> void:
 
 
 func target_for(level_id: String) -> float:
-	return LevelsScript.by_id(level_id).target_s
+	return float(LevelsScript.by_id(level_id).get("target_s", -1.0))
 
 
 func best_for(level_id: String, board: String = LevelsScript.BOARD_WEEK, mode: String = "solo") -> float:
@@ -163,7 +163,9 @@ func _load() -> void:
 	f.close()
 	var parsed = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
+		SavePathsScript.backup_corrupt(path) # W4: kept before the next save overwrites it
 		return
+	var broken := not version_field_ok(parsed)
 	var version := file_version(parsed)
 	if version > SAVE_VERSION:
 		push_warning("Speedrun: save file version %d is newer than %d — not loaded, not overwritten" % [version, SAVE_VERSION])
@@ -175,13 +177,25 @@ func _load() -> void:
 		var migrated := migrate_best_times(raw_times, version)
 		best_times = migrated.best_times
 		archive = migrated.archive
+		broken = broken or migrated.dropped > 0
+	else:
+		broken = true
 	var raw_archive = parsed.get("archive", {})
 	if typeof(raw_archive) == TYPE_DICTIONARY:
 		for k in raw_archive:
 			if not archive.has(str(k)):
 				archive[str(k)] = raw_archive[k]
-	if parsed.has("bonus_unlocked") and typeof(parsed.bonus_unlocked) == TYPE_BOOL:
-		bonus_unlocked = parsed.bonus_unlocked
+	else:
+		broken = true
+	if parsed.has("bonus_unlocked"):
+		if typeof(parsed.bonus_unlocked) == TYPE_BOOL:
+			bonus_unlocked = parsed.bonus_unlocked
+		else:
+			broken = true
+	if broken:
+		# W4: a value of the wrong type was dropped — keep the original file
+		# before the next save writes the cleaned state over it.
+		SavePathsScript.backup_corrupt(path)
 
 
 func _save() -> void:
@@ -204,6 +218,15 @@ static func file_version(parsed: Dictionary) -> int:
 	return 1
 
 
+## False when a "version" field exists but is not a whole number >= 1 (a
+## damaged file; W4 keeps a copy of it).
+static func version_field_ok(parsed: Dictionary) -> bool:
+	if not parsed.has("version"):
+		return true
+	var v = parsed.version
+	return (typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT) and float(v) == floorf(float(v)) and v >= 1
+
+
 ## A usable best time: a finite number above zero. Anything else in a save
 ## (null, string, negative, NaN) is dropped instead of crashing best_for /
 ## record_level_time later (Code-W3).
@@ -224,7 +247,8 @@ static func sanitize_entry(v) -> Dictionary:
 
 
 ## Turns the "best_times" of a save of `version` into
-## {"best_times": {v3 key: {time, week}}, "archive": {old key: seconds}}.
+## {"best_times": {v3 key: {time, week}}, "archive": {old key: seconds},
+##  "dropped": number of values dropped for a wrong type (W4)}.
 ## Version 3: valid keys stay; entries under an unknown key are archived.
 ## Versions 1/2 (plain numbers):
 ##   - "0".."3" (before the level pool: plain solo runs of klassik-1..4,
@@ -242,12 +266,14 @@ static func sanitize_entry(v) -> Dictionary:
 static func migrate_best_times(raw: Dictionary, version: int) -> Dictionary:
 	var out := {}
 	var arch := {}
+	var dropped := 0
 	for key in raw.keys():
 		var k: String = str(key)
 		var v = raw[key]
 		if version >= 3:
 			var e := sanitize_entry(v)
 			if e.is_empty():
+				dropped += 1
 				continue
 			if LevelsScript.is_valid_board_key(k):
 				out[k] = e
@@ -255,6 +281,7 @@ static func migrate_best_times(raw: Dictionary, version: int) -> Dictionary:
 				arch[k] = e.time
 			continue
 		if not is_valid_time(v):
+			dropped += 1
 			continue
 		if k.is_valid_int():
 			var idx := k.to_int()
@@ -266,4 +293,4 @@ static func migrate_best_times(raw: Dictionary, version: int) -> Dictionary:
 			arch[k] = float(v)
 		elif not out.has(nk) or float(v) < out[nk].time:
 			out[nk] = {"time": float(v), "week": ""}
-	return {"best_times": out, "archive": arch}
+	return {"best_times": out, "archive": arch, "dropped": dropped}
