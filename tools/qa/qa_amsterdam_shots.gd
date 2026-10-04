@@ -4,6 +4,7 @@
 #   SHOT_DIR=/pfad xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 \
 #     --path godot --resolution 1280x720 --fixed-fps 60 --script res://qa_amsterdam_shots.gd
 #   rm godot/qa_amsterdam_shots.gd
+# ONLY=a6,a8 rendert nur diese Bilder (a1 und a2 immer). Rendern unter llvmpipe: ~1 min pro Bild.
 #   a1_start.png            Startscreen mit Explorer-Auswahl (vier Städte)
 #   a2_spawn.png            erster Blick nach dem Start (Damrak-Kai nach Westen, Westerkerk am Ende)
 #   a3_kai_gracht.png       Kaistraße an der Keizersgracht nach Osten (Kaimauer, Bäume, Brücken)
@@ -67,20 +68,20 @@ func _plan() -> void:
 		["a3_kai_gracht.png", 20.0, 40.6, E, 0.04, 0.0],
 		["a4_magere_brug.png", 52.0, 84.0, E, 0.06, 0.0],
 		["a5_westerkerk.png", 40.0, 24.0, W, 0.42, 0.0],
-		["a6_tanzende_haeuser.png", 46.0, 22.0, N + 0.25, 0.12, 0.0],
+		["a6_tanzende_haeuser.png", 44.0, 26.6, N + 0.3, 0.3, 0.0],
 		["a7_ausgang.png", 86.0, 82.0, N - 0.12, 0.08, 0.0],
 		["a10_kante.png", 47.0, 42.35, -1.92, -0.5, 0.0],
 		["a13_suedkai.png", 40.0, 42.0, PI, 0.1, 0.0],
 		["a11_becher.png", 76.0, 84.0, N, 0.04, 0.0],
 	]
 	for p in poses:
-		if only != "" and not p[0].begins_with(only):
+		if not _wanted(only, p[0]):
 			continue
 		_steps.append({"wait": 2, "do": func(): _pose(p[1], p[2], p[3], p[4], p[5])})
 		_steps.append({"wait": 24, "do": func(): _shot(p[0])})
 	# the totale: a separate QA camera high over the desk (the game camera is
 	# never moved; this is the trailer / photo-mode view)
-	if only == "" or "a8".begins_with(only):
+	if _wanted(only, "a8_totale.png"):
 		_steps.append({"wait": 2, "do": func():
 			_qa_cam = Camera3D.new()
 			_qa_cam.fov = 46.0
@@ -93,16 +94,29 @@ func _plan() -> void:
 			_shot("a8_totale.png")
 			main.player.camera.make_current()
 			_qa_cam.queue_free()})
-	_steps.append({"wait": 2, "do": func():
-		main.set_reduce_fx(true)
-		_pose(20.0, 40.6, E, 0.04)})
-	_steps.append({"wait": 24, "do": func(): _shot("a9_reduziert.png")})
-	_steps.append({"wait": 2, "do": func():
-		main.set_reduce_fx(false)
-		var s: Vector2i = main.maze.start_cell
-		_pose(s.y * 2.0, s.x * 2.0, W, 0.0)})
-	_steps.append({"wait": 24, "do": func(): _shot("a12_minimap.png")})
+	if _wanted(only, "a9_reduziert.png"):
+		_steps.append({"wait": 2, "do": func():
+			main.set_reduce_fx(true)
+			_pose(20.0, 40.6, E, 0.04)})
+		_steps.append({"wait": 24, "do": func():
+			_shot("a9_reduziert.png")
+			main.set_reduce_fx(false)})
+	if _wanted(only, "a12_minimap.png"):
+		_steps.append({"wait": 2, "do": func():
+			var s: Vector2i = main.maze.start_cell
+			_pose(s.y * 2.0, s.x * 2.0, W, 0.0)})
+		_steps.append({"wait": 24, "do": func(): _shot("a12_minimap.png")})
 	_steps.append({"wait": 2, "do": func(): quit()})
+
+
+## ONLY=a6,a8 renders just those (a1 and a2 always).
+func _wanted(only: String, name: String) -> bool:
+	if only == "":
+		return true
+	for o in only.split(","):
+		if o != "" and name.begins_with(o):
+			return true
+	return false
 
 
 func _process(_delta: float) -> bool:

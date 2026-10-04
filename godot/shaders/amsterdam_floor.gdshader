@@ -63,7 +63,7 @@ void fragment() {
 		vec3 deck = white ? white_paint * (0.94 + 0.08 * vn(p * vec2(0.8, 3.0))) : c * 0.86;
 		c = mix(deck, deck * 0.45, seam * 0.7 * far + seam * 0.2);
 		r = white ? 0.55 : r;
-	} else {
+	} else if (!is_house(k)) {
 		// distance to the nearest house front in this cell (m), for the pencil
 		// line and the contact shadow at the facade foot
 		float dh = 99.0;

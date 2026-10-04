@@ -77,7 +77,7 @@ Ohne Import (frischer Checkout, Tests) lädt `AmsterdamStyle.tex()` die Rohdatei
 
 - `godot/tests/test_amsterdam.gd` (78 Checks): Raster geschlossen, Erreichbarkeit, Grachten nicht begehbar, Brücken mit Wasser seitlich, Route an Damrak-Häusern, Westerkerk und über die Magere Brug (einzige Querung), Startachse auf den Turm, deterministische Spuren und Pflicht-Äste, nichts Sichtbares in der begehbaren Fläche unter Augenhöhe (lesbare Kollisionskante), Häuser füllen jede Fassadenlinie, Eckhäuser mit zweiter Fassade, vier Giebeltypen, tanzende Häuser, Fenster mit dunklem Raum, Modellbau-Spuren, Turm als höchster Punkt, weiße Krone, weiße Magere Brug, Wellenkante auf jeder Platte/Wasser-Grenze, Budget (Draw Calls, Platten, Vertices, Lichter, Schatten), Kollisionshöhe der gebauten Boxen, Baum-Blöcke, Komfort, Theme/Registry, Minimap-Kontrast, Exklusivfarben Blau/Grün, Ausgang (Tram hinter der Kante, Fahne, Puls, Effekte reduzieren), Textur- und Lizenzdateien.
 - `godot/tests/bot_test.gd`: Start über den AMSTERDAM-Button, Ausgang auf der Minimap, Himmel und Lichter, „Effekte reduzieren“ stoppt den Puls, Tram → Speedrun, Theme-Reset (Farb-Hintergrund, keine Sonne/Lampe, kein SSAO/Adjustment).
-- Screenshots: `tools/qa/qa_amsterdam_shots.gd` (a1–a12).
+- Screenshots: `tools/qa/qa_amsterdam_shots.gd` (a1–a13; die Totale a8 mit eigener QA-Kamera, die Spielkamera bleibt unberührt; `ONLY=a6,a8` rendert einzelne Bilder).
 
 ## Rechte (Kurzfassung, keine Rechtsberatung)
 
