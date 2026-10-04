@@ -7,6 +7,8 @@ was hier steht. Keine KI-generierten Inhalte (Steam-Offenlegung: nichts anzugebe
 |---|---|---|---|
 | `godot/fonts/NotoSansCJKjp-Bold-Subset.otf` | Noto Sans CJK JP Bold (Adobe/Google, Projekt noto-cjk, https://github.com/notofonts/noto-cjk), Version aus dem Ubuntu-Paket `fonts-noto-cjk` (TTC-Index 0) | SIL Open Font License 1.1 — Text liegt daneben: `godot/fonts/OFL-NotoSansCJK.txt` | Schilder der Explorer-Stadt Tokyo (Label3D) |
 
+**Kyoto (Explorer, „Aizuri-Pop-up“):** alle Motive (Machiya, Pagode, Kiyomizu-Bühne, Torii, Tore, Theater, Kyoto Tower, Hügel, Figuren) entstehen prozedural in `godot/shaders/kyoto_card.gdshader`; keine Fotos, Scans oder Fremdbilder. Einzige Schrift: „出口 EXIT“ aus dem Noto-Subset unten.
+
 ## Noto Sans CJK JP — Subset
 
 - **Warum Subset:** Der volle Font hat rund 20 MB; gebraucht werden nur die

@@ -11,6 +11,11 @@ uniform vec3 floor_albedo : source_color = vec3(0.953, 0.933, 0.886);
 uniform vec3 ai1 : source_color = vec3(0.118, 0.227, 0.431);
 uniform vec3 ai3 : source_color = vec3(0.553, 0.690, 0.839);
 uniform vec3 ai4 : source_color = vec3(0.812, 0.878, 0.933);
+// Torii lane: the collision rails along the post lines are printed as an ink
+// line with gravel outside (the curb rule: ink line = collision edge).
+uniform vec2 rail_x = vec2(0.0, 0.0); // x range of the rails (m)
+uniform float rail_z = 0.0; // centre line of the lane (m)
+uniform float rail_in = 0.0; // half width inside the rails (m), 0 = no rails
 
 varying vec3 wp;
 
@@ -32,6 +37,9 @@ void fragment() {
 	vec2 g = wp.xz / cell + 0.5;
 	vec2 c = floor(g);
 	vec2 f = fract(g);
+	// derivatives once, before any branch (code review W1)
+	vec2 st = wp.xz / vec2(0.9, 0.6);
+	float jw = clamp(max(fwidth(st.x), fwidth(st.y)) * 2.0 - 0.35, 0.0, 1.0);
 	float here = wall_at(c);
 	vec3 col = floor_albedo * (0.985 + 0.02 * vn(wp.xz * vec2(5.0, 1.3)));
 	if (here < 0.5) {
@@ -43,14 +51,21 @@ void fragment() {
 		if (wall_at(c + vec2(0.0, 1.0)) > 0.5) d = min(d, (1.0 - f.y) * cell);
 		vec3 street = mix(ai4, ai3, (1.0 - smoothstep(0.0, 1.6, d)) * 0.55);
 		// stone paving (ishidatami), offset rows
-		vec2 st = wp.xz / vec2(0.9, 0.6);
 		st.x += 0.5 * floor(st.y);
-		float jw = clamp(max(fwidth(st.x), fwidth(st.y)) * 2.0 - 0.35, 0.0, 1.0);
 		float joint = mix(max(step(0.93, fract(st.x)), step(0.9, fract(st.y))), 0.15, jw); // fades with distance (no moire)
 		street = mix(street, ai3, joint * 0.35);
 		col = mix(col, street, 0.92);
 		// curb ink line
 		col = mix(col, ai1, 1.0 - smoothstep(0.04, 0.09, d));
+		// torii rails: gravel outside, ink line on the rail edge
+		if (rail_in > 0.0 && wp.x > rail_x.x && wp.x < rail_x.y && abs(wp.z - rail_z) < 3.05) {
+			float dz = abs(wp.z - rail_z) - rail_in;
+			if (dz > 0.0) {
+				float grain = step(0.72, vn(wp.xz * 9.0));
+				col = mix(floor_albedo * 0.96, ai3, grain * 0.7);
+			}
+			col = mix(col, ai1, 1.0 - smoothstep(0.03, 0.08, abs(dz)));
+		}
 	}
 	ALBEDO = col;
 }

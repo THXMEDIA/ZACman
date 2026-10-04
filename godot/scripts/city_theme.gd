@@ -127,6 +127,9 @@ var pellet_color := Color(1.0, 0.82, 0.4)
 var pellet_emission := Color(1.0, 0.69, 0.18)
 var pellet_energy := 1.3
 var pellet_shape := "sphere" # "sphere" | "cube"
+## Optional spatial shader for the pellets (uniforms col, core, key); "" =
+## the StandardMaterial from pellet_color/emission/energy.
+var pellet_shader_path := ""
 var pellet_size := 0.11 # sphere radius / half the cube edge (m)
 var pellet_height := 0.32 # center above the floor (m)
 var power_color := Color(1.0, 0.365, 0.635)
@@ -164,6 +167,8 @@ var ghost_frightened_emission := Color(0.33, 0.47, 1.0)
 var minimap_bg_color := Color(0.008, 0.012, 0.039, 0.4)
 var minimap_wall_color := Color(0.118, 0.227, 0.478)
 var minimap_frightened_color := Color(0.35, 0.82, 1.0)
+## Explorer exits on the minimap (green square); alpha 0 = not drawn.
+var minimap_exit_color := Color(0.22, 1.0, 0.42)
 
 ## ---- Scene-wide environment (background/fog/ambient) — read by Main ----
 var env_bg_color := Color(0.0196, 0.0275, 0.0627)

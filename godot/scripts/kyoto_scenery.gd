@@ -24,6 +24,7 @@ const RootScript := preload("res://scripts/kyoto_popup_root.gd")
 const CELL := 2.0
 const CARD_BASE_Y := 0.07 # on top of the printed block plan
 const FACADE_OUT := 0.01 # cards sit a hair in front of the collision edge
+const PAGODA_H := 22.0 # the spire about a quarter of the height (UX N4)
 ## Torii tunnel: one gate per cell along the torii lane; the posts stand at
 ## +-TORII_POST m from the lane's centre line, and a collision rail along
 ## each post line keeps the camera from running through them.
@@ -32,6 +33,9 @@ const TORII_TO := 20
 const TORII_Z := 39.0 * 2.0
 const TORII_POST := 2.3
 const TORII_POST_HALF := 0.22
+const TORII_LANE_X0 := 1.0 # west end of the lane (col 1)
+const TORII_LANE_X1 := 43.0 # where it meets Hanamikoji (col 22)
+const TORII_LANE_HALF := 3.0
 
 ## Street id -> house kind and height range.
 const STREET_LOOK := {
@@ -42,6 +46,7 @@ const STREET_LOOK := {
 	"yasaka_dori": {"kind": -1, "h": [6.0, 7.2], "w": [4.2, 5.6]},
 	"sannenzaka": {"kind": -1, "h": [6.0, 7.4], "w": [4.2, 5.8]},
 	"ninenzaka": {"kind": -1, "h": [6.0, 7.4], "w": [4.2, 5.8]},
+	"ninenzaka_nord": {"kind": -1, "h": [6.0, 7.4], "w": [4.2, 5.8]},
 	"torii_gasse": {"kind": Style.K_TEMPLE_WALL, "h": [4.0, 4.4], "w": [5.0, 7.0]},
 }
 
@@ -51,13 +56,29 @@ static func block_depth_torii() -> float:
 
 
 ## Collision rails along the torii posts: {center, size} boxes.
+## They fill the whole strip from the inner post face to the lane wall, over
+## the lane's full length (no gap to slip behind the posts, code review H4).
 static func torii_rails() -> Array:
-	var x0 := TORII_FROM * CELL - 0.6
-	var x1 := TORII_TO * CELL + 0.6
+	var x0 := TORII_LANE_X0
+	var x1 := TORII_LANE_X1
+	var inner := TORII_POST - TORII_POST_HALF
 	var out := []
 	for side in [-1.0, 1.0]:
-		out.append({"center": Vector3((x0 + x1) * 0.5, 1.5, TORII_Z + side * TORII_POST), "size": Vector3(x1 - x0, 3.0, TORII_POST_HALF * 2.0)})
+		var zc: float = TORII_Z + side * (inner + TORII_LANE_HALF) * 0.5
+		out.append({"center": Vector3((x0 + x1) * 0.5, 1.5, zc), "size": Vector3(x1 - x0, 3.0, TORII_LANE_HALF - inner + 0.2)})
 	return out
+
+
+## Floor setup (CityTheme.floor_setup_script): palette from KyotoStyle and the
+## printed torii rails.
+static func setup_floor(mat: ShaderMaterial, _maze, _seed: int) -> void:
+	mat.set_shader_parameter("floor_albedo", Style.PAPER)
+	mat.set_shader_parameter("ai1", Style.AI1)
+	mat.set_shader_parameter("ai3", Style.AI3)
+	mat.set_shader_parameter("ai4", Style.AI4)
+	mat.set_shader_parameter("rail_x", Vector2(TORII_LANE_X0, TORII_LANE_X1))
+	mat.set_shader_parameter("rail_z", TORII_Z)
+	mat.set_shader_parameter("rail_in", TORII_POST - TORII_POST_HALF)
 
 
 static func cell_of(p: Vector3) -> Vector2i:
@@ -157,26 +178,36 @@ static func cards(maze, seed: int) -> Array:
 	var x_w := 0.5 * CELL + FACADE_OUT # facade of col 0, facing east
 	var x_e := 47.5 * CELL - FACADE_OUT # facade of col 48, facing west
 	out.append(card(Vector3(x_w, CARD_BASE_Y, 10.0 * CELL), Vector3(1, 0, 0), 10.6, 13.2, Style.K_THEATER + lf, 0.5))
-	out.append(card(Vector3(x_e, CARD_BASE_Y, 10.0 * CELL), Vector3(-1, 0, 0), 10.8, 13.0, Style.K_GATE + lf, 0.5))
+	out.append(card(Vector3(x_e, CARD_BASE_Y, 10.0 * CELL), Vector3(-1, 0, 0), 11.2, 13.2, Style.K_GATE + lf, 0.5))
 	out.append(card(Vector3(x_w, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.4, 7.6, Style.K_SHRINE + lf, 0.5))
 	out.append(card(Vector3(23.0 * CELL, CARD_BASE_Y, 43.5 * CELL - FACADE_OUT), Vector3(0, 0, -1), 6.4, 8.2, Style.K_TEMPLE_GATE + lf, 0.5))
 	# Kiyomizu: set back 1.6 m so the exit door stands in front of it
-	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 41.5 * CELL + 1.6), Vector3(0, 0, -1), 18.4, 16.8, Style.K_KIYOMIZU + lf, 0.5))
+	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 41.5 * CELL + 1.6), Vector3(0, 0, -1), 18.8, 16.8, Style.K_KIYOMIZU + lf, 0.5))
 	# Yasaka pagoda in the middle of its temple block, printed on both sides:
-	# seen from Yasaka-dori (west) and Ninenzaka (east)
-	out.append(card(Vector3(39.5 * CELL, CARD_BASE_Y, 31.0 * CELL), Vector3(-1, 0, 0), 11.0, 26.0, Style.K_PAGODA + lf, 0.5))
+	# seen from Yasaka-dori (west), Sannenzaka (south) and Seitengasse (north)
+	# Two crossed cards, so it reads as a pagoda from every lane (GD W2).
+	var pagoda_pos := Vector3(39.5 * CELL, CARD_BASE_Y, 31.0 * CELL)
+	out.append(card(pagoda_pos, Vector3(-1, 0, 0), 11.0, PAGODA_H, Style.K_PAGODA + lf, 0.5))
+	out.append(card(pagoda_pos, Vector3(0, 0, 1), 11.0, PAGODA_H, Style.K_PAGODA + lf, 0.5))
+	# Small temple gates close the three lanes that would otherwise end on a
+	# blank wall (GD W5): Ninenzaka north, Hanamikoji north, side lane west.
+	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 23.5 * CELL + FACADE_OUT), Vector3(0, 0, -1), 6.4, 8.2, Style.K_TEMPLE_GATE + lf, 0.3))
+	out.append(card(Vector3(23.0 * CELL, CARD_BASE_Y, 0.5 * CELL + FACADE_OUT), Vector3(0, 0, 1), 6.4, 8.2, Style.K_TEMPLE_GATE + lf, 0.7))
+	out.append(card(Vector3(x_w, CARD_BASE_Y, 21.0 * CELL), Vector3(1, 0, 0), 6.4, 8.2, Style.K_TEMPLE_GATE + lf, 0.4))
 
 	# ---- torii tunnel: one gate every cell along the torii lane ----
 	# (posts at +-2.3 m; TORII_RAIL keeps the player inside them)
-	for c in range(TORII_FROM, TORII_TO + 1):
-		out.append(card(Vector3(c * CELL, CARD_BASE_Y, TORII_Z), Vector3(1, 0, 0), 5.8, 5.0, Style.K_TORII, 0.5, block_depth_torii()))
+	# east to west: the gate nearest to a player coming from Hanamikoji is
+	# drawn first (early depth rejects the ones behind, code review W3)
+	for c in range(TORII_TO, TORII_FROM - 1, -1):
+		out.append(card(Vector3(c * CELL, CARD_BASE_Y, TORII_Z), Vector3(1, 0, 0), 5.8, 5.3, Style.K_TORII, 0.5, block_depth_torii()))
 
 	# ---- figures in doorways (Hanamikoji, Ninenzaka, Shijo) ----
 	var spots := [
 		[Vector3(21.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 19.0 * CELL), Vector3(-1, 0, 0)],
 		[Vector3(21.5 * CELL, 0, 27.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 34.0 * CELL), Vector3(-1, 0, 0)],
-		[Vector3(42.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(45.5 * CELL, 0, 26.0 * CELL), Vector3(-1, 0, 0)],
-		[Vector3(42.5 * CELL, 0, 33.0 * CELL), Vector3(1, 0, 0)], [Vector3(14.0 * CELL, 0, 7.5 * CELL), Vector3(0, 0, 1)],
+		[Vector3(42.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(45.5 * CELL, 0, 38.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(42.5 * CELL, 0, 19.0 * CELL), Vector3(1, 0, 0)], [Vector3(14.0 * CELL, 0, 7.5 * CELL), Vector3(0, 0, 1)],
 		[Vector3(31.0 * CELL, 0, 12.5 * CELL), Vector3(0, 0, -1)], [Vector3(8.0 * CELL, 0, 19.5 * CELL), Vector3(0, 0, 1)],
 	]
 	for sp in spots:
@@ -258,6 +289,25 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 		cs.position = r.center
 		rails.add_child(cs)
 	root.add_child(rails)
+
+	# Figures stand in doorways; a small block in front of each keeps the
+	# camera from pressing into the card (UX N3).
+	var fig_body := StaticBody3D.new()
+	fig_body.name = "FigureBlocks"
+	fig_body.collision_layer = 2
+	fig_body.collision_mask = 0
+	for c in list:
+		if c.kind != Style.K_FIGURE:
+			continue
+		var n := Vector3(sin(c.yaw), 0.0, cos(c.yaw))
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(0.7, 2.0, 0.7)
+		var cs2 := CollisionShape3D.new()
+		cs2.shape = shape
+		cs2.position = Vector3(c.pos.x, 1.0, c.pos.z) + n * 0.3
+		cs2.rotation.y = c.yaw
+		fig_body.add_child(cs2)
+	root.add_child(fig_body)
 
 	var sphere := SphereMesh.new()
 	sphere.radius = 380.0

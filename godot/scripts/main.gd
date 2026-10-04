@@ -259,6 +259,7 @@ var debug_mode := false
 ## Which Explorer city (explorer_cities.gd: "manhattan", "tokyo") the
 ## current/last Explorer run was played on (see start_explorer_level).
 var explorer_city_id := "manhattan"
+var _exit_hint_shown := false # explorer: "exit_hint" shown once per run
 
 var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
@@ -452,6 +453,7 @@ func _build_hud() -> void:
 ## Starts one level of the pool (a Levels.POOL entry). Which one is decided by
 ## the caller: begin_game() draws the first, next_level() the following.
 func start_level(level: Dictionary) -> void:
+	hud.set_minimap_exits([])
 	_end_condition(false) # a condition never survives into the next level/attempt
 	current_level = level
 	level_id = level.id
@@ -609,6 +611,11 @@ func start_explorer_level(city_id: String) -> void:
 		_spawn_tokyo_life(int(city.seed))
 	_spawn_metro_stations(metro_cells, city.metro_script)
 	_apply_scenery_comfort()
+	var sr = maze_view.scenery_root
+	if sr != null and sr.has_method("start_intro") and not reduce_fx:
+		sr.start_intro() # Kyoto: the book opens, near to far (GD W1)
+	hud.set_minimap_exits(metro_cells)
+	_exit_hint_shown = false
 
 	hud.set_level(city.label)
 	hud.set_game_hud_visible(true)
@@ -871,12 +878,17 @@ func _check_explorer_obstacles() -> void:
 func _check_metro_entry() -> void:
 	if metro_stations.is_empty():
 		return
-	var radius := float(_explorer_city().get("metro_radius", MANHATTAN_METRO_RADIUS))
+	var city := _explorer_city()
+	var radius := float(city.get("metro_radius", MANHATTAN_METRO_RADIUS))
+	var hint: String = city.get("exit_hint", "")
 	for m in metro_stations:
 		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
 		if d < radius:
 			_enter_metro()
 			return
+		if hint != "" and not _exit_hint_shown and d < 4.5:
+			_exit_hint_shown = true
+			hud.show_hint(hint, 3.0)
 
 
 func _enter_metro() -> void:
@@ -930,8 +942,14 @@ func begin_explorer_game(city_id: String = "manhattan") -> void:
 	running = true
 	paused = false
 	player.input_enabled = true
-	Sfx.set_siren(true, false)
+	# No ghost siren where a city asks for quiet (Kyoto, GD W4).
+	Sfx.set_siren(bool(_explorer_city().get("siren", true)), false)
 	Sfx.play_explorer_music()
+	# A city may explain itself once on start (Kyoto: the fold, and where to
+	# turn it off) — skipped when effects are already reduced.
+	var intro_hint: String = _explorer_city().get("intro_hint", "")
+	if intro_hint != "" and not reduce_fx:
+		hud.show_hint(intro_hint, 5.0)
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -1283,6 +1301,7 @@ func go_to_main_menu() -> void:
 		e.queue_free()
 	enemies.clear()
 	maze_view.visible = false
+	hud.set_minimap_exits([])
 	_apply_theme_environment("normal")
 	hud.set_game_hud_visible(false)
 	hud.set_start_highscore(high_score)

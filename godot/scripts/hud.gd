@@ -155,6 +155,9 @@ var start_intro_skip_label: Label
 ## UX-W7: after the intro, until the first step.
 var clock_hint: Control
 var clock_hint_label: Label
+const CLOCK_HINT_TEXT := "Die Uhr startet mit deinem ersten Schritt"
+## Explorer exits drawn on the minimap (cells), see set_minimap_exits.
+var minimap_exit_cells: Array = []
 ## UX-K1: thin frame of the Kippbild with "Effekte reduzieren".
 var flip_frame: Control
 var flip_frame_alpha := 0.0
@@ -599,7 +602,8 @@ func _build_comfort_block() -> Control:
 	row.add_theme_constant_override("separation", 14)
 	col.add_child(row)
 	var cb := CheckBox.new()
-	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen, Pop-ups stehen)"
+	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen)"
+	cb.tooltip_text = "Ruhigere Looks, kein Kippen. Kyoto: die Häuser klappen nicht auf."
 	cb.add_theme_font_size_override("font_size", TEXT_PX)
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
 	row.add_child(cb)
@@ -1176,7 +1180,7 @@ func _build_clock_hint() -> void:
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	clock_hint.add_child(panel)
 	clock_hint_label = Label.new()
-	clock_hint_label.text = "Die Uhr startet mit deinem ersten Schritt"
+	clock_hint_label.text = CLOCK_HINT_TEXT
 	clock_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	clock_hint_label.add_theme_font_size_override("font_size", 15)
 	clock_hint_label.add_theme_color_override("font_color", RABBIT_WHITE)
@@ -1184,7 +1188,20 @@ func _build_clock_hint() -> void:
 
 
 func show_clock_hint(on: bool) -> void:
+	if on:
+		clock_hint_label.text = CLOCK_HINT_TEXT
 	clock_hint.visible = on
+
+
+## A short hint in the clock-hint box (explorer cities: the fold, the exit);
+## hides itself after `seconds` unless another text replaced it meanwhile.
+func show_hint(text: String, seconds: float) -> void:
+	clock_hint_label.text = text
+	clock_hint.visible = true
+	get_tree().create_timer(seconds).timeout.connect(func():
+		if is_instance_valid(clock_hint_label) and clock_hint_label.text == text:
+			clock_hint.visible = false
+			clock_hint_label.text = CLOCK_HINT_TEXT)
 
 
 func is_clock_hint_visible() -> bool:
@@ -1399,10 +1416,13 @@ func _overlay_panel(scrollable: bool = false) -> PanelContainer:
 		root.anchor_right = 0.5
 		root.anchor_top = 0.04
 		root.anchor_bottom = 0.96
-		root.offset_left = -250
-		root.offset_right = 250
+		# Centered for real (UX W2): fixed width, grows both ways if its
+		# content asks for more.
+		root.offset_left = -360
+		root.offset_right = 360
 		root.offset_top = 0
 		root.offset_bottom = 0
+		root.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	else:
 		# QA-W2: grow from the center in both directions, so the panel sits
 		# centered instead of hanging from its top-left corner.
@@ -1535,6 +1555,10 @@ func set_minimap_visible(on: bool) -> void:
 	minimap.visible = on
 
 
+func set_minimap_exits(cells: Array) -> void:
+	minimap_exit_cells = cells.duplicate()
+
+
 func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool, maze_view = null) -> void:
 	minimap_maze = maze
 	minimap_player = player
@@ -1591,6 +1615,13 @@ func _draw_minimap() -> void:
 	for e in minimap_enemies:
 		var col: Color = frightened_col if minimap_frightened else e.palette_color
 		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
+	# Explorer exits: a green square with a dark rim (UX K1, all cities).
+	var exit_col: Color = ct.minimap_exit_color if ct != null else Color(0.22, 1.0, 0.42)
+	if exit_col.a > 0.0:
+		for xc in minimap_exit_cells:
+			var ec := Vector2((xc.y + 0.5) * sx, (xc.x + 0.5) * sy)
+			minimap.draw_rect(Rect2(ec - Vector2(4.0, 4.0), Vector2(8.0, 8.0)), Color(0, 0, 0))
+			minimap.draw_rect(Rect2(ec - Vector2(3.0, 3.0), Vector2(6.0, 6.0)), exit_col)
 	# Versus: the opponent's position in their own copy of the maze (E17).
 	if minimap_opponent_cell.x >= 0:
 		var oc := Vector2((minimap_opponent_cell.y + 0.5) * sx, (minimap_opponent_cell.x + 0.5) * sy)

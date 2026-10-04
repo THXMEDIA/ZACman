@@ -91,8 +91,8 @@ func _initialize() -> void:
 	var houses: int = by_kind.get(Style.K_MACHIYA, 0) + by_kind.get(Style.K_SHOP, 0) + by_kind.get(Style.K_TEMPLE_WALL, 0)
 	_check("cards: house rows along the streets", houses > 120, "%d" % houses)
 	var NF := Style.NO_FOLD
-	_check("cards: landmarks never fold — theatre, shrine gate, Kiyomizu, Kennin-ji gate, Inari shrine", by_kind.get(Style.K_THEATER + NF, 0) == 1 and by_kind.get(Style.K_GATE + NF, 0) == 1 and by_kind.get(Style.K_KIYOMIZU + NF, 0) == 1 and by_kind.get(Style.K_TEMPLE_GATE + NF, 0) == 1 and by_kind.get(Style.K_SHRINE + NF, 0) == 1)
-	_check("cards: one pagoda, printed on both sides, standing", by_kind.get(Style.K_PAGODA + NF, 0) == 1)
+	_check("cards: landmarks never fold — theatre, shrine gate, Kiyomizu, four temple gates, Inari shrine", by_kind.get(Style.K_THEATER + NF, 0) == 1 and by_kind.get(Style.K_GATE + NF, 0) == 1 and by_kind.get(Style.K_KIYOMIZU + NF, 0) == 1 and by_kind.get(Style.K_TEMPLE_GATE + NF, 0) == 4 and by_kind.get(Style.K_SHRINE + NF, 0) == 1)
+	_check("cards: the pagoda as two crossed cards, standing", by_kind.get(Style.K_PAGODA + NF, 0) == 2)
 	_check("cards: a torii tunnel", by_kind.get(Style.K_TORII, 0) >= 15)
 	_check("cards: backdrop hills and the tower never fold", by_kind.get(Style.K_MOUNTAINS + Style.NO_FOLD, 0) >= 3 and by_kind.get(Style.K_TOWER + Style.NO_FOLD, 0) == 1)
 	_check("cards: figures in doorways", by_kind.get(Style.K_FIGURE, 0) >= 8)
@@ -144,7 +144,12 @@ func _initialize() -> void:
 		var x1: float = r.center.x + r.size.x * 0.5
 		if x0 > KyotoScenery.TORII_FROM * 2.0 - 0.3 or x1 < KyotoScenery.TORII_TO * 2.0 + 0.3:
 			rail_cover = false
-	_check("torii: the rails cover every post", rail_cover)
+		# from the inner post face out to the lane wall: no gap to slip behind
+		var z_in: float = absf(r.center.z - KyotoScenery.TORII_Z) - r.size.z * 0.5
+		var z_out: float = absf(r.center.z - KyotoScenery.TORII_Z) + r.size.z * 0.5
+		if z_in > inner + 0.001 or z_out < KyotoScenery.TORII_LANE_HALF:
+			rail_cover = false
+	_check("torii: the rails cover every post and reach the wall", rail_cover)
 	# Trails always run through the torii lane and to the pagoda.
 	var hi_ok := true
 	for sd in [1765, 1, 2, 3, 99, 4242]:
@@ -152,9 +157,27 @@ func _initialize() -> void:
 		if not tr.has(Vector2i(39, 5)) or not tr.has(Vector2i(31, 34)):
 			hi_ok = false
 	_check("trails: every seed leads through the torii lane and to the pagoda", hi_ok)
+	# Custom data is stored as 16-bit floats in Compatibility (code review H1):
+	# keep every encoded value in a safe range.
+	var enc_ok := true
+	for c in cards:
+		if c.kind > 255 or c.w > 300.0 or c.h > 300.0 or c.fold_len > 100.0:
+			enc_ok = false
+	_check("cards: encoded values fit the half-float custom data", enc_ok)
+	# Way to the exit passes the highlights (GD K1): the shortest path runs
+	# down Hanamikoji, past the pagoda lane and the torii lane.
+	var path := _shortest(maze, start, exit_cell)
+	var via_hanamikoji := false
+	var via_sannenzaka := false
+	for pc in path:
+		if pc.x == 31 and pc.y >= 22 and pc.y <= 24:
+			via_hanamikoji = true
+		if pc.y == 30 and pc.x >= 36 and pc.x <= 38:
+			via_sannenzaka = true
+	_check("route: the shortest way to the exit runs down Hanamikoji and Sannenzaka", via_hanamikoji and via_sannenzaka, "%d cells" % path.size())
 	var base_ok := true
 	for c in cards:
-		if (c.kind < Style.NO_FOLD or c.kind < Style.NO_FOLD + Style.K_TOWER) and absf(c.pos.y - KyotoScenery.CARD_BASE_Y) > 0.001:
+		if c.kind < Style.NO_FOLD + Style.K_TOWER and absf(c.pos.y - KyotoScenery.CARD_BASE_Y) > 0.001:
 			base_ok = false
 	_check("cards: all pop-ups hinge on the page (same base height)", base_ok)
 
@@ -179,8 +202,23 @@ func _initialize() -> void:
 	var texts := []
 	_collect_texts(mv, texts)
 	_check("text: the city carries no lettering (no fake Japanese)", texts.is_empty(), str(texts))
-	# collision: the printed plan is thin, but the boxes are full height
-	_check("collision: wall boxes higher than the camera", KyotoMaze.WALL_H > 2.0 * 0.95)
+	# collision: the printed plan is thin, but the built boxes are full height
+	var hs := []
+	for cs in mv.walls_body.get_children():
+		hs.append(cs.shape.size.y)
+	_check("collision: every wall box %.1f m, above the camera (1.9 m)" % KyotoMaze.WALL_H, hs.min() == hs.max() and is_equal_approx(hs.min(), KyotoMaze.WALL_H) and hs.min() > 1.9, "%s..%s" % [hs.min(), hs.max()])
+	var rails_node = sr.get_node_or_null("ToriiRails")
+	_check("torii: rails built as wall-layer bodies", rails_node is StaticBody3D and rails_node.collision_layer == 2 and rails_node.get_child_count() == 2)
+	var fig_node = sr.get_node_or_null("FigureBlocks")
+	_check("figures: a block in front of each figure", fig_node is StaticBody3D and fig_node.collision_layer == 2 and fig_node.get_child_count() == by_kind.get(Style.K_FIGURE, 0))
+	sr.start_intro()
+	_check("intro: running after start_intro", sr.intro_running())
+	sr.set_reduce_fx(true)
+	_check("intro: reduced effects end the intro at once", not sr.intro_running())
+	sr.set_reduce_fx(false)
+	sr.start_intro()
+	sr._process(5.0)
+	_check("intro: ends after INTRO_S with the normal fold distances", not sr.intro_running() and is_equal_approx(float(sr.card_material.get_shader_parameter("fold_near")), Style.FOLD_NEAR))
 
 	# ---- theme / registry ----
 	var th = CityThemes.get_theme("kyoto")
@@ -244,6 +282,29 @@ func _reachable(maze, from: Vector2i) -> Dictionary:
 			seen[n] = true
 			q.append(n)
 	return seen
+
+
+func _shortest(maze, a: Vector2i, b: Vector2i) -> Array:
+	var prev := {a: a}
+	var q := [a]
+	var i := 0
+	while i < q.size():
+		var cur: Vector2i = q[i]
+		i += 1
+		if cur == b:
+			break
+		for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+			var n: Vector2i = cur + d
+			if n.x < 0 or n.y < 0 or n.x >= maze.rows or n.y >= maze.cols or prev.has(n) or maze.grid[n.x][n.y] != 0:
+				continue
+			prev[n] = cur
+			q.append(n)
+	var out := []
+	var c: Vector2i = b
+	while prev.has(c) and c != a:
+		out.append(c)
+		c = prev[c]
+	return out
 
 
 func _touches(cells: Array, c: Vector2i) -> bool:

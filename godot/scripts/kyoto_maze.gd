@@ -11,7 +11,10 @@ extends RefCounted
 ##                   the temple gate of Kennin-ji
 ##   Yasaka-dori     narrow lane ending on the five-storey Yasaka pagoda
 ##   Ninenzaka       the slope lane up to Kiyomizu-dera; the exit (green
-##                   bookmark + page door) sits at the foot of its stage
+##                   bookmark + page door) sits at the foot of its stage. Its
+##                   middle is a temple precinct (closed), so the way to the
+##                   exit runs down Hanamikoji and along Sannenzaka, past the
+##                   pagoda lane and the torii lane (game-design review K1)
 ##   Torii lane      a tunnel of torii gates (Fushimi Inari as reference),
 ##                   ending at a small shrine
 ## Kyoto Tower and the Higashiyama hills stand outside the map as backdrop.
@@ -37,7 +40,8 @@ const STREETS := [
 	{"id": "seitengasse", "axis": "ew", "r0": 20, "c0": 1, "r1": 22, "c1": 42, "center": 21},
 	{"id": "yasaka_dori", "axis": "ew", "r0": 30, "c0": 25, "r1": 32, "c1": 36, "center": 31},
 	{"id": "sannenzaka", "axis": "ew", "r0": 36, "c0": 25, "r1": 38, "c1": 42, "center": 37},
-	{"id": "ninenzaka", "axis": "ns", "r0": 13, "c0": 43, "r1": 41, "c1": 45, "center": 44},
+	{"id": "ninenzaka_nord", "axis": "ns", "r0": 13, "c0": 43, "r1": 23, "c1": 45, "center": 44},
+	{"id": "ninenzaka", "axis": "ns", "r0": 36, "c0": 43, "r1": 41, "c1": 45, "center": 44},
 	{"id": "torii_gasse", "axis": "ew", "r0": 38, "c0": 1, "r1": 40, "c1": 21, "center": 39},
 ]
 
@@ -51,10 +55,14 @@ const LANDMARKS := [
 	{"id": "kiyomizu", "r0": 42, "c0": 40, "r1": 44, "c1": 48, "face": Vector2(0, -1)},
 	{"id": "inari", "r0": 38, "c0": 0, "r1": 40, "c1": 0, "face": Vector2(1, 0)},
 	{"id": "pagoda", "r0": 23, "c0": 37, "r1": 35, "c1": 42, "face": Vector2(-1, 0)},
+	{"id": "ninenzaka_tor", "r0": 24, "c0": 43, "r1": 35, "c1": 45, "face": Vector2(0, -1)},
+	{"id": "hanamikoji_tor", "r0": 0, "c0": 22, "r1": 0, "c1": 24, "face": Vector2(0, 1)},
+	{"id": "seitengasse_tor", "r0": 20, "c0": 0, "r1": 22, "c1": 0, "face": Vector2(1, 0)},
 ]
 
-## Wall height of the collision boxes (m). The blocks are drawn as a thin
-## printed plan on the page (kyoto_slab.gdshader); this is only physics.
+## Wall height of the collision boxes (m; CityTheme wall_height_min/max). The
+## blocks are drawn as a thin printed plan on the page (kyoto_slab.gdshader);
+## this is only physics.
 const WALL_H := 3.0
 
 const TRAIL_LINES := [
@@ -64,12 +72,13 @@ const TRAIL_LINES := [
 	{"row": 31, "from": 23, "to": 36},
 	{"row": 37, "from": 23, "to": 44},
 	{"row": 39, "from": 1, "to": 23},
-	{"col": 44, "from": 10, "to": 41},
+	{"col": 44, "from": 10, "to": 23},
+	{"col": 44, "from": 36, "to": 41},
 ]
 ## The torii lane and the pagoda lane always carry pellets (the highlights);
 ## the level seed picks TRAIL_COUNT more ends from TRAIL_ENDS.
 const MUST_ENDS := [Vector2i(39, 1), Vector2i(31, 36)]
-const TRAIL_ENDS := [Vector2i(10, 1), Vector2i(10, 47), Vector2i(1, 23), Vector2i(43, 23), Vector2i(21, 1)]
+const TRAIL_ENDS := [Vector2i(10, 1), Vector2i(10, 47), Vector2i(1, 23), Vector2i(43, 23), Vector2i(21, 1), Vector2i(23, 44)]
 const TRAIL_COUNT := 2
 
 

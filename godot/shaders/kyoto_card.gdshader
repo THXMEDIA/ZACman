@@ -54,10 +54,11 @@ float vn(vec2 p) {
 	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
 }
-// Stripes along x (period-normalised coordinate t) with a duty share; fades
-// to the average tone when the stripes get finer than a pixel (no moire).
-float stripes(float t, float duty) {
-	float w = fwidth(t);
+// Stripes along a period-normalised coordinate t with a duty share; fades to
+// the average tone when the stripes get finer than a pixel (no moire). `w` is
+// the pixel footprint in units of t — computed once from fwidth(p) at the top
+// of fragment() (derivatives only in uniform control flow, code review W1).
+float stripes(float t, float duty, float w) {
 	float m = step(fract(t), duty);
 	return mix(m, duty, clamp(w * 2.0 - 0.35, 0.0, 1.0));
 }
@@ -74,16 +75,16 @@ float roof(vec2 p, float y0, float y1, float hw0, float hw1, float curl) {
 }
 vec4 lay(vec4 c, vec3 col, float m) { return mix(c, vec4(col, 1.0), clamp(m, 0.0, 1.0)); }
 // Tiles: rows of rounded tiles printed in two blues.
-vec3 tiles(vec2 p, vec3 base, vec3 line) {
-	float row = 1.0 - stripes(p.y / 0.22, 0.82);
-	float col = 1.0 - stripes(p.x / 0.28 + 0.5 * floor(p.y / 0.22), 0.86);
+vec3 tiles(vec2 p, vec3 base, vec3 line, float px) {
+	float row = 1.0 - stripes(p.y / 0.22, 0.82, px / 0.22);
+	float col = 1.0 - stripes(p.x / 0.28 + 0.5 * floor(p.y / 0.22), 0.86, px / 0.28);
 	return mix(base, line, max(row, col * 0.7));
 }
 // Key-block roof: outline in ink, tiles inside.
-vec4 key_roof(vec4 c, vec2 p, float y0, float y1, float hw0, float hw1, float curl, vec3 base, vec3 line) {
+vec4 key_roof(vec4 c, vec2 p, float y0, float y1, float hw0, float hw1, float curl, vec3 base, vec3 line, float px) {
 	float e = 0.07;
 	c = lay(c, sumi, roof(p, y0 - e, y1 + e, hw0 + e, hw1 + e, curl));
-	c = lay(c, tiles(p, base, line), roof(p, y0, y1, hw0, hw1, curl));
+	c = lay(c, tiles(p, base, line, px), roof(p, y0, y1, hw0, hw1, curl));
 	return c;
 }
 vec4 key_rect(vec4 c, vec2 p, vec2 a, vec2 b, vec3 fill) {
@@ -94,9 +95,9 @@ vec4 key_rect(vec4 c, vec2 p, vec2 a, vec2 b, vec3 fill) {
 }
 
 // ---------- the cards ----------
-vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
+vec4 machiya(vec2 p, float w, float h, float s, bool shop, float px) {
 	vec4 c = vec4(0.0);
-	float hw = w * 0.5 - 0.3;
+	float hw = w * 0.5 - 0.4;
 	float g1 = 2.6;
 	float roof_h = 1.1;
 	float top = h - roof_h;
@@ -104,7 +105,7 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 	c = key_rect(c, p, vec2(-hw, 0.0), vec2(hw, top), paper);
 	// ground floor: wood with koshi lattice
 	c = lay(c, ai3, crect(p, hw, 0.0, g1));
-	float slats = stripes(p.x / 0.13, 0.42);
+	float slats = stripes(p.x / 0.13, 0.42, px / 0.13);
 	c = lay(c, ai1, crect(p, hw, 0.15, g1 - 0.15) * slats);
 	c = lay(c, ai1, crect(p, hw, g1 - 0.15, g1)); // lintel
 	// door with noren
@@ -122,7 +123,7 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		// inu-yarai: curved bamboo fence along the base, left and right of the door
 		float fx = abs(p.x - dx);
 		float fence = step(0.85, fx) * step(abs(p.x), hw) * step(p.y, 0.75 - 0.12 * pow(fx / max(hw, 0.1), 2.0));
-		vec3 fc = mix(ai2, ai1, 1.0 - stripes(p.x / 0.08, 0.7));
+		vec3 fc = mix(ai2, ai1, 1.0 - stripes(p.x / 0.08, 0.7, px / 0.08));
 		c = lay(c, fc, fence);
 		// paper lantern (chochin): ribs in blue, vermilion caps
 		vec2 lc = vec2(dx + 1.05, 2.0);
@@ -133,7 +134,7 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		c = lay(c, beni, step(abs(p.x - lc.x + 0.03 * sin(p.y * 30.0)), 0.035) * step(abs(p.y - lc.y), 0.15));
 	}
 	// first-floor eave
-	c = key_roof(c, p, g1, g1 + 0.55, hw + 0.28, hw + 0.05, 0.08, ai2, ai1);
+	c = key_roof(c, p, g1, g1 + 0.55, hw + 0.28, hw + 0.05, 0.08, ai2, ai1, px);
 	// upper floor(s): plaster with mushiko-mado / lattice windows
 	float y0 = g1 + 0.55;
 	int floors = shop && h > 7.4 ? 2 : 1;
@@ -144,9 +145,9 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		float wy1 = fy + fh * 0.78;
 		float ww = hw * 0.62;
 		c = key_rect(c, p, vec2(-ww, wy0), vec2(ww, wy1), ai1);
-		float bars = 1.0 - stripes(p.x / (shop ? 0.3 : 0.17), 0.5);
+		float bars = 1.0 - stripes(p.x / (shop ? 0.3 : 0.17), 0.5, px / (shop ? 0.3 : 0.17));
 		if (shop) {
-			bars = max(bars, 1.0 - stripes((p.y - wy0) / 0.32, 0.8));
+			bars = max(bars, 1.0 - stripes((p.y - wy0) / 0.32, 0.8, px / 0.32));
 		}
 		c = lay(c, ai4, rect(p, vec2(-ww, wy0), vec2(ww, wy1)) * bars);
 		if (i < floors - 1) {
@@ -154,11 +155,11 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		}
 	}
 	// main roof
-	c = key_roof(c, p, top, h - 0.05, hw + 0.3, hw - 0.15, 0.1, ai1, ai2);
+	c = key_roof(c, p, top, h - 0.05, hw + 0.3, hw - 0.15, 0.1, ai1, ai2, px);
 	return c;
 }
 
-vec4 temple_wall(vec2 p, float w, float h) {
+vec4 temple_wall(vec2 p, float w, float h, float px) {
 	vec4 c = vec4(0.0);
 	float hw = w * 0.5 + 0.01;
 	float stones = max(step(0.88, fract(p.y / 0.35)), step(0.93, fract(p.x / 0.62 + 0.5 * floor(p.y / 0.35))));
@@ -170,7 +171,7 @@ vec4 temple_wall(vec2 p, float w, float h) {
 		c = lay(c, ai1, crect(p, hw, ly - 0.035, ly + 0.035));
 	}
 	c = lay(c, sumi, crect(p, hw, h - 0.92, h - 0.85));
-	c = lay(c, tiles(p, ai1, ai2), roof(p, h - 0.85, h, hw, hw, 0.0));
+	c = lay(c, tiles(p, ai1, ai2, px), roof(p, h - 0.85, h, hw, hw, 0.0));
 	return c;
 }
 
@@ -191,17 +192,17 @@ vec4 pine(vec2 p, float w, float h, float s) {
 	return c;
 }
 
-vec4 roofs(vec2 p, float w, float h, float s) {
+vec4 roofs(vec2 p, float w, float h, float s, float px) {
 	vec4 c = vec4(0.0);
 	float hw = w * 0.5;
 	c = lay(c, ai2, crect(p, hw - 0.3, 0.0, h - 2.2));
 	c = lay(c, ai3, crect(p, hw - 0.4, 0.0, h - 2.3));
-	c = lay(c, tiles(p, ai2, ai1), roof(p, h - 2.3, h - 0.25, hw, hw * (s > 0.5 ? 0.35 : 0.8), 0.15));
+	c = lay(c, tiles(p, ai2, ai1, px), roof(p, h - 2.3, h - 0.25, hw, hw * (s > 0.5 ? 0.35 : 0.8), 0.15));
 	c = lay(c, ai1, roof(p, h - 0.25, h, hw * (s > 0.5 ? 0.35 : 0.8), hw * (s > 0.5 ? 0.3 : 0.78), 0.0));
 	return c;
 }
 
-vec4 theater(vec2 p, float w, float h) {
+vec4 theater(vec2 p, float w, float h, float px) {
 	vec4 c = vec4(0.0);
 	float hw = 4.9;
 	c = key_rect(c, p, vec2(-hw, 0.0), vec2(hw, 9.5), ai4);
@@ -226,23 +227,23 @@ vec4 theater(vec2 p, float w, float h) {
 		float stroke = step(abs(p.x - (a.x + b.x) * 0.5 + 0.12 * sin(p.y * 5.0 + float(i))), 0.06) * rect(p, a + vec2(0.0, 0.3), b - vec2(0.0, 0.3));
 		c = lay(c, ai1, stroke);
 	}
-	c = key_roof(c, p, 6.6, 7.2, hw + 0.4, hw + 0.1, 0.1, ai2, ai1);
+	c = key_roof(c, p, 6.6, 7.2, hw + 0.4, hw + 0.1, 0.1, ai2, ai1, px);
 	// karahafu: the curved gable over the centre
 	float x = p.x / 2.7;
 	float yb = 7.4 + 1.3 * (1.0 - x * x) + 0.35 * pow(abs(x), 6.0);
 	float band = step(abs(x), 1.0) * step(yb, p.y) * step(p.y, yb + 0.55);
 	c = lay(c, paper, step(abs(x), 0.95) * step(7.2, p.y) * step(p.y, yb));
 	c = lay(c, sumi, step(abs(x), 1.03) * step(yb - 0.07, p.y) * step(p.y, yb + 0.62));
-	c = lay(c, tiles(p, ai1, ai2), band);
+	c = lay(c, tiles(p, ai1, ai2, px), band);
 	// upper roof and the drum tower (yagura) with a striped curtain
-	c = key_roof(c, p, 9.5, 11.3, hw + 0.45, 3.6, 0.25, ai1, ai2);
+	c = key_roof(c, p, 9.5, 11.3, hw + 0.45, 3.6, 0.25, ai1, ai2, px);
 	vec3 maku = mix(beni, paper, step(0.5, fract(p.x / 0.36)));
 	c = key_rect(c, p, vec2(-0.95, 11.3), vec2(0.95, 12.6), maku);
-	c = key_roof(c, p, 12.6, 13.0, 1.25, 0.9, 0.05, ai1, ai2);
+	c = key_roof(c, p, 12.6, 13.0, 1.25, 0.9, 0.05, ai1, ai2, px);
 	return c;
 }
 
-vec4 gate(vec2 p, float w, float h) {
+vec4 gate(vec2 p, float w, float h, float px) {
 	vec4 c = vec4(0.0);
 	// stone stairs
 	float st = step(0.8, fract(p.y / 0.2));
@@ -254,7 +255,7 @@ vec4 gate(vec2 p, float w, float h) {
 	c = lay(c, sumi, crect(p, 4.5, 1.55, 6.05) * step(1.6, abs(p.x)));
 	c = lay(c, paper, crect(p, 4.4, 1.6, 6.0) * step(1.6, abs(p.x)));
 	c = lay(c, ai1, rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
-	float lat = (1.0 - stripes(p.x / 0.18, 0.55)) * (rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
+	float lat = (1.0 - stripes(p.x / 0.18, 0.55, px / 0.18)) * (rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
 	c = lay(c, ai3, lat);
 	for (int i = 0; i < 4; i++) {
 		float px = (i < 2 ? -1.0 : 1.0) * (i == 0 || i == 3 ? 4.15 : 1.55);
@@ -264,7 +265,7 @@ vec4 gate(vec2 p, float w, float h) {
 	c = lay(c, beni, crect(p, 4.6, 5.55, 6.0) * inner);
 	c = lay(c, sumi, crect(p, 4.6, 5.5, 5.56));
 	// middle roof
-	c = key_roof(c, p, 6.0, 7.1, 5.5, 4.8, 0.35, ai1, ai2);
+	c = key_roof(c, p, 6.0, 7.1, 5.5, 4.8, 0.35, ai1, ai2, px);
 	// upper storey
 	c = key_rect(c, p, vec2(-3.8, 7.1), vec2(3.8, 9.6), paper);
 	c = lay(c, beni, crect(p, 3.8, 7.1, 7.55));
@@ -276,13 +277,13 @@ vec4 gate(vec2 p, float w, float h) {
 	c = lay(c, ai2, rect(p, vec2(-2.9, 7.9), vec2(-1.4, 9.2)) + rect(p, vec2(1.4, 7.9), vec2(2.9, 9.2)));
 	c = lay(c, beni, crect(p, 3.8, 9.3, 9.6));
 	// top roof + ridge with end ornaments
-	c = key_roof(c, p, 9.6, 12.3, 5.4, 1.6, 0.55, ai1, ai2);
+	c = key_roof(c, p, 9.6, 12.3, 5.4, 1.6, 0.55, ai1, ai2, px);
 	c = lay(c, sumi, crect(p, 1.95, 12.25, 12.75));
 	c = lay(c, sumi, ell(p, vec2(-1.95, 12.75), vec2(0.28, 0.38)) + ell(p, vec2(1.95, 12.75), vec2(0.28, 0.38)));
 	return c;
 }
 
-vec4 pagoda(vec2 p, float w, float h) {
+vec4 pagoda(vec2 p, float w, float h, float px) {
 	vec4 c = vec4(0.0);
 	float stones = max(step(0.85, fract(p.y / 0.33)), step(0.92, fract(p.x / 0.7)));
 	c = lay(c, sumi, crect(p, 4.1, 0.0, 1.05));
@@ -300,7 +301,7 @@ vec4 pagoda(vec2 p, float w, float h) {
 		c = lay(c, ai1, crect(p, bw + 0.35, y + bh - 0.05, y + bh + 0.3) * step(0.45, fract(p.x / 0.25)));
 		float ry = y + bh + 0.25;
 		float rh = 1.35 * s;
-		c = key_roof(c, p, ry, ry + rh, 4.6 * s, 2.0 * s, 0.55 * s, ai1, ai2);
+		c = key_roof(c, p, ry, ry + rh, 4.6 * s, 2.0 * s, 0.55 * s, ai1, ai2, px);
 		y = ry + rh - 0.15;
 	}
 	// spire (sorin): rod, nine rings, flame top — printed in ink blue
@@ -316,7 +317,7 @@ vec4 pagoda(vec2 p, float w, float h) {
 	return c;
 }
 
-vec4 kiyomizu(vec2 p, float w, float h, float s) {
+vec4 kiyomizu(vec2 p, float w, float h, float s, float px) {
 	vec4 c = vec4(0.0);
 	// the pillar framework under the stage (kakezukuri)
 	c = lay(c, ai3, crect(p, 8.9, 0.0, 8.2));
@@ -340,14 +341,14 @@ vec4 kiyomizu(vec2 p, float w, float h, float s) {
 	// great hip roof of cypress bark: fine vertical striations
 	float e = 0.08;
 	c = lay(c, sumi, roof(p, 11.8 - e, 16.3 + e, 8.8 + e, 3.0 + e, 0.65));
-	vec3 bark = mix(ai1, ai2, (1.0 - stripes(p.x / 0.12, 0.7)) * 0.6);
+	vec3 bark = mix(ai1, ai2, (1.0 - stripes(p.x / 0.12, 0.7, px / 0.12)) * 0.6);
 	c = lay(c, bark, roof(p, 11.8, 16.3, 8.8, 3.0, 0.65));
 	c = lay(c, sumi, crect(p, 3.4, 16.2, 16.55));
 	// maples on both sides: blue masses with vermilion leaves
 	for (int i = 0; i < 6; i++) {
 		float fi = float(i);
 		float side = i < 3 ? -1.0 : 1.0;
-		vec2 ctr = vec2(side * (7.5 + mod(fi, 3.0) * 0.9), 1.6 + mod(fi, 3.0) * 2.6);
+		vec2 ctr = vec2(side * (6.4 + mod(fi, 3.0) * 0.55), 1.6 + mod(fi, 3.0) * 2.6);
 		vec2 r = vec2(1.9, 1.5);
 		c = lay(c, sumi, ell(p, ctr, r + 0.07));
 		c = lay(c, ai2, ell(p, ctr, r));
@@ -357,23 +358,23 @@ vec4 kiyomizu(vec2 p, float w, float h, float s) {
 	return c;
 }
 
-vec4 temple_gate(vec2 p, float w, float h) {
-	vec4 c = temple_wall(p, w, 3.9) * step(1.75, abs(p.x));
+vec4 temple_gate(vec2 p, float w, float h, float px) {
+	vec4 c = temple_wall(p, w, 3.9, px) * step(1.75, abs(p.x));
 	c = key_rect(c, p, vec2(-1.75, 0.0), vec2(1.75, 4.6), ai1);
 	c = lay(c, ai2, rect(p, vec2(-1.35, 0.0), vec2(-0.03, 4.1)) + rect(p, vec2(0.03, 0.0), vec2(1.35, 4.1)));
 	float studs = step(length(fract(p / vec2(0.45, 0.5)) - 0.5), 0.13) * crect(p, 1.3, 0.2, 4.0);
 	c = lay(c, ai4, studs);
-	c = key_roof(c, p, 4.6, 7.6, 3.1, 0.9, 0.45, ai1, ai2);
+	c = key_roof(c, p, 4.6, 7.6, 3.1, 0.9, 0.45, ai1, ai2, px);
 	c = lay(c, sumi, crect(p, 1.15, 7.55, 7.95));
 	return c;
 }
 
-vec4 shrine(vec2 p, float w, float h) {
+vec4 shrine(vec2 p, float w, float h, float px) {
 	vec4 c = vec4(0.0);
 	c = lay(c, sumi, crect(p, 2.75, 0.0, 0.65));
 	c = lay(c, ai3, crect(p, 2.7, 0.0, 0.6));
 	c = key_rect(c, p, vec2(-2.4, 0.6), vec2(2.4, 4.0), paper);
-	c = lay(c, ai3, rect(p, vec2(-2.0, 1.2), vec2(2.0, 3.3)) * (1.0 - stripes(p.x / 0.2, 0.5)));
+	c = lay(c, ai3, rect(p, vec2(-2.0, 1.2), vec2(2.0, 3.3)) * (1.0 - stripes(p.x / 0.2, 0.5, px / 0.2)));
 	for (int i = 0; i < 4; i++) {
 		float px = -2.2 + float(i) * 1.466;
 		c = lay(c, beni, rect(p, vec2(px - 0.17, 0.6), vec2(px + 0.17, 4.0)));
@@ -383,7 +384,7 @@ vec4 shrine(vec2 p, float w, float h) {
 	c = lay(c, paper, crect(p, 2.2, 3.35, 3.55));
 	c = lay(c, paper, step(abs(fract(p.x / 1.1) - 0.5), 0.08) * crect(p, 2.0, 2.75, 3.35));
 	c = lay(c, ai1, crect(p, 0.8, 0.6, 1.3));
-	c = key_roof(c, p, 4.0, 6.5, 3.2, 1.0, 0.3, ai1, ai2);
+	c = key_roof(c, p, 4.0, 6.5, 3.2, 1.0, 0.3, ai1, ai2, px);
 	// crossed rafter ends (chigi) on the ridge
 	vec2 q = p - vec2(0.0, 6.5);
 	float chigi = (step(abs(q.x - q.y * 0.7), 0.1) + step(abs(q.x + q.y * 0.7), 0.1)) * step(0.0, q.y) * step(q.y, 1.0) * step(abs(q.x), 1.1);
@@ -494,18 +495,21 @@ void fragment() {
 	float h = v_dim.y;
 	float s = v_dim.z;
 	vec2 p = vec2((UV.x - 0.5) * w, (1.0 - UV.y) * h);
+	// pixel footprint in metres, once, in uniform control flow
+	vec2 pw2 = fwidth(p);
+	float px = max(pw2.x, pw2.y);
 	vec4 c;
-	if (kind < 0.5) c = machiya(p, w, h, s, false);
-	else if (kind < 1.5) c = machiya(p, w, h, s, true);
-	else if (kind < 2.5) c = temple_wall(p, w, h);
+	if (kind < 0.5) c = machiya(p, w, h, s, false, px);
+	else if (kind < 1.5) c = machiya(p, w, h, s, true, px);
+	else if (kind < 2.5) c = temple_wall(p, w, h, px);
 	else if (kind < 3.5) c = pine(p, w, h, s);
-	else if (kind < 4.5) c = roofs(p, w, h, s);
-	else if (kind < 10.5) c = theater(p, w, h);
-	else if (kind < 11.5) c = gate(p, w, h);
-	else if (kind < 12.5) c = pagoda(p, w, h);
-	else if (kind < 13.5) c = kiyomizu(p, w, h, s);
-	else if (kind < 14.5) c = temple_gate(p, w, h);
-	else if (kind < 15.5) c = shrine(p, w, h);
+	else if (kind < 4.5) c = roofs(p, w, h, s, px);
+	else if (kind < 10.5) c = theater(p, w, h, px);
+	else if (kind < 11.5) c = gate(p, w, h, px);
+	else if (kind < 12.5) c = pagoda(p, w, h, px);
+	else if (kind < 13.5) c = kiyomizu(p, w, h, s, px);
+	else if (kind < 14.5) c = temple_gate(p, w, h, px);
+	else if (kind < 15.5) c = shrine(p, w, h, px);
 	else if (kind < 16.5) c = torii(p, w, h);
 	else if (kind < 17.5) c = tower(p, w, h);
 	else if (kind < 18.5) c = mountains(p, w, h, s);
@@ -520,7 +524,10 @@ void fragment() {
 	// shows unprinted paper on its back
 	bool both = kind > 11.5 && kind < 12.5 || kind > 15.5 && kind < 19.5;
 	if (!FRONT_FACING && !both) {
-		col = mix(paper, c.rgb, 0.1) * 0.93;
+		float hatch = step(0.86, fract((p.x + p.y) / 0.5));
+		float frame = step(min(min(p.x + w * 0.5, w * 0.5 - p.x), min(p.y, h - p.y)), 0.12);
+		col = mix(paper * 0.95, ai4, hatch * 0.6);
+		col = mix(col, ai2, frame);
 	}
 	col *= mix(1.0, 0.95, v_fold); // lying cards a touch darker (page shadow)
 	ALBEDO = col;

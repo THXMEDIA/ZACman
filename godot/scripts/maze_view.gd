@@ -93,7 +93,7 @@ var cond_wall_material: ShaderMaterial = null
 var cond_floor_material: ShaderMaterial = null
 
 var wall_material: Material # the CURRENT wall material: StandardMaterial3D, the theme's wall shader or a condition look's (see _make_materials / set_look)
-var pellet_material: StandardMaterial3D
+var pellet_material: Material # StandardMaterial3D, or the theme's pellet shader
 var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
 
@@ -190,11 +190,18 @@ func _make_materials() -> void:
 		sm.metallic = 0.15
 		wall_material = sm
 
-	pellet_material = StandardMaterial3D.new()
-	pellet_material.albedo_color = city_theme.pellet_color
-	pellet_material.emission_enabled = true
-	pellet_material.emission = city_theme.pellet_emission
-	pellet_material.emission_energy_multiplier = city_theme.pellet_energy
+	if city_theme.pellet_shader_path != "":
+		var pm := ShaderMaterial.new()
+		pm.shader = load(city_theme.pellet_shader_path)
+		pm.set_shader_parameter("col", city_theme.pellet_color)
+		pellet_material = pm
+	else:
+		var sm2 := StandardMaterial3D.new()
+		sm2.albedo_color = city_theme.pellet_color
+		sm2.emission_enabled = true
+		sm2.emission = city_theme.pellet_emission
+		sm2.emission_energy_multiplier = city_theme.pellet_energy
+		pellet_material = sm2
 
 	power_material = StandardMaterial3D.new()
 	power_material.albedo_color = city_theme.power_color
@@ -1061,4 +1068,5 @@ func set_object_style(outline: bool, ignore_fog: bool) -> void:
 		if m == null:
 			continue
 		m.next_pass = ol
-		m.disable_fog = ignore_fog
+		if m is BaseMaterial3D: # a theme's pellet shader has its own fog setting
+			m.disable_fog = ignore_fog

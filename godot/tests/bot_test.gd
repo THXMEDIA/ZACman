@@ -815,6 +815,9 @@ func _run_checks() -> void:
 	_check("kyoto: no ghosts, no traffic, one exit", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("kyoto_exit.gd"))
 	_check("kyoto: the pop-up city is built", main.maze_view.scenery_root != null and main.maze_view.city_theme.id == "kyoto" and main.maze_view.scenery_root.card_count > 150)
 	_check("kyoto: pellets lead the way", main.maze_view.pellet_cells.size() > 50)
+	_check("kyoto: the exit is on the minimap", main.hud.minimap_exit_cells.size() == 1)
+	_check("kyoto: the book opens on start (intro)", main.maze_view.scenery_root.intro_running())
+	_check("kyoto: the fold is explained once on start", main.hud.clock_hint.visible and main.hud.clock_hint_label.text.contains("Effekte reduzieren"))
 	_check("kyoto: paper sky, no glow", main.world_env.environment.glow_enabled == false and main.world_env.environment.background_color.is_equal_approx(load("res://scripts/kyoto_style.gd").PAPER))
 	main.set_reduce_fx(true)
 	_check("kyoto: 'Effekte reduzieren' reaches the pop-ups", main.maze_view.scenery_root.fold_enabled() == false)
@@ -822,11 +825,14 @@ func _run_checks() -> void:
 	_check("kyoto: pop-ups fold again without it", main.maze_view.scenery_root.fold_enabled() == true)
 	var ky_exit: Vector3 = main.metro_stations[0].position
 	main.player.global_position = Vector3(ky_exit.x, main.player.global_position.y, ky_exit.z - 0.8)
+	var ky_tries := 0
+	while main.playing_explorer and ky_tries < 400: # banner 1.4 s, robust under load (code review H5)
+		await get_tree().process_frame
+		ky_tries += 1
 	await get_tree().process_frame
-	await get_tree().process_frame
-	await get_tree().create_timer(1.6).timeout
 	_check("kyoto: the exit ends the Kyoto run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
 	_check("theme reset Kyoto -> speedrun: no pop-up city, speedrun background", main.maze_view.scenery_root == null and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
+	_check("speedrun after Kyoto: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
 	main.skip_start_intro = true
 	main.begin_game()
 	await get_tree().process_frame

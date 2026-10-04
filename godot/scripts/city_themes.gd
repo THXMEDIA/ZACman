@@ -366,12 +366,15 @@ static func kyoto() -> Resource:
 	t.wall_alternate_rotation = false
 	t.landmark_provider_script = KyotoMazeScript
 	t.landmark_default_height = KyotoMazeScript.WALL_H
+	t.wall_height_min = KyotoMazeScript.WALL_H # every block (landmark_at is "")
+	t.wall_height_max = KyotoMazeScript.WALL_H
 	t.wall_shader_path = "res://shaders/kyoto_slab.gdshader"
 	t.scenery_builder_script = KyotoSceneryScript
 	t.pellet_trail_provider_script = KyotoMazeScript
 
 	t.floor_color = KyotoStyle.PAPER
 	t.floor_shader_path = "res://shaders/kyoto_floor.gdshader"
+	t.floor_setup_script = KyotoSceneryScript # palette + torii rail print
 	t.ceil_enabled = false
 
 	t.env_bg_color = KyotoStyle.PAPER
@@ -395,12 +398,16 @@ static func kyoto() -> Resource:
 	t.pellet_color = KyotoStyle.PELLET
 	t.pellet_emission = KyotoStyle.PELLET
 	t.pellet_energy = 0.55
+	t.pellet_shader_path = "res://shaders/kyoto_orb.gdshader" # gold with an ink rim (UX W1)
 	t.pellet_shape = "sphere"
 	t.pellet_size = 0.13
 	t.pellet_height = 0.55
 
-	t.minimap_bg_color = Color(0.953, 0.933, 0.886, 0.94) # paper, nearly opaque
-	t.minimap_wall_color = KyotoStyle.AI1
+	# Inverted (UX K1): dark streets, pale blocks — gold pellets and the cyan
+	# arrow need contrast; paper streets gave ~1.35:1.
+	t.minimap_bg_color = Color(KyotoStyle.AI1, 0.94)
+	t.minimap_wall_color = KyotoStyle.AI3
+	t.minimap_exit_color = KyotoStyle.EXIT
 
 	t.has_power_ups = false
 	t.permanently_word_built = false

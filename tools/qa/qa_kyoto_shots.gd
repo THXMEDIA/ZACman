@@ -10,7 +10,8 @@
 #   k4_hanamikoji.png     Hanamikoji nach Süden, Tempeltor am Ende
 #   k5_pagode.png         Yasaka-dori nach Osten auf die Pagode
 #   k6_torii.png          Torii-Gasse nach Westen
-#   k7_kiyomizu_ausgang.png  Ninenzaka nach Süden: Kiyomizu-Bühne, Lesebändchen, Ausgang
+#   k7_kiyomizu_ausgang.png  Ninenzaka (Süd) nach Süden: Kiyomizu-Bühne, Lesebändchen, Ausgang
+#   k2_spawn.png zeigt das Aufklappen (Intro, ~1 s nach dem Start)
 #   k8_totale.png         erhöhte Totale (Falten relativ zu einem gedachten Spieler)
 #   k9_reduziert.png      wie k3 mit „Effekte reduzieren“ (alles steht)
 #   k10_theater.png       Shijo-dori nach Westen auf das Theater
@@ -74,7 +75,7 @@ func _plan() -> void:
 	_steps.append({"wait": 20, "do": func(): _shot("k5_pagode.png")})
 	_steps.append({"wait": 2, "do": func(): _pose(40.0, 78.0, W, 0.03)})
 	_steps.append({"wait": 20, "do": func(): _shot("k6_torii.png")})
-	_steps.append({"wait": 2, "do": func(): _pose(88.0, 58.0, S, 0.1)})
+	_steps.append({"wait": 2, "do": func(): _pose(88.0, 73.0, S, 0.1)})
 	_steps.append({"wait": 20, "do": func(): _shot("k7_kiyomizu_ausgang.png")})
 	_steps.append({"wait": 2, "do": func():
 		_fold_center(true, Vector3(46.0, 1.0, 26.0))
