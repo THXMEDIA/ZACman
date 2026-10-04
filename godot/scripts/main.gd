@@ -1191,11 +1191,7 @@ func end_game() -> void:
 	if versus != null and versus.active:
 		# E17: the last life lost in a Versus round loses the round, no game
 		# over screen and no high score.
-		running = false
-		paused = false
-		_end_condition(false)
-		player.input_enabled = false
-		Sfx.stop_all()
+		stop_run_for_versus()
 		games_ended += 1
 		versus.on_out_of_lives()
 		game_over.emit()

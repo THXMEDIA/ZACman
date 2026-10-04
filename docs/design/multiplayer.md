@@ -66,7 +66,7 @@ Vorgabe des Inhabers: Multiplayer zu zweit – Koop (gemeinsam ein Speed-Maze-Le
 - `scripts/versus_controller.gd` – Lobby, Rundenablauf, Hooks in `main.gd`
 - `scripts/versus_ui.gd` – Lobby, Rennbalken, Countdown, Ergebnis
 - `scripts/twitch_chat.gd` – zusätzliche Kanäle (`join_extra`, Signal `channel_command`)
-- Tests: `tests/test_chat_duel.gd` (50), `tests/test_versus_session.gd` (50: zwei Sitzungen in einem Prozess, feindliche Pakete, gleichzeitiger Tod, Revanche, zweiter Gegner, Join ohne Host), `tests/versus_e2e.gd` + `tools/qa/versus_e2e.sh` (zwei Spielinstanzen über localhost), Screenshots `tools/qa/qa_versus_shots.gd`
+- Tests: `tests/test_chat_duel.gd` (50), `tests/test_versus_session.gd` (53: zwei Sitzungen in einem Prozess, feindliche Pakete, gleichzeitiger Tod, Revanche, zweiter Gegner, Join ohne Host), `tests/versus_e2e.gd` + `tools/qa/versus_e2e.sh` (zwei Spielinstanzen über localhost), Screenshots `tools/qa/qa_versus_shots.gd`
 
 ## 3. Koop (nächster Schritt, noch nicht gebaut)
 

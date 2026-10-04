@@ -277,7 +277,9 @@ func _opponent_gone() -> void:
 	_other_id = 0
 	round_open = false
 	_reset_handshake()
-	if is_host and _peer != null and not during:
+	# Listen for a new opponent only in the lobby, never after a match was
+	# played (re-review N1: a stranger must not start a "rematch").
+	if is_host and _peer != null and round_index < 0:
 		match_seed = 0
 		match_levels.clear()
 		round_index = -1
@@ -301,6 +303,7 @@ func _reset_handshake() -> void:
 
 func _fail(text: String) -> void:
 	if _peer != null:
+		_peer.poll() # flush a pending bye before closing (re-review W6)
 		_peer.close()
 	_peer = null
 	_other_id = 0
@@ -423,7 +426,12 @@ func _on_message(m: Dictionary) -> void:
 			_apply_result(outcome, cause)
 		"bye":
 			if _other_id != 0:
+				var why := str(m.get("why", ""))
 				_opponent_gone()
+				if why == "version":
+					_set_state(State.CLOSED, "Der Gegner hat eine andere Spielversion – bitte beide aktualisieren.")
+				elif why == "handshake":
+					_set_state(State.CLOSED, "Verbindung fehlerhaft – bitte neu verbinden.")
 
 
 func _maybe_reveal() -> void:
@@ -552,7 +560,7 @@ static func to_cs(time_s: float) -> int:
 
 
 func report_finish(time_s: float) -> void:
-	if not round_open or my_cs >= 0 or my_dead:
+	if not round_open or my_cs >= 0 or my_dead or _i_conceded:
 		return
 	my_cs = clampi(to_cs(time_s), 1, MAX_ROUND_CS)
 	_send({"t": "finish", "round": round_index, "cs": my_cs})
@@ -560,7 +568,7 @@ func report_finish(time_s: float) -> void:
 
 
 func report_died(frac: float = 0.0, time_s: float = 0.0) -> void:
-	if not round_open or my_dead or my_cs >= 0:
+	if not round_open or my_dead or my_cs >= 0 or _i_conceded:
 		return
 	my_dead = true
 	my_dead_frac = clampf(frac, 0.0, 1.0)
@@ -596,7 +604,7 @@ func _host_try_decide(grace_over: bool = false) -> void:
 		else:
 			_host_decide("host" if my_cs < opp_cs else "client", "time")
 	elif my_cs >= 0 and (opp_dead or opp_conceded):
-		_host_decide("host", "lives" if opp_dead else "time")
+		_host_decide("host", "lives" if opp_dead else "conceded")
 	elif opp_cs >= 0 and my_dead:
 		_host_decide("client", "lives")
 	elif my_dead and opp_dead:

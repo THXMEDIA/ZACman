@@ -212,12 +212,22 @@ func _run() -> void:
 	_check("dead client vs running host: host wins at once", ok and _last("host", "decided")[2] == "win")
 	await _wait(func(): return _has("client", "decided"))
 
+	# --- client concedes after the host's finish -> cause "conceded" ---------
+	ok = await _round()
+	if ok and not host.match_finished:
+		host.report_finish(30.0)
+		await _wait(func(): return client.opp_cs >= 0)
+		client.tick_round(31.0)
+		d = await _decided()
+		_check("client passes the host's time: host wins, cause conceded", d[0] == "win" and d[1] == "loss" and d[2] == "conceded", str(d))
+
 	# --- the opponent leaves; a new one can join the host (QA W2) -------------
 	_clear()
+	var was_running: bool = host.match_running()
 	client.close()
 	ok = await _wait(func(): return _has("host", "left"))
 	_check("host notices the client leaving", ok)
-	_check("during a running match it counts as during_match", _last("host", "left")[1] == true)
+	_check("during_match reports whether a match was still running", _last("host", "left")[1] == was_running)
 	host.close()
 	client.queue_free()
 	host.queue_free()
@@ -226,6 +236,21 @@ func _run() -> void:
 	port += 60
 	ok = await _connect_pair(port)
 	_check("fresh pair ready", ok)
+	# after a played match the host does NOT take a stranger (re-review N1)
+	_clear()
+	await _round()
+	client.report_died(0.1, 1.0)
+	await _wait(func(): return _has("host", "decided"), 3000)
+	client.close()
+	await _wait(func(): return _has("host", "left"))
+	_check("after a played round the host closes instead of listening", host.state == Session.State.CLOSED)
+	host.close()
+	client.queue_free()
+	host.queue_free()
+	await _frames(3)
+	port += 7
+	ok = await _connect_pair(port)
+	_check("fresh lobby pair ready", ok)
 	client.close()
 	await _wait(func(): return host.state == Session.State.HOSTING)
 	_check("lobby: after the opponent left, the host listens again", host.state == Session.State.HOSTING)

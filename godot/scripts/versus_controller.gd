@@ -204,10 +204,10 @@ func _on_round_started(round: int, go_in: float) -> void:
 		_saved_week_override = main.rabbit_week_override
 	if session.host_week.x > 0:
 		main.rabbit_week_override = session.host_week
-	main.begin_game(session.current_level_id())
 	# Same ghost randomness on both sides (design N2): the frightened ghosts'
-	# turns follow the match, not this machine.
+	# turns follow the match, not this machine (seeded before the level).
 	main.ai_rng.seed = hash("zapmaniac-ai|%d|%d" % [session.match_seed, round])
+	main.begin_game(session.current_level_id())
 	hud.set_level(round + 1) # the LEVEL chip shows the round (QA N4)
 	ui.set_race_visible(true)
 	_refresh_race()
@@ -330,6 +330,7 @@ func _on_opponent_rabbit(cond: String, good: bool, _p: float) -> void:
 	var cname: String = c.display_name.to_upper() if c != null else cond.to_upper()
 	var text := "%s: %s · %s" % [session.opp_name.to_upper(), cname, "gut" if good else "schlecht"]
 	var side: int = session.my_side()
+	# my own chat's sabotage share (.y) is what targets the opponent
 	if not good and duel.active and duel.shares(side, main.real_now).y > 0.0:
 		text += "  ·  Sabotage von #%s wirkt!" % duel.channels[side]
 	ui.show_event(text, hud.COND_GOOD if good else hud.COND_BAD, 3.5)
