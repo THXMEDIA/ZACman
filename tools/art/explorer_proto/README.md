@@ -12,6 +12,9 @@ Explorer-Städte:
 | `kabuki_buehne/` | E Bühnenstadt (sehr Kabuki: Hinoki-Boden, Hanamichi, Schiebekulissen, Streifenvorhang, Kirschzweig-Borten, Kuromaku-Nacht, Drehbühne, grüne Versenkung) | Shibai-machi, fiktives Theaterviertel |
 | `pappkarton/` | F Pappstadt (braune Wellpappe: Wellen-Schnittkanten per Shader, Klebeband, Druckreste, Marker-Masken, echte Sonne + Schatten) | Danboru-cho, fiktive Kartonstadt |
 | `aizuri_popup/` | G Aizuri-Pop-up (Theater-Bilderbuch, Holzschnitt in Preußischblau, Teile klappen beim Näherkommen auf) | Bilderbuchstadt, fiktiv |
+| `pappe_buehne/` | I Kartonbühne (fotorealistische Wellpappe: Kleinstadt-Gasse aus Umzugskartons auf schwarzer Bühne, Scheinwerfer, glühendes Packpapier) | fiktive Kleinstadt-Gasse mit Uhrturm |
+| `pappe_miniatur/` | J Pappmodell Amsterdam 1:100 auf Ameisenhöhe (meterhohe Wellen in jeder Schnittkante, Tageslicht, Arbeitstisch) | Amsterdam, Grachtengürtel |
+| `pappe_wohnung/` | K Umzugswohnung (Kartonstapel als Gänge, Edding-Etiketten als Wegweiser, Pappmöbel, Abendsonne durch Packpapier) | Altbauwohnung, fiktiv |
 
 Gemeinsame Helfer in `common/` (`geo.gd` Primitive, Figuren, Fahrzeuge, Kugel-MultiMesh,
 Inverted-Hull-Konturen; `shot.gd` Kameras und Screenshots). Jede Richtung hat ihre Shader
@@ -43,3 +46,21 @@ Inverted-Hull als Kind-Mesh pro Objekt (im Spiel ein zweiter Pass auf der Wand-M
 oder Post-Edge), Sky-LIC mit 14 Noise-Abtastungen pro Pixel (im Spiel vorgebackene
 Flow-Textur oder weniger Schritte). Alle Bilder sind im Software-Renderer entstanden; Glow,
 Licht und Antialiasing sind im Spiel (Forward+) besser.
+
+Nachtrag I–K (04.10.2026, Papp-Fotorealismus): `tools/pappe_pbr.py` erzeugt prozedurale PBR-Texturen
+(Kraftliner Albedo/Normal/Rauheit mit Fasern und Wellen-Abzeichnung, zerknittertes Packpapier als
+periodisches Voronoi-Facettenfeld, Klebeband-Falten, Druck-/Edding-Atlas; keine Scans, ~25 s); jede
+Richtung ruft es über ihr `prints.py` auf (`prints/` nicht eingecheckt, `FORCE=1` erzeugt neu).
+`common/pappe.gd` enthält die gemeinsamen Shader und Bauhelfer: Karton-Shader für eine MultiMesh
+(Instanzdaten Seed/Klebeband/Druck/Helligkeit; Ausbauchen, Kantenabrieb, Laschenfuge, Klebeband,
+Herstellerlasche, Griffloch, Druck; Plattenmodus für Modellbau mit Wellen-Querschnitt an den Kanten),
+Boden, Packpapier (Falten im Vertex-Shader, Transluzenz über BACKLIGHT), Papprolle, Schnittkante,
+Glasmurmel, Lichtkegel, Vignette; `stack_wall()` stapelt Kartons mit Aussparungen. `SHOT_WAIT=4`
+verkürzt die Frames je Ansicht (Software-Rendering ~10–20 s pro Frame).
+
+Weitere Prototyp-Abkürzungen I–K (nicht ins Spiel): Packpapier-Bahnen und Lampenschirme als
+Einzelknoten (im Spiel MultiMesh), Ausschnitte (Giebel, Bäume, Zifferblätter) als Einzel-Meshes (im
+Spiel beim Levelaufbau zu einem Mesh zusammenführen), Fenster-Omnilichter zufällig verteilt.
+Renderer: nur Compatibility (Software-GL) – Forward+ war in der Sandbox nicht startbar (kein
+Vulkan-Treiber mit X11-Oberfläche). Es fehlen daher GI/Bounce-Licht, SSAO, Volumetrik, Tiefenunschärfe
+und weiche Schatten; Omni-Schatten zeigen in Compatibility Dual-Paraboloid-Artefakte (deshalb Spots).

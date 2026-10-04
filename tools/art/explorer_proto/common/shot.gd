@@ -12,11 +12,13 @@ var views := []
 var vi := 0
 var out_dir := ""
 var name_ := ""
-const WAIT := 18 # Frames je Ansicht (Shader-Kompilierung, TIME-Animationen laufen weiter)
+var WAIT := 18 # Frames je Ansicht (Shader-Kompilierung, TIME-Animationen laufen weiter); SHOT_WAIT ueberschreibt
 
 func _initialize() -> void:
 	out_dir = OS.get_environment("SHOT_DIR")
 	name_ = OS.get_environment("SHOT_NAME")
+	if OS.get_environment("SHOT_WAIT") != "":
+		WAIT = int(OS.get_environment("SHOT_WAIT"))
 	var only := OS.get_environment("SHOT_ONLY")
 	city = CityScript.new()
 	root.add_child(city)
@@ -26,6 +28,8 @@ func _initialize() -> void:
 
 func _process(_d: float) -> bool:
 	frame += 1
+	if OS.get_environment("SHOT_DEBUG") != "":
+		print("frame ", frame, " t=", Time.get_ticks_msec())
 	if vi >= views.size():
 		quit()
 		return false

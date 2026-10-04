@@ -504,3 +504,183 @@ for k, D in DIRS2.items():
     tile2(k, D)
     capsule2(k, D)
 print("ok")
+
+# ---------- Nachtrag 04.10.2026: Richtungen I–K (Papp-Fotorealismus) ----------
+# Style-Tiles zeigen die echten PBR-Texturen (tools/pappe_pbr.py) statt gemalter Muster.
+FCOND = "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf"
+DIRS3 = {
+ "pappe_buehne": dict(
+   title="I  KARTONBÜHNE · STADT IN EINEM AKT", city="KARTONBÜHNE",
+   idea="Eine Kleinstadt-Gasse als Bühnenbild aus echten Umzugskartons auf schwarzer Bühne: harte warme Scheinwerfer, Dunst, Packpapier glüht in den Fenstern.",
+   bg="#0B0806", fg="#E9D9C2", shot="strasse.png", label="Bühnenschwarz · Kraft · Packpapier-Glühen",
+   pal=[("#050403","Bühnenschwarz (Himmel, Nebel)"),("#C9A47A","Kraft im Licht"),("#A98157","Kraft (Albedo)"),("#6E4E33","Kraft im Schatten"),
+        ("#C29A6A","Packpapier"),("#B88A52","Klebeband (glänzend)"),("#FFB85C","Glühen hinter Papier"),("#1A1612","Druck / Edding"),
+        ("#2E6BFF","Kugeln: Glasmurmel Kobalt (exklusiv)"),("#1FA855","Ausgang: grüner Karton + Licht (exklusiv)")]),
+ "pappe_miniatur": dict(
+   title="J  PAPPMODELL AMSTERDAM · 1:100", city="AMSTERDAM 1:100",
+   idea="Ein Architekturmodell aus Wellpappe auf Ameisenhöhe: Häuser in echter Größe, Material 100-fach – meterhohe Wellen in jeder Schnittkante. Tageslicht aus dem Atelierfenster.",
+   bg="#E9E3D8", fg="#2B2118", shot="strasse.png", label="Atelierlicht · Wellen-Schnittkante · Lackwasser",
+   pal=[("#E9E3D8","Atelierhimmel / Dunst"),("#C9A47A","Kraft im Licht"),("#A98157","Kraft (Albedo)"),("#5B412B","Wellenhohlraum / Schatten"),
+        ("#1A120B","Lackwasser (Gracht)"),("#6E5139","Arbeitstisch"),("#D9A21E","Riesen-Bleistift (Wahrzeichen)"),("#E8E2D6","Kaffeebecher (Wahrzeichen)"),
+        ("#2E6BFF","Kugeln: Glaskopf-Stecknadeln (exklusiv)"),("#1FA855","Ausgang: grüne Papp-Tram (exklusiv)")]),
+ "pappe_wohnung": dict(
+   title="K  UMZUGSWOHNUNG · ABENDS", city="UMZUGSWOHNUNG",
+   idea="Eine Altbauwohnung am Umzugsabend, alles aus Pappe: Kartonstapel sind die Gänge, Edding-Etiketten die Wegweiser, Möbel die Wahrzeichen, Abendsonne glüht durchs Packpapier.",
+   bg="#1A120C", fg="#EAD8BF", shot="strasse.png", label="Abendsonne · Edding · Pappmöbel",
+   pal=[("#1A120C","Raumschatten"),("#C9A47A","Kraft im Licht"),("#A98157","Kraft (Albedo)"),("#B8946A","Wandplatten"),
+        ("#C29A6A","Packpapier-Vorhang"),("#FF9A3C","Abendsonne durch Papier"),("#1A1612","Edding-Etikett"),("#B88A52","Klebeband"),
+        ("#2E6BFF","Kugeln: Glasmurmeln (exklusiv)"),("#1FA855","Ausgang: grüne Wohnungstür (exklusiv)")]),
+}
+
+def stencil_text(img, xy, text, size, fill, bridge_col, seed=1):
+    """Schablonenschrift: Buchstaben mit ausgesparten Stegen (eigene Umsetzung, Systemfont)."""
+    f = F(FCOND, size)
+    d = ImageDraw.Draw(img)
+    x, y = xy
+    random.seed(seed)
+    for ch in text:
+        d.text((x, y), ch, font=f, fill=fill)
+        w = f.getlength(ch)
+        if ch.strip() and ch not in "Iil1.:·-":
+            bx = x + w * 0.5 + random.uniform(-1, 1)
+            d.rectangle([bx - size * 0.035, y + size * 0.1, bx + size * 0.035, y + size * 1.1], fill=bridge_col)
+        x += w + size * 0.02
+    return x
+
+def marker_text_img(img, xy, text, size, fill, seed=1, rot=0.0):
+    layer = Image.new("L", img.size, 0)
+    ld = ImageDraw.Draw(layer)
+    f = F(FCOND, size)
+    x, y = xy
+    random.seed(seed)
+    for ch in text:
+        g = Image.new("L", (size * 2, size * 2), 0)
+        ImageDraw.Draw(g).text((size // 2, size // 3), ch, font=f, fill=255)
+        g = g.rotate(random.uniform(-8, 8) + rot, resample=Image.BICUBIC)
+        layer.paste(255, (int(x) - size // 2, int(y + random.uniform(-3, 3)) - size // 3), g)
+        x += f.getlength(ch) * random.uniform(0.93, 1.04)
+    layer = layer.filter(ImageFilter.GaussianBlur(1.4)).point(lambda v: 255 if v > 100 else int(v * 1.8))
+    img.paste(Image.new("RGB", img.size, fill), (0, 0), layer)
+
+def tex_swatch(img, path, box, scale=1.0, tint=None):
+    t = Image.open(path).convert("RGB")
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    crop = t.crop((0, 0, int(w / scale), int(h / scale))).resize((w, h), Image.LANCZOS)
+    if tint:
+        crop = ImageChops.multiply(crop, Image.new("RGB", (w, h), tint))
+    img.paste(crop, (x0, y0))
+
+def flute_section(d, box, fg, bg, n=7):
+    x0, y0, x1, y1 = box
+    lin = (y1 - y0) * 0.12
+    d.rectangle([x0, y0, x1, y1], fill=(40, 26, 15))
+    d.rectangle([x0, y0, x1, y0 + lin], fill=fg); d.rectangle([x0, y1 - lin, x1, y1], fill=fg)
+    pts = []
+    for i in range(0, x1 - x0 + 1, 2):
+        pts.append((x0 + i, (y0 + y1) / 2 + ((y1 - y0) / 2 - lin - 4) * math.sin(i / (x1 - x0) * n * 2 * math.pi)))
+    d.line(pts, fill=fg, width=max(3, int((y1 - y0) * 0.06)))
+
+def tile3(key, D):
+    W, Hh = 1600, 1000
+    img = Image.new("RGB", (W, Hh), rgb(D["bg"]))
+    d = ImageDraw.Draw(img)
+    fg = rgb(D["fg"]); bg = rgb(D["bg"])
+    dim = tuple(int(c * 0.72 + bg[i] * 0.28) for i, c in enumerate(fg))
+    d.text((60, 36), D["title"], font=F(INTER % "Bold", 46), fill=fg)
+    import textwrap
+    for li, line in enumerate(textwrap.wrap(D["idea"], 150)):
+        d.text((60, 100 + li * 24), line, font=F(INTER % "Regular", 18), fill=dim)
+    x, y = 60, 160
+    for i, (h, role) in enumerate(D["pal"]):
+        cx = x + (i % 5) * 160; cy = y + (i // 5) * 140
+        d.rectangle([cx, cy, cx + 136, cy + 74], fill=rgb(h), outline=dim, width=2)
+        d.text((cx, cy + 80), h.upper(), font=F(MONOB, 15), fill=fg)
+        for li, line in enumerate(textwrap.wrap(role, 24)[:2]):
+            d.text((cx, cy + 99 + li * 14), line, font=F(INTER % "Regular", 11), fill=dim)
+    pr = os.path.join(PROTO, key, "prints")
+    sx, sy = 60, 460
+    d.text((sx, sy), "Material (prozedurales PBR, keine Scans): Liner · Packpapier · Wellen-Querschnitt · Klebeband · Edding", font=F(INTER % "SemiBold", 16), fill=dim)
+    tex_swatch(img, os.path.join(pr, "liner_albedo.png"), (sx, sy + 30, sx + 170, sy + 200), 0.5)
+    tex_swatch(img, os.path.join(pr, "crumple_albedo.png"), (sx + 185, sy + 30, sx + 355, sy + 200), 0.5)
+    nm = Image.open(os.path.join(pr, "crumple_normal.png")).convert("L").crop((0, 0, 340, 340)).resize((170, 170))
+    lit = Image.merge("RGB", [nm.point(lambda v: int(v * 0.95))] * 3)
+    img.paste(ImageChops.multiply(lit, Image.new("RGB", (170, 170), rgb("#E8B070"))), (sx + 370, sy + 30))
+    flute_section(d, (sx + 555, sy + 70, sx + 780, sy + 160), rgb("#C9A47A"), bg)
+    tex_swatch(img, os.path.join(pr, "liner_albedo.png"), (sx + 800, sy + 70, sx + 990, sy + 160), 0.6)
+    tp = Image.new("RGBA", (190, 46), (150, 100, 45, 150)); img.paste(tp, (sx + 800, sy + 92), tp)
+    d.line([(sx + 800, sy + 96), (sx + 990, sy + 96)], fill=(240, 220, 190), width=2)
+    for (lx, lab) in [(sx, "Kraftliner"), (sx + 185, "Packpapier"), (sx + 370, "Knitter (Normal)"), (sx + 555, "Welle im Schnitt"), (sx + 800, "Klebeband")]:
+        d.text((lx, sy + 206), lab, font=F(INTER % "Regular", 12), fill=dim)
+    # Kugel, Ausgang, HUD
+    rx, ry = 60, 720
+    d.text((rx, ry), "Kugel · Ausgang · HUD-Chip", font=F(INTER % "SemiBold", 18), fill=dim)
+    for k in range(4):
+        cx = rx + 40 + k * 62; cy = ry + 70
+        for r in range(26, 0, -1):
+            t = r / 26
+            col = tuple(int(a * t + b * (1 - t)) for a, b in zip(rgb("#173A9E"), rgb("#CFE0FF")))
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col)
+        d.ellipse([cx - 12, cy - 16, cx - 4, cy - 8], fill=(255, 255, 255))
+    gx = rx + 300
+    d.rectangle([gx, ry + 34, gx + 170, ry + 112], fill=rgb("#1FA855"), outline=rgb("#0E5A2C"), width=4)
+    d.text((gx + 14, ry + 54), "AUSGANG", font=F(FCOND, 26), fill=(240, 255, 240))
+    d.rounded_rectangle([rx + 500, ry + 40, rx + 860, ry + 104], 14, fill=rgb("#1A1612"))
+    d.text((rx + 520, ry + 56), "EXPLORER", font=F(INTER % "Bold", 20), fill=rgb("#EAD8BF"))
+    d.text((rx + 650, ry + 56), D["city"][:15], font=F(INTER % "Regular", 20), fill=rgb("#7FA6FF"))
+    ty = 860
+    d.text((60, ty), "Schrift", font=F(INTER % "SemiBold", 18), fill=dim)
+    stencil_text(img, (60, ty + 26), "ZAPMANIAC", 44, fg, bg)
+    marker_text_img(img, (380, ty + 34), "KÜCHE · BÜCHER", 36, fg, 7)
+    d.text((60, ty + 86), "Empfehlung fürs Spiel: Allerta Stencil (SIL OFL) für Druck/Schablone · Permanent Marker (Apache 2.0) für Edding · Inter (OFL) für HUD", font=F(INTER % "Regular", 13), fill=dim)
+    d.text((60, ty + 106), "Im Muster: DejaVu Sans Condensed als Platzhalter (Stege bzw. Strich-Zittern per Skript)", font=F(INTER % "Regular", 13), fill=dim)
+    sh = Image.open(os.path.join(B, key, D["shot"])).convert("RGB").resize((640, 360))
+    img.paste(sh, (W - 640 - 60, 160))
+    d.text((W - 640 - 60, 528), "Godot-4.3-Prototyp, Compatibility (Software-GL), 1280x720 – " + D["label"], font=F(INTER % "Regular", 13), fill=dim)
+    img.save(os.path.join(B, key, "styletile.png"))
+
+def capsule3(key, D):
+    src = Image.open(os.path.join(B, key, "capsule.png")).convert("RGB")
+    crop = src.crop((0, 60, 1280, 60 + 598)).resize((920, 430), Image.LANCZOS)
+    W, Hh = crop.size
+    pr = os.path.join(PROTO, key, "prints")
+    liner = Image.open(os.path.join(pr, "liner_albedo.png")).convert("RGB")
+    if key == "pappe_buehne":
+        # Titel als Schablonendruck auf einem Kartonstreifen, oben links, Lichtkante
+        lab = liner.crop((0, 0, 600, 150)).resize((560, 132))
+        lab = ImageChops.multiply(lab, Image.new("RGB", lab.size, (255, 236, 205)))
+        crop.paste(lab, (28, 24))
+        stencil_text(crop, (48, 24), "ZAPmaniac", 92, rgb("#15110E"), (205, 170, 128))
+        dd = ImageDraw.Draw(crop)
+        dd.rectangle([28, 156, 420, 196], fill=rgb("#15110E"))
+        dd.text((40, 158), "EXPLORER · KARTONBÜHNE", font=F(INTER % "Bold", 25), fill=rgb("#E9D9C2"))
+    elif key == "pappe_miniatur":
+        # Modellbau-Etikett: weisses Schild mit Bleistift-Massstab, mittig oben
+        dd = ImageDraw.Draw(crop)
+        L0, R0 = 24, 444
+        dd.rectangle([L0, 22, R0, 168], fill=(244, 240, 230), outline=(90, 80, 70), width=2)
+        f1 = F(INTER % "Bold", 74)
+        tw = dd.textlength("ZAPmaniac", font=f1)
+        dd.text(((L0 + R0) / 2 - tw / 2, 26), "ZAPmaniac", font=f1, fill=rgb("#2B2118"))
+        t2 = "EXPLORER · AMSTERDAM  M 1:100"
+        f2 = F(INTER % "Medium", 22); tw2 = dd.textlength(t2, font=f2)
+        dd.text(((L0 + R0) / 2 - tw2 / 2, 122), t2, font=f2, fill=rgb("#5B4A3A"))
+        dd.line([(L0 + 30, 116), (R0 - 30, 116)], fill=(150, 140, 128), width=2)
+    else:
+        # Edding auf Klebeband quer ueber dem Bild
+        tp = Image.new("RGBA", (600, 120), (200, 152, 92, 205))
+        crop.paste(tp, (24, 30), tp)
+        marker_text_img(crop, (46, 46), "ZAPmaniac", 84, rgb("#15110E"), 3)
+        dd = ImageDraw.Draw(crop)
+        dd.text((50, 156), "EXPLORER · UMZUGSWOHNUNG", font=F(INTER % "Bold", 25), fill=rgb("#EAD8BF"))
+    crop.save(os.path.join(B, key, "capsule_920x430.png"))
+    crop.resize((460, 215), Image.LANCZOS).save(os.path.join(B, key, "capsule_460x215.png"))
+
+for k, D in DIRS3.items():
+    if ONLY and k not in ONLY.split(","):
+        continue
+    if not os.path.exists(os.path.join(B, k, "strasse.png")):
+        continue
+    tile3(k, D)
+    capsule3(k, D)
+print("ok3")
