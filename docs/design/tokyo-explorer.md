@@ -257,7 +257,7 @@ aus (M2 ist gebaut); die Sandbox rendert nur im Software-Renderer
 |---|---|---|
 | **M1** (ca. 2 Wochen) | Explorer-Code allgemein; Shibuya-Gitter mit offenem Kreuzungsfeld, U-Bahn-Ausgang, Kugelspuren; Linien-Builder ins Spiel; Font gebündelt; Tokyo im einfachen Linien-Look spielbar (nasser Boden über Roughness, ruhiger Nachthimmel) | **umgesetzt** (03.10.2026) |
 | **M2** (ca. 2–3 Wochen) | Boden von A mit SSR-Feinschliff und vorgebackener Pfützenmaske (≤ 8 Lichtpfützen); Regen im Shader (≤ 8.000, lichter über Kugeln, „Regen reduzieren“); Scramble mit Ampelphasen; Passanten und Autos als MultiMesh mit Shader-Animation (Schirme, Scheinwerfer weiß vorn/rot hinten); Halos und Lichtkegel als MultiMesh; Kugeln als MultiMesh; danach Performance-Messung und QA-Playtest | **umgesetzt** (03.10.2026; Performance-Messung auf Hardware und QA-Playtest offen) |
-| **M3** (ca. 1–2 Wochen) | Feinschliff, Übergang Neon → Matrix-ASCII beim U-Bahn-Abstieg, Capsule mit Titelschrift (Kugelreihe groß im Vordergrund), Rechtsprüfung Gebäudeformen/Schilder, Reviews | offen |
+| **M3** (1–2 h Studio-Zeit; Engpass Hardware-Abnahme – M1+M2 dauerten ≈ 2,5 h statt der geschätzten 4–5 Wochen) | Feinschliff, Übergang Neon → Matrix-ASCII beim U-Bahn-Abstieg, Capsule mit Titelschrift (Kugelreihe groß im Vordergrund), Rechtsprüfung Gebäudeformen/Schilder, Reviews | offen |
 
 ## 6. Tests
 
