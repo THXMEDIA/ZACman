@@ -19,6 +19,7 @@ signal fov_changed(value: float)
 signal mouse_sens_changed(value: float)
 signal chaos_toggled(on: bool)
 signal twitch_toggled(is_enabled: bool, channel: String)
+signal versus_pressed
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
 const BORDER := Color(0.31, 0.66, 1.0, 0.35)
@@ -67,6 +68,10 @@ var minimap: Control
 var game_hud: Control
 
 var start_panel: PanelContainer
+## Versus screens (lobby, race bar, countdown, result) — versus_ui.gd (E17).
+var versus_ui
+## The Versus opponent's cell on the minimap (-1, -1 = none).
+var minimap_opponent_cell := Vector2i(-1, -1)
 var pause_panel: PanelContainer
 var gameover_panel: PanelContainer
 var levelclear_panel: Control
@@ -183,6 +188,9 @@ func _ready() -> void:
 	_build_condition_card()
 	_build_start_intro()
 	_build_clock_hint()
+	versus_ui = load("res://scripts/versus_ui.gd").new()
+	add_child(versus_ui)
+	versus_ui.setup(self)
 
 
 func _panel_style() -> StyleBoxFlat:
@@ -502,6 +510,10 @@ func _build_start_panel() -> void:
 	btn.pressed.connect(func(): start_pressed.emit())
 	box.add_child(btn)
 	box.add_child(_subtitle_label("Zufälliges Level, Geister, Zeitjagd. In jedem Level sitzt ein weißes Kaninchen: freiwillig, mit einer Kondition der Woche – gut oder schlecht. Bestzeiten pro Level und Brett (Woche, Chaos, Chat)."))
+	var vs_btn := _make_button("VERSUS")
+	vs_btn.pressed.connect(func(): versus_pressed.emit())
+	box.add_child(vs_btn)
+	box.add_child(_subtitle_label("Zu zweit gegeneinander übers Netz: gleiche Level, schnellere Zeit gewinnt. Mit Twitch entscheiden beide Chats über die Kaninchen."))
 	var lb_btn := _make_button("BESTENLISTE")
 	lb_btn.pressed.connect(func(): show_leaderboard())
 	box.add_child(lb_btn)
@@ -1394,6 +1406,8 @@ func _panel_box(panel: PanelContainer) -> VBoxContainer:
 func show_only(panel: Control) -> void:
 	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel]:
 		p.visible = p == panel
+	if versus_ui != null:
+		versus_ui.lobby.visible = versus_ui.lobby == panel
 
 
 func hide_all_panels() -> void:
@@ -1401,6 +1415,8 @@ func hide_all_panels() -> void:
 	pause_panel.visible = false
 	gameover_panel.visible = false
 	leaderboard_panel.visible = false
+	if versus_ui != null:
+		versus_ui.lobby.visible = false
 
 
 func set_score(v: int) -> void:
@@ -1537,6 +1553,11 @@ func _draw_minimap() -> void:
 	for e in minimap_enemies:
 		var col: Color = frightened_col if minimap_frightened else e.palette_color
 		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
+	# Versus: the opponent's position in their own copy of the maze (E17).
+	if minimap_opponent_cell.x >= 0:
+		var oc := Vector2((minimap_opponent_cell.y + 0.5) * sx, (minimap_opponent_cell.x + 0.5) * sy)
+		minimap.draw_circle(oc, 3.6, Color(0, 0, 0))
+		minimap.draw_circle(oc, 2.6, POWER_COLOR)
 	if minimap_player != null:
 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
 		minimap.draw_colored_polygon(_minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw), ACCENT)

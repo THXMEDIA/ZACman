@@ -104,11 +104,15 @@ const SettingsScript := preload("res://scripts/settings.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 const ChatVoteScript := preload("res://scripts/chat_vote.gd")
 const ExplorerCitiesScript := preload("res://scripts/explorer_cities.gd")
+const VersusControllerScript := preload("res://scripts/versus_controller.gd")
 
 ## Ghost colors come from the level look (MazeView.ghost_palette(), see
 ## city_themes.gd GHOST_* — no green, no cyan, never the level's gradient).
 
 var hud
+## Versus races (E17): lobby, network session, chat duel, round flow. Its
+## `active` is true while a match runs; otherwise the game is single-player.
+var versus
 var player: CharacterBody3D
 var maze_view: Node3D
 var enemy_root: Node3D
@@ -297,6 +301,10 @@ func _ready() -> void:
 	hud.set_comfort(fov, mouse_sens)
 	hud.set_game_hud_visible(false)
 	hud.show_only(hud.start_panel)
+	versus = VersusControllerScript.new()
+	versus.name = "Versus"
+	add_child(versus)
+	versus.setup(self)
 
 
 ## N6: makes every random choice of Main reproducible (tests, tools): level
@@ -966,6 +974,9 @@ func _save_settings() -> void:
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
 
 func _begin_start_hold() -> void:
+	if versus != null and versus.active:
+		versus.begin_hold() # E17: common 3-2-1 instead of intro and first step
+		return
 	if skip_start_intro:
 		start_hold = false
 		player.movement_locked = false
@@ -997,6 +1008,9 @@ func skip_intro() -> void:
 ## locked until the very frame the clock starts, so the player stands exactly
 ## on the start position when the time begins (intro and waiting cost no time).
 func _update_start_hold() -> void:
+	if versus != null and versus.active:
+		versus.update_hold()
+		return
 	level_start_real = real_now
 	if real_now < intro_until_real:
 		return
@@ -1043,6 +1057,10 @@ func _on_twitch_connection_changed(is_connected: bool) -> void:
 ## A helping command that takes effect moves the level's time to the "chat"
 ## board (_mark_chat_assisted), so it can never touch woche/chaos records.
 func _on_twitch_command(user: String, command: String, _args: String) -> void:
+	# Versus (E17): the chats act only through the duel (Twitch.channel_command,
+	# VersusController) — no !power / !fruit, no solo vote.
+	if versus != null and versus.active:
+		return
 	if command == "gut" or command == "schlecht":
 		chat_vote.vote(user, command == "gut", real_now)
 		_update_chat_hud(true)
@@ -1083,6 +1101,8 @@ func _mark_chat_assisted() -> void:
 ## The mode of the current level's records. Always "solo" until multiplayer
 ## exists (pvp / coop are reserved); chat help is a board, not a mode.
 func run_mode() -> String:
+	if versus != null and versus.active:
+		return LevelsScript.MODES[1] # "pvp" (E17)
 	return "solo"
 
 
@@ -1158,6 +1178,18 @@ func lose_life() -> void:
 
 
 func end_game() -> void:
+	if versus != null and versus.active:
+		# E17: the last life lost in a Versus round loses the round, no game
+		# over screen and no high score.
+		running = false
+		paused = false
+		_end_condition(false)
+		player.input_enabled = false
+		Sfx.stop_all()
+		games_ended += 1
+		versus.on_out_of_lives()
+		game_over.emit()
+		return
 	running = false
 	paused = false
 	_run_token += 1
@@ -1190,6 +1222,9 @@ func end_game() -> void:
 ## that is still going is abandoned without a game over: no high score, no
 ## board entry.
 func go_to_main_menu() -> void:
+	if versus != null and versus.active:
+		versus.leave() # leaves the match, then comes back here inactive
+		return
 	running = false
 	paused = false
 	_run_token += 1
@@ -1242,6 +1277,9 @@ func level_complete_sequence() -> void:
 		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
 	_refresh_board_hud()
 
+	if versus != null and versus.active:
+		versus.on_level_cleared(elapsed) # E17: the round result decides what follows
+		return
 	hud.show_levelclear(true, subtitle)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var token := _run_token
@@ -1267,6 +1305,8 @@ func _on_resume_pressed() -> void:
 
 
 func _on_restart_pressed() -> void:
+	if versus != null and versus.active:
+		return # E17: a Versus round can not be restarted alone (the race is shared)
 	hud.hide_all_panels()
 	if playing_explorer:
 		begin_explorer_game(explorer_city_id)
@@ -1331,6 +1371,8 @@ func _process(delta: float) -> void:
 		# The speedrun clock keeps running in the pause (see `real_now`); it
 		# stands at 0 while the start hold lasts (level_start_real follows).
 		hud.set_timer(real_now - level_start_real)
+	if versus != null and versus.active:
+		versus.tick()
 	_update_chat_hud()
 	if not (running and not paused) or start_hold:
 		if running and maze != null:
@@ -1588,7 +1630,16 @@ func _on_rabbit_picked() -> void:
 	var rng: RandomNumberGenerator = rabbit_rng
 	var chat_line := ""
 	var chat_shifted := _chat_shifts_rabbit()
-	if chat_shifted:
+	if versus != null and versus.active:
+		# E17: share from the chat duel, draw from the match's round generator
+		# (the same for both players).
+		var draw: Dictionary = versus.rabbit_draw()
+		p = draw.p
+		rng = draw.rng
+		chat_shifted = draw.shifted
+		if chat_shifted:
+			_mark_chat_assisted()
+	elif chat_shifted:
 		rng = _new_chaos_rng()
 		_mark_chat_assisted()
 	var id: String = ConditionsScript.pick_condition(rng, p)
@@ -1601,6 +1652,8 @@ func _on_rabbit_picked() -> void:
 	if forced_fl_manipulation != "" and c.has_method("set_manipulation"):
 		c.set_manipulation(forced_fl_manipulation)
 	level_condition_id = c.id
+	if versus != null and versus.active:
+		versus.rabbit_picked(c.id, p)
 	if chat_shifted:
 		chat_line = "Chat %d %% → %s" % [ChatVoteScript.percent(p), c.display_name.to_upper()]
 	start_condition(c, chat_line)
@@ -1615,6 +1668,9 @@ func _update_chat_hud(force: bool = false) -> void:
 	if not force and real_now < _chat_hud_next_update:
 		return
 	_chat_hud_next_update = real_now + 0.25
+	if versus != null and versus.active:
+		versus.update_chat_hud()
+		return
 	var show_it: bool = Twitch.enabled and Twitch.is_connected_to_chat() and running and not playing_explorer and level_id != ""
 	hud.set_chat_share_visible(show_it)
 	if show_it:

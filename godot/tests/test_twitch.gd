@@ -100,6 +100,40 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL KNOWN_COMMANDS %s does not match the commands Main handles %s" % [known, main_handled])
 
+	# --- extra channels (Versus, E17): only the primary channel drives
+	# chat_command; every channel arrives on channel_command ---------------
+	var tw = twitch.new()
+	tw.channel = "streamera"
+	var primary := []
+	var all := []
+	tw.chat_command.connect(func(u, c, a): primary.append([u, c]))
+	tw.channel_command.connect(func(ch, u, c, a): all.append([ch, u, c]))
+	tw.join_extra("#StreamerB")
+	tw.join_extra("streamera") # the primary channel is never an extra
+	tw.join_extra("")
+	checks += 1
+	if tw.extra_channels != ["streamerb"]:
+		failures += 1
+		print("FAIL join_extra: %s" % [tw.extra_channels])
+	tw.inject_line(":viewer1!v@v.tmi.twitch.tv PRIVMSG #streamera :!gut")
+	tw.inject_line(":viewer2!v@v.tmi.twitch.tv PRIVMSG #streamerb :!schlecht")
+	tw.inject_line(":viewer3!v@v.tmi.twitch.tv PRIVMSG #streamerb :!power")
+	tw.inject_line("PING :tmi.twitch.tv") # no socket: must not crash
+	checks += 1
+	if primary != [["viewer1", "gut"]]:
+		failures += 1
+		print("FAIL chat_command must only carry the primary channel: %s" % [primary])
+	checks += 1
+	if all != [["streamera", "viewer1", "gut"], ["streamerb", "viewer2", "schlecht"], ["streamerb", "viewer3", "power"]]:
+		failures += 1
+		print("FAIL channel_command must carry every channel: %s" % [all])
+	tw.leave_extras()
+	checks += 1
+	if not tw.extra_channels.is_empty():
+		failures += 1
+		print("FAIL leave_extras")
+	tw.free()
+
 	print("")
 	if failures == 0:
 		print("ALL %d TWITCH PARSER CHECKS PASSED" % checks)

@@ -488,6 +488,16 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Git-Historie und unter `docs/review/berichte/`; dieser README beschreibt
   nur den Ist-Stand.
 
+## Versus (Multiplayer, E17)
+
+Startscreen → **VERSUS**: Ein Spieler hostet (Port 47823/UDP, freigeben),
+der andere tritt per IP-Adresse bei. Beide rennen dieselben drei Level, jeder
+in seiner eigenen Labyrinth-Kopie; schnellere Zeit gewinnt die Runde, zwei
+Runden das Match. Mit Twitch-Chat auf beiden Seiten entscheiden die Chats
+über die Kaninchen (`!gut` hilft dem eigenen Spieler, `!schlecht` schadet dem
+Gegner). Spezifikation: [`docs/design/multiplayer.md`](docs/design/multiplayer.md).
+Test mit zwei Spielinstanzen: `tools/qa/versus_e2e.sh` (bzw. `npm run test:versus`).
+
 ## Steam-Veröffentlichung
 
 Siehe [`docs/STEAM_ROADMAP.md`](docs/STEAM_ROADMAP.md): Godot-Export-Setup,

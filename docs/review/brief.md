@@ -45,13 +45,14 @@ Anweisungen für ein einzelnes Review kommen direkt in den Auftrag und haben Vor
 - Geisterfarben: Der Streuner bleibt in allen Leveln Violett `#A65CFF` (Entscheidung Studio Head 03.10.2026), damit Klassik IV fünf unterscheidbare Geisterfarben hat.
 - Zielzeiten sind neu berechnet (siehe `godot/scripts/levels.gd`).
 - **Tokyo (E6, Inhaber 03.10.2026):** Richtung A „Natriumregen“ ist freigegeben; Palette, Lesbarkeitsregeln, Rechtsgrenzen und technische Auflagen stehen verbindlich in `docs/design/tokyo-explorer.md`. M2 (03.10.2026) liefert Regen, nassen Boden (Pfützenmaske, SSR in Forward+, Spiegelung ohne SSR im Compatibility-Renderer), Verkehr, Passanten und Scramble als sechs MultiMeshes in `tokyo_life.gd`; Budgets und Tests in der Spezifikation 4.3/6. Bewusst noch offen (M3, nicht als fehlend melden): Übergang Neon → ASCII beim U-Bahn-Abstieg, Capsule, Rechtsprüfung, Performance-Messung auf echter Hardware. SSR, echtes Glow und Forward+-Kosten sind in der Sandbox (nur Compatibility) nicht beurteilbar. Performance-Ziel vorläufig 60 fps bei 1080p auf GTX-1660-Klasse (Studio Head, Inhaber-Bestätigung offen).
+- **Multiplayer (E17, Inhaber 04.10.2026):** Spezifikation `docs/design/multiplayer.md`. Versus „Gegenwind“ ist als Spiegelrennen gebaut (eigene Labyrinth-Kopie je Spieler, gleiche drei Level aus dem Match-Seed, Best-of-3, 3-2-1-Start, Rennbalken, Gegner auf der Minimap), Verbindung per IP/Port über ENet. Chat-Duell „Hilfe oder Sabotage“ nach Anteilen. Nur online, kein Splitscreen. Vertrauensbasiert (keine Anti-Cheat-Prüfung) und ohne Steam-Relay – bewusst für die erste Stufe.
 - Kein Testbuild-Button mehr. Steam Deck ist kein Ziel: keine Findings zu Steam-Deck- oder Controller-Bedienung, Lesbarkeit auf kleinen Handheld-Displays und Handheld-Performance.
 
 ## Aktueller Stand
 - Phase: spielbarer Prototyp in Godot, auf dem Weg zum Steam-Build
 - Bekannte Baustellen, die Reviewer nicht erneut melden sollen (siehe `docs/STEAM_ROADMAP.md`):
   - Steamworks-Integration (GodotSteam) noch nicht eingebaut
-  - Multiplayer (Koop/Kompetitiv) ist geplant, nicht begonnen
+  - Koop ist spezifiziert (`docs/design/multiplayer.md` 3), nicht gebaut; Steam-Lobby folgt mit der App-ID
   - Export-Presets sind nicht versioniert (maschinenspezifisch)
   - Markenrechtliche Prüfung vor Veröffentlichung steht aus
   - ❓ weitere
