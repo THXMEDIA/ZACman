@@ -10,6 +10,7 @@ LORA_I = "/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf"
 POPPINS = "/usr/share/fonts/truetype/google-fonts/Poppins-%s.ttf"
 CHORUS = "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyrechorus-mediumitalic.otf"
 MONOB = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+JOST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "himmelsbrunn_kulisse", "fonts", "Jost-%s.ttf")  # 500-Medium, 700-Bold (SIL OFL)
 
 def F(p, s):
     return ImageFont.truetype(p, s)
@@ -151,6 +152,14 @@ DIRS = {
         ("#FF4A1C","Kugeln Zinnober (exklusiv)"),("#39FF6A","U-Bahn (exklusiv)")],
    fonts=[("TeX Gyre Chorus (GUST Font License, frei) – Platzhalter; Empfehlung: Caveat Brush (SIL OFL)", "Titel, Ortsnamen"), ("Inter (SIL OFL 1.1)", "UI, HUD")],
    shot="strasse.png"),
+ "himmelsbrunn_kulisse": dict(
+   title="D  KULISSENSTADT HIMMELSBRUNN", city="HIMMELSBRUNN · KURHAUS-ACHSE",
+   idea="Fiktiver Kurort als Modellbau: jede Strasse eine symmetrische Achse auf ein Kurhaus, Fassaden als Kulissen, Pastell, flaches Licht, Schilder.",
+   bg="#FAEFD9", fg="#25365C",
+   pal=[("#F2B5A0","Fassade Lachs"),("#E7A1AE","Fassade Altrosa"),("#BCA9D3","Fassade Lavendel"),("#A9C6DE","Fassade Puder"),("#F3D9A4","Fassade Vanille"),
+        ("#8E2F3C","Zierleiste Bordeaux"),("#25365C","Zierleiste/Schild Navy"),("#6B4A63","Innenraum"),("#FFC20E","Kugeln (exklusiv)"),("#1AA85C","Standseilbahn (exklusiv)")],
+   fonts=[("Jost Bold/Medium (SIL OFL 1.1, github.com/indestructible-type/Jost)", "Titel, Schilder, HUD – freie Alternative zu Futura")],
+   shot="strasse.png"),
  "miami_popart": dict(
    title="C  DRUCKFARBEN-MIAMI", city="MIAMI · OCEAN DRIVE",
    idea="Vierfarbdruck: Papierweiss, Schwarz, Cyan, Rot – Toene nur aus Rasterpunkten, dicke Konturen, Art-Deco-Kaesten, eigene Comic-Elemente (ZAP!).",
@@ -175,6 +184,8 @@ def tile(key, D):
         d.text((60, 40), D["title"], font=F(LORA, 54), fill=fg)
     elif key == "arles_sternennacht":
         d.text((60, 40), D["title"], font=F(CHORUS, 60), fill=fg)
+    elif key == "himmelsbrunn_kulisse":
+        d.text((60, 40), D["title"], font=F(JOST % "700-Bold", 52), fill=fg)
     else:
         text_outline(d, (60, 40), D["title"], F(POPPINS % "Bold", 54), rgb("#FFFDF5"), fg, 4)
     d.text((60, 112), D["idea"], font=F(INTER % "Regular", 22), fill=dim)
@@ -204,6 +215,28 @@ def tile(key, D):
         cx, cy = sx + 775, sy + 100
         for r, col in [(60, "#E8862A"), (52, "#F6C945"), (38, "#F6C945"), (24, "#FFF3B0")]:
             d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb(col), outline=rgb("#C98A2E"), width=2)
+    elif key == "himmelsbrunn_kulisse":
+        # Frontale Fassaden-Ansicht (Aufriss), streng symmetrisch, mit Ausschnitten
+        for hx, col in [(sx, "#F2B5A0"), (sx + 150, "#BCA9D3"), (sx + 300, "#F3D9A4")]:
+            d.rectangle([hx, sy + 50, hx + 130, sy + 170], fill=rgb(col))
+            for f in range(3):
+                for k in range(3):
+                    wx = hx + 14 + k * 40; wy = sy + 62 + f * 36
+                    d.rectangle([wx, wy, wx + 22, wy + 24], fill=rgb("#6B4A63"))
+                    d.rectangle([wx - 3, wy + 24, wx + 25, wy + 27], fill=rgb("#8E2F3C"))
+            d.polygon([(hx, sy + 50), (hx + 65, sy + 22), (hx + 130, sy + 50)], fill=rgb(col))
+            d.rectangle([hx - 3, sy + 46, hx + 133, sy + 51], fill=rgb("#8E2F3C"))
+        # Schild + Markise
+        d.rectangle([sx + 470, sy + 40, sx + 700, sy + 84], fill=rgb("#25365C"))
+        d.text((sx + 498, sy + 46), "SCHIRMMACHER", font=F(JOST % "700-Bold", 24), fill=rgb("#FBF6EC"))
+        for k in range(8):
+            d.polygon([(sx + 470 + k * 29, sy + 94), (sx + 499 + k * 29, sy + 94), (sx + 495 + k * 29, sy + 140), (sx + 474 + k * 29, sy + 140)], fill=rgb("#F2B5A0") if k % 2 else rgb("#FBF6EC"))
+        # Wegweiser
+        d.rectangle([sx + 712, sy + 40, sx + 860, sy + 66], fill=rgb("#FBF6EC"), outline=rgb("#25365C"), width=2)
+        d.polygon([(sx + 720, sy + 60), (sx + 728, sy + 46), (sx + 736, sy + 60)], fill=rgb("#1AA85C")); d.text((sx + 742, sy + 42), "SEILBAHN", font=F(JOST % "700-Bold", 18), fill=rgb("#1AA85C"))
+        d.rectangle([sx + 712, sy + 72, sx + 860, sy + 98], fill=rgb("#FBF6EC"), outline=rgb("#25365C"), width=2)
+        d.polygon([(sx + 720, sy + 92), (sx + 728, sy + 78), (sx + 736, sy + 92)], fill=rgb("#25365C")); d.text((sx + 742, sy + 74), "KURHAUS", font=F(JOST % "700-Bold", 18), fill=rgb("#25365C"))
+        d.rectangle([sx + 783, sy + 98, sx + 789, sy + 170], fill=rgb("#25365C"))
     else:
         halftone_rect(img, (sx, sy + 30, sx + 220, sy + 170), rgb("#FFFDF5"), rgb("#00A3E0"), 0.25, 9)
         halftone_rect(img, (sx + 240, sy + 30, sx + 460, sy + 170), rgb("#FFFDF5"), rgb("#E4002B"), 0.3, 9)
@@ -225,11 +258,11 @@ def tile(key, D):
             d.ellipse([cx - 8, cy - 10, cx + 6, cy + 4], fill=core)
     # U-Bahn: gefuellte Flaeche + Schriftzug
     d.rectangle([rx + 300, ry + 35, rx + 440, ry + 110], fill=met, outline=fg if key == "miami_popart" else None, width=5)
-    lab = "MÉTRO" if key != "miami_popart" else "METRO"
-    fnt = F(LORA, 26) if key == "paris_aquarell" else (F(CHORUS, 30) if key == "arles_sternennacht" else F(POPPINS % "Bold", 26))
+    lab = "MÉTRO" if key in ("paris_aquarell", "arles_sternennacht") else ("METRO" if key == "miami_popart" else "SEILBAHN")
+    fnt = F(LORA, 26) if key == "paris_aquarell" else (F(CHORUS, 30) if key == "arles_sternennacht" else (F(JOST % "700-Bold", 21) if key == "himmelsbrunn_kulisse" else F(POPPINS % "Bold", 26)))
     d.text((rx + 318, ry + 55), lab, font=fnt, fill=rgb(D["bg"]) if key != "arles_sternennacht" else rgb("#0B2A14"))
     # HUD-Chip
-    chip_bg = rgb("#3A2F27") if key == "paris_aquarell" else (rgb("#0E1540") if key == "arles_sternennacht" else rgb("#111111"))
+    chip_bg = {"paris_aquarell": rgb("#3A2F27"), "arles_sternennacht": rgb("#0E1540"), "himmelsbrunn_kulisse": rgb("#25365C")}.get(key, rgb("#111111"))
     d.rounded_rectangle([rx + 500, ry + 40, rx + 820, ry + 104], 14 if key != "miami_popart" else 0, fill=chip_bg, outline=fg if key == "miami_popart" else None, width=4)
     d.text((rx + 520, ry + 56), "EXPLORER", font=F(INTER % "Bold", 20), fill=rgb("#F7F2E8"))
     d.text((rx + 650, ry + 56), D["city"].split(" · ")[0], font=F(INTER % "Regular", 20), fill=kug)
@@ -240,6 +273,8 @@ def tile(key, D):
         d.text((60, ty + 24), "Paris, Seine-Ufer", font=F(LORA_I, 46), fill=fg)
     elif key == "arles_sternennacht":
         d.text((60, ty + 20), "Arles, Place du Forum", font=F(CHORUS, 54), fill=fg)
+    elif key == "himmelsbrunn_kulisse":
+        d.text((60, ty + 24), "KURHAUS HIMMELSBRUNN", font=F(JOST % "700-Bold", 46), fill=fg)
     else:
         text_outline(d, (60, ty + 24), "MIAMI OCEAN DRIVE", F(POPPINS % "Bold", 44), rgb("#FFFDF5"), fg, 4)
     yy = ty + 86
@@ -271,6 +306,17 @@ def capsule(key, D):
         d = ImageDraw.Draw(crop)
         d.text((44, 32), "ZAPmaniac", font=F(LORA, 86), fill=rgb("#4A3B2E"))
         d.text((48, 126), "Explorer: Paris", font=F(LORA_I, 34), fill=rgb("#6B5A60"))
+    elif key == "himmelsbrunn_kulisse":
+        # zentriert, symmetrisch: Titel in einer Navy-Tafel oben mittig
+        f1 = F(JOST % "700-Bold", 70); f2 = F(JOST % "500-Medium", 28)
+        tw = d.textlength("ZAPmaniac", font=f1)
+        d.rectangle([W / 2 - tw / 2 - 30, 24, W / 2 + tw / 2 + 30, 128], fill=rgb("#25365C"))
+        d.rectangle([W / 2 - tw / 2 - 22, 32, W / 2 + tw / 2 + 22, 120], outline=rgb("#F3D9A4"), width=2)
+        d.text((W / 2 - tw / 2, 28), "ZAPmaniac", font=f1, fill=rgb("#FBF6EC"))
+        t2 = "EXPLORER · HIMMELSBRUNN"
+        tw2 = d.textlength(t2, font=f2)
+        d.rectangle([W / 2 - tw2 / 2 - 14, 136, W / 2 + tw2 / 2 + 14, 176], fill=rgb("#FBF6EC"))
+        d.text((W / 2 - tw2 / 2, 137), t2, font=f2, fill=rgb("#8E2F3C"))
     elif key == "arles_sternennacht":
         text_outline(d, (44, 26), "ZAPmaniac", F(CHORUS, 96), rgb("#F6C945"), rgb("#1B2A6B"), 6)
         d.text((52, 132), "Explorer: Arles bei Nacht", font=F(CHORUS, 40), fill=rgb("#F6E9B8"))
@@ -281,7 +327,10 @@ def capsule(key, D):
     crop.save(os.path.join(B, key, "capsule_920x430.png"))
     crop.resize((460, 215), Image.LANCZOS).save(os.path.join(B, key, "capsule_460x215.png"))
 
+ONLY = os.environ.get("ONLY", "")
 for k, D in DIRS.items():
+    if ONLY and k not in ONLY.split(","):
+        continue
     tile(k, D)
     capsule(k, D)
 print("ok")

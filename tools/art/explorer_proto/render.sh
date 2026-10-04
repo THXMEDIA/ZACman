@@ -9,7 +9,7 @@ GODOT=${GODOT:-$B/bin/godot}
 OUT=${OUT:-$B/explorer_shots}
 P=$B/explorer_proto/$1
 mkdir -p "$P" "$OUT/$1"
-cp "$HERE/$1"/* "$P"/
+cp -r "$HERE/$1"/* "$P"/
 cp "$HERE"/common/*.gd "$P"/
 cd "$P"
 SHOT_DIR="$OUT/$1" SHOT_NAME="$1" SHOT_ONLY="$2" timeout 600 xvfb-run -a -s "-screen 0 1280x720x24" \

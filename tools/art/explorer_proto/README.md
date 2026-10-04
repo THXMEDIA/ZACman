@@ -8,6 +8,7 @@ Explorer-Städte:
 | `paris_aquarell/` | A Aquarell-Paris (Tusche + Lasur, Impressionismus) | Paris, Seine-Ufer |
 | `arles_sternennacht/` | B Sternennacht über Arles (Van Gogh, gemeinfrei) | Arles, Platz mit Café, Nacht |
 | `miami_popart/` | C Druckfarben-Miami (Pop Art, Ben-Day-Raster) | Miami, Ocean Drive |
+| `himmelsbrunn_kulisse/` | D Kulissenstadt (symmetrische Achsen, Pastell, flaches Licht, Modellbau) | Himmelsbrunn, fiktiver Kurort |
 
 Gemeinsame Helfer in `common/` (`geo.gd` Primitive, Figuren, Fahrzeuge, Kugel-MultiMesh,
 Inverted-Hull-Konturen; `shot.gd` Kameras und Screenshots). Jede Richtung hat ihre Shader
@@ -19,6 +20,10 @@ Style-Tiles und Capsule-Mockups: `python3 tools/tiles.py` (Pillow, liest die Scr
 
 Ergebnisbilder: `docs/art/vorschlaege/explorer/<richtung>/`. Vorlage zur Freigabe:
 Project-Dokument `studio/projekte/zapmaniac/art/explorer-stile-v1.md`.
+
+Richtung D bringt den Font Jost (SIL OFL 1.1, `himmelsbrunn_kulisse/fonts/`, Lizenztext daneben) mit;
+fürs Spiel als Subset bündeln und in `docs/art/lizenzen.md` eintragen. `tools/tiles.py` rendert
+mit `ONLY=<richtung>` nur eine Richtung neu.
 
 Prototyp-Abkürzungen, die so **nicht** ins Spiel dürfen (technische Prüfung): System-Fonts
 über `Label3D`, fester Seed, Einzelknoten pro Figur/Fenster/Laterne (im Spiel MultiMesh),
