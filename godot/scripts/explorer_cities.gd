@@ -19,7 +19,7 @@ extends RefCounted
 ##   exit_title    banner title (explorer cities have no "level clear")
 ##   metro_radius  how close to the exit node triggers it (m)
 
-const EXPLORER_IDS := ["manhattan", "tokyo"]
+const EXPLORER_IDS := ["manhattan", "tokyo", "kyoto"]
 
 
 static func get_city(id: String) -> Dictionary:
@@ -39,6 +39,14 @@ static func get_city(id: String) -> Dictionary:
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/tokyo_metro_station.gd",
 				"traffic": "tokyo", "exit_text": "U-BAHN — los zum Speedrun!",
 				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 1.3,
+			}
+		"kyoto":
+			return {
+				"id": "kyoto", "theme": "kyoto", "label": "KYOTO",
+				"maze_script": "res://scripts/kyoto_maze.gd", "seed": 1765,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/kyoto_exit.gd",
+				"traffic": "", "exit_text": "UMBLÄTTERN — los zum Speedrun!",
+				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 1.2,
 			}
 	return {}
 

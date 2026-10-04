@@ -608,6 +608,7 @@ func start_explorer_level(city_id: String) -> void:
 	elif city.traffic == "tokyo":
 		_spawn_tokyo_life(int(city.seed))
 	_spawn_metro_stations(metro_cells, city.metro_script)
+	_apply_scenery_comfort()
 
 	hud.set_level(city.label)
 	hud.set_game_hud_visible(true)
@@ -677,6 +678,13 @@ func _facing_yaw_for_start(cell: Vector2i) -> float:
 			best_len = length
 			best_yaw = d.yaw
 	return best_yaw
+
+
+## Kyoto: "Effekte reduzieren" stops the pop-up folding (everything stands).
+func _apply_scenery_comfort() -> void:
+	var sr = maze_view.scenery_root if maze_view != null else null
+	if sr != null and is_instance_valid(sr) and sr.has_method("set_reduce_fx"):
+		sr.set_reduce_fx(reduce_fx)
 
 
 func _clear_explorer_obstacles() -> void:
@@ -945,6 +953,7 @@ func _on_reduce_fx_toggled(on: bool) -> void:
 ## "Effekte reduzieren": stored right away and applied to a running look.
 func set_reduce_fx(on: bool) -> void:
 	reduce_fx = on
+	_apply_scenery_comfort()
 	_save_settings()
 	hud.set_reduce_fx(on)
 	if maze_view != null and maze_view.normal_wall_mmi != null:

@@ -11,6 +11,9 @@ const TokyoMazeScript := preload("res://scripts/tokyo_maze.gd")
 const TokyoWetScript := preload("res://scripts/tokyo_wet.gd")
 const TokyoSceneryScript := preload("res://scripts/tokyo_scenery.gd")
 const TokyoStyle := preload("res://scripts/tokyo_style.gd")
+const KyotoMazeScript := preload("res://scripts/kyoto_maze.gd")
+const KyotoSceneryScript := preload("res://scripts/kyoto_scenery.gd")
+const KyotoStyle := preload("res://scripts/kyoto_style.gd")
 
 ## ---- Speedrun base look "Lagune" (docs/design/kaninchen-speedrun.md 1.1) ----
 ## Every wall has the same turquoise glowing top edge; the gradient down to
@@ -348,12 +351,71 @@ static func tokyo() -> Resource:
 	return t
 
 
+## Kyoto Explorer city, look "Aizuri-Pop-up" (direction G, approved by the
+## owner 04.10.2026; spec docs/design/kyoto-explorer.md): an opened picture
+## book in woodblock blue. The wall MultiMesh is only physics plus a thin
+## printed block plan (kyoto_slab.gdshader); the buildings are pop-up cards
+## (kyoto_scenery.gd) that fold flat with distance. Paper-coloured fog gives
+## the woodblock's aerial perspective; no lights, no glow.
+static func kyoto() -> Resource:
+	var t = CityThemeScript.new()
+	t.id = "kyoto"
+	t.display_name = "Kyoto"
+	t.wall_word = ""
+	t.wall_footprint_scale = 1.0
+	t.wall_alternate_rotation = false
+	t.landmark_provider_script = KyotoMazeScript
+	t.landmark_default_height = KyotoMazeScript.WALL_H
+	t.wall_shader_path = "res://shaders/kyoto_slab.gdshader"
+	t.scenery_builder_script = KyotoSceneryScript
+	t.pellet_trail_provider_script = KyotoMazeScript
+
+	t.floor_color = KyotoStyle.PAPER
+	t.floor_shader_path = "res://shaders/kyoto_floor.gdshader"
+	t.ceil_enabled = false
+
+	t.env_bg_color = KyotoStyle.PAPER
+	t.env_fog_color = KyotoStyle.PAPER
+	t.env_fog_density = 0.0045
+	t.env_fog_sky_affect = 0.0
+	t.env_ambient_color = Color(1, 1, 1)
+	t.env_ambient_energy = 1.0
+	t.env_glow_enabled = false
+	t.env_ssr_enabled = false
+	t.env_volumetric_fog_enabled = false
+	t.env_tonemap_mode = 0 # linear: the print colours stay exact
+	t.env_tonemap_exposure = 1.0
+	t.env_tonemap_white = 1.0
+	t.player_light_color = KyotoStyle.PAPER
+	t.player_light_energy = 0.0
+	t.player_light_range = 1.0
+	t.camera_far = 450.0 # hills and the tower outside the map
+
+	# Pickups: gold leaf, exclusive to the pellets (unlit world: emission only).
+	t.pellet_color = KyotoStyle.PELLET
+	t.pellet_emission = KyotoStyle.PELLET
+	t.pellet_energy = 0.55
+	t.pellet_shape = "sphere"
+	t.pellet_size = 0.13
+	t.pellet_height = 0.55
+
+	t.minimap_bg_color = Color(0.953, 0.933, 0.886, 0.85)
+	t.minimap_wall_color = KyotoStyle.AI2
+
+	t.has_power_ups = false
+	t.permanently_word_built = false
+	t.pellets_follow_metro_trails = true
+	return t
+
+
 static func get_theme(id: String) -> Resource:
 	match id:
 		"manhattan":
 			return manhattan()
 		"tokyo":
 			return tokyo()
+		"kyoto":
+			return kyoto()
 		_:
 			return normal()
 

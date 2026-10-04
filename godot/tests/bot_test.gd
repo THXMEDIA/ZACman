@@ -805,6 +805,32 @@ func _run_checks() -> void:
 	await get_tree().process_frame
 	_check("speedrun after main menu: maze visible again", main.maze_view.visible == true)
 
+	# ---- Kyoto Explorer city (docs/design/kyoto-explorer.md): pop-up book,
+	# exit at the foot of Kiyomizu into a speedrun; the speedrun gets its own
+	# look back (no cards, no paper fog) ----
+	main.hud.explorer_pressed.emit("kyoto")
+	await get_tree().process_frame
+	_check("kyoto: the KYOTO button starts the Kyoto explorer city", main.running and main.playing_explorer and main.explorer_city_id == "kyoto")
+	_check("kyoto: HUD level chip says KYOTO", main.hud.level_label.text == "KYOTO", main.hud.level_label.text)
+	_check("kyoto: no ghosts, no traffic, one exit", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("kyoto_exit.gd"))
+	_check("kyoto: the pop-up city is built", main.maze_view.scenery_root != null and main.maze_view.city_theme.id == "kyoto" and main.maze_view.scenery_root.card_count > 150)
+	_check("kyoto: pellets lead the way", main.maze_view.pellet_cells.size() > 50)
+	_check("kyoto: paper sky, no glow", main.world_env.environment.glow_enabled == false and main.world_env.environment.background_color.is_equal_approx(load("res://scripts/kyoto_style.gd").PAPER))
+	main.set_reduce_fx(true)
+	_check("kyoto: 'Effekte reduzieren' reaches the pop-ups", main.maze_view.scenery_root.fold_enabled() == false)
+	main.set_reduce_fx(false)
+	_check("kyoto: pop-ups fold again without it", main.maze_view.scenery_root.fold_enabled() == true)
+	var ky_exit: Vector3 = main.metro_stations[0].position
+	main.player.global_position = Vector3(ky_exit.x, main.player.global_position.y, ky_exit.z - 0.8)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().create_timer(1.6).timeout
+	_check("kyoto: the exit ends the Kyoto run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("theme reset Kyoto -> speedrun: no pop-up city, speedrun background", main.maze_view.scenery_root == null and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)
 	main.start_condition(ConditionsScript.get_condition("matrix"))

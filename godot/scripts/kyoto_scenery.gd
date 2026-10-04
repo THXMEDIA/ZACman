@@ -1,0 +1,220 @@
+extends RefCounted
+## KyotoScenery — builds the pop-up book city of the Kyoto Explorer level
+## (CityTheme.scenery_builder_script, see city_themes.gd kyoto()). Every
+## building, tree, torii, figure and backdrop is one card of a single
+## MultiMesh, printed procedurally by kyoto_card.gdshader (one draw call for
+## the whole city), plus the bokashi sky sphere:
+##   - house rows on every block edge facing a street (machiya, shops, temple
+##     walls), cut into houses of 4-7 m; some get a roof or pine card behind
+##   - landmarks at the street ends (kyoto_maze.gd LANDMARKS): the theatre,
+##     the shrine gate, the pagoda (twice, behind the temple walls), the
+##     Kiyomizu stage, the Kennin-ji gate, the Inari shrine
+##   - a tunnel of torii in the torii lane, a few figures in doorways
+##   - backdrop that never folds: the Higashiyama hills, Kyoto Tower, mist bands
+## Cards stand on the facade line (the collision edge) and fold back onto the
+## block with distance. Variation comes from the level seed only.
+
+const KyotoMazeScript := preload("res://scripts/kyoto_maze.gd")
+const TokyoScenery := preload("res://scripts/tokyo_scenery.gd")
+const Style := preload("res://scripts/kyoto_style.gd")
+const CARD_SHADER := preload("res://shaders/kyoto_card.gdshader")
+const SKY_SHADER := preload("res://shaders/kyoto_sky.gdshader")
+const RootScript := preload("res://scripts/kyoto_popup_root.gd")
+
+const CELL := 2.0
+const CARD_BASE_Y := 0.07 # on top of the printed block plan
+const FACADE_OUT := 0.01 # cards sit a hair in front of the collision edge
+
+## Street id -> house kind and height range.
+const STREET_LOOK := {
+	"shijo": {"kind": Style.K_SHOP, "h": [7.6, 9.6], "w": [5.0, 7.0]},
+	"hanamikoji": {"kind": Style.K_MACHIYA, "h": [6.2, 7.0], "w": [4.2, 5.6]},
+	"hanamikoji_nord": {"kind": Style.K_MACHIYA, "h": [6.2, 7.0], "w": [4.2, 5.6]},
+	"seitengasse": {"kind": -1, "h": [6.0, 7.2], "w": [4.5, 6.0]},
+	"yasaka_dori": {"kind": -1, "h": [6.0, 7.2], "w": [4.2, 5.6]},
+	"sannenzaka": {"kind": -1, "h": [6.0, 7.4], "w": [4.2, 5.8]},
+	"ninenzaka": {"kind": -1, "h": [6.0, 7.4], "w": [4.2, 5.8]},
+	"torii_gasse": {"kind": Style.K_TEMPLE_WALL, "h": [4.0, 4.4], "w": [5.0, 7.0]},
+}
+
+
+static func cell_of(p: Vector3) -> Vector2i:
+	return Vector2i(int(floor(p.z / CELL + 0.5)), int(floor(p.x / CELL + 0.5)))
+
+
+static func in_map(maze, cell: Vector2i) -> bool:
+	return cell.x >= 0 and cell.x < maze.rows and cell.y >= 0 and cell.y < maze.cols
+
+
+static func yaw_for(n: Vector3) -> float:
+	return atan2(n.x, n.z)
+
+
+static func card(pos: Vector3, n: Vector3, w: float, h: float, kind: int, s: float) -> Dictionary:
+	return {"pos": pos, "yaw": yaw_for(n), "w": w, "h": h, "kind": kind, "s": s}
+
+
+## All cards of the city as plain data (tests check them without a renderer).
+static func cards(maze, seed: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var out: Array = []
+
+	# ---- house rows along every block edge that faces a street ----
+	for run in TokyoScenery.facade_runs(maze):
+		var a: Vector3 = run.a
+		var b: Vector3 = run.b
+		var n: Vector3 = run.n
+		var mid := (a + b) * 0.5
+		var out_cell := cell_of(mid + n * 1.0)
+		var wall_cell := cell_of(mid - n * 1.0)
+		if not in_map(maze, out_cell) or maze.grid[out_cell.x][out_cell.y] != 0:
+			continue
+		var lm := KyotoMazeScript.landmark_block_at(wall_cell.x, wall_cell.y)
+		var temple := false
+		if not lm.is_empty():
+			if lm.id == "pagoda":
+				temple = true # the pagoda stands inside temple walls
+			elif Vector2(n.x, n.z).is_equal_approx(lm.face):
+				continue # the landmark card covers this edge
+		var street := KyotoMazeScript.street_at(out_cell.x, out_cell.y)
+		var look: Dictionary = STREET_LOOK.get(street.get("id", ""), STREET_LOOK["seitengasse"])
+		var length := a.distance_to(b)
+		var target: float = rng.randf_range(look.w[0], look.w[1])
+		var count := maxi(1, int(round(length / target)))
+		var hw := length / float(count)
+		var dir := (b - a).normalized()
+		for i in count:
+			var center := a + dir * (hw * (float(i) + 0.5)) + n * FACADE_OUT
+			center.y = CARD_BASE_Y
+			var kind: int = look.kind
+			var h: float = rng.randf_range(look.h[0], look.h[1])
+			if temple:
+				kind = Style.K_TEMPLE_WALL
+				h = 4.2
+			elif kind < 0:
+				var roll := rng.randf()
+				kind = Style.K_MACHIYA if roll < 0.55 else (Style.K_SHOP if roll < 0.85 else Style.K_TEMPLE_WALL)
+				if kind == Style.K_TEMPLE_WALL:
+					h = 4.2
+			var s := rng.randf()
+			out.append(card(center, n, hw + 0.02, h, kind, s))
+			# second layer: a roof or a pine behind the house, if the block is deep enough
+			if kind != Style.K_TEMPLE_WALL or temple:
+				var back := center - n * 3.6
+				var back_cell := cell_of(back)
+				if in_map(maze, back_cell) and maze.grid[back_cell.x][back_cell.y] == 1 and KyotoMazeScript.landmark_block_at(back_cell.x, back_cell.y).is_empty():
+					var roll2 := rng.randf()
+					if roll2 < 0.5:
+						out.append(card(back, n, hw + 1.0, h + rng.randf_range(2.0, 3.6), Style.K_ROOFS, rng.randf()))
+					elif roll2 < 0.68:
+						out.append(card(back, n, rng.randf_range(4.0, 5.2), rng.randf_range(6.5, 8.5), Style.K_PINE, rng.randf()))
+
+	# ---- landmarks at the street ends ----
+	var x_w := 0.5 * CELL + FACADE_OUT # facade of col 0, facing east
+	var x_e := 47.5 * CELL - FACADE_OUT # facade of col 48, facing west
+	out.append(card(Vector3(x_w, CARD_BASE_Y, 10.0 * CELL), Vector3(1, 0, 0), 10.6, 13.2, Style.K_THEATER, 0.5))
+	out.append(card(Vector3(x_e, CARD_BASE_Y, 10.0 * CELL), Vector3(-1, 0, 0), 10.8, 13.0, Style.K_GATE, 0.5))
+	out.append(card(Vector3(x_w, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.4, 7.6, Style.K_SHRINE, 0.5))
+	out.append(card(Vector3(23.0 * CELL, CARD_BASE_Y, 43.5 * CELL - FACADE_OUT), Vector3(0, 0, -1), 6.4, 8.2, Style.K_TEMPLE_GATE, 0.5))
+	# Kiyomizu: set back 1.6 m so the exit door stands in front of it
+	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 41.5 * CELL + 1.6), Vector3(0, 0, -1), 18.4, 16.8, Style.K_KIYOMIZU, 0.5))
+	# Yasaka pagoda, inside the temple block, seen from Yasaka-dori (west) and Ninenzaka (east)
+	out.append(card(Vector3(36.5 * CELL + 4.5, CARD_BASE_Y, 31.0 * CELL), Vector3(-1, 0, 0), 11.0, 26.0, Style.K_PAGODA, 0.5))
+	out.append(card(Vector3(42.5 * CELL - 4.5, CARD_BASE_Y, 31.0 * CELL), Vector3(1, 0, 0), 11.0, 26.0, Style.K_PAGODA, 0.5))
+
+	# ---- torii tunnel: one gate every cell along the torii lane ----
+	for c in range(2, 21):
+		out.append(card(Vector3(c * CELL, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.6, 5.0, Style.K_TORII, 0.5))
+
+	# ---- figures in doorways (Hanamikoji, Ninenzaka, Shijo) ----
+	var spots := [
+		[Vector3(21.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 19.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(21.5 * CELL, 0, 27.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 34.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(42.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(45.5 * CELL, 0, 26.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(42.5 * CELL, 0, 33.0 * CELL), Vector3(1, 0, 0)], [Vector3(14.0 * CELL, 0, 7.5 * CELL), Vector3(0, 0, 1)],
+		[Vector3(31.0 * CELL, 0, 12.5 * CELL), Vector3(0, 0, -1)], [Vector3(8.0 * CELL, 0, 19.5 * CELL), Vector3(0, 0, 1)],
+	]
+	for sp in spots:
+		var p: Vector3 = sp[0] + sp[1] * 0.18
+		p.y = CARD_BASE_Y
+		out.append(card(p, sp[1], 1.5, 2.1, Style.K_FIGURE, rng.randf()))
+
+	# ---- backdrop (never folds): hills, tower, mist ----
+	var nf := Style.NO_FOLD
+	out.append(card(Vector3(150.0, 0.0, 44.0), Vector3(-1, 0, 0), 190.0, 34.0, Style.K_MOUNTAINS + nf, 0.2))
+	out.append(card(Vector3(190.0, 0.0, 30.0), Vector3(-1, 0, 0), 260.0, 50.0, Style.K_MOUNTAINS + nf, 0.8))
+	out.append(card(Vector3(48.0, 0.0, -70.0), Vector3(0, 0, 1), 260.0, 30.0, Style.K_MOUNTAINS + nf, 0.7))
+	out.append(card(Vector3(-120.0, 0.0, 40.0), Vector3(1, 0, 0), 260.0, 26.0, Style.K_MOUNTAINS + nf, 0.9))
+	out.append(card(Vector3(48.0, 0.0, 170.0), Vector3(0, 0, -1), 260.0, 22.0, Style.K_MOUNTAINS + nf, 0.6))
+	var tower_pos := Vector3(-55.0, 0.0, 135.0)
+	out.append(card(tower_pos, (Vector3(48.0, 0.0, 44.0) - tower_pos).normalized(), 11.0, 70.0, Style.K_TOWER + nf, 0.5))
+	# kasumi: long pale bands in front of the hills, as in the prints
+	var mists := [[Vector3(128, 9, 60), Vector3(-1, 0, 0)], [Vector3(132, 15, 10), Vector3(-1, 0, 0)], [Vector3(30, 8, -52), Vector3(0, 0, 1)],
+		[Vector3(-95, 7, 70), Vector3(1, 0, 0)], [Vector3(70, 7, 150), Vector3(0, 0, -1)]]
+	for m in mists:
+		out.append(card(m[0], m[1], rng.randf_range(60.0, 90.0), 2.6, Style.K_MIST + nf, rng.randf()))
+	return out
+
+
+static func build(maze, _city_theme, seed: int) -> Node3D:
+	var root := Node3D.new()
+	root.name = "KyotoScenery"
+	root.set_script(RootScript)
+
+	var list := cards(maze, seed)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	quad.center_offset = Vector3(0.0, 0.5, 0.0)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = quad
+	mm.instance_count = list.size()
+	for i in list.size():
+		var c: Dictionary = list[i]
+		var basis := Basis(Vector3.UP, c.yaw) * Basis.from_scale(Vector3(c.w, c.h, c.h))
+		mm.set_instance_transform(i, Transform3D(basis, c.pos))
+		mm.set_instance_custom_data(i, Color(float(c.kind) / 255.0, c.w / 100.0, c.h / 100.0, c.s))
+	# Folding moves a card's top back by up to its height: one generous box
+	# for culling instead of per-frame bounds.
+	mm.custom_aabb = AABB(Vector3(-300.0, -5.0, -250.0), Vector3(650.0, 120.0, 600.0))
+	var mat := ShaderMaterial.new()
+	mat.shader = CARD_SHADER
+	mat.set_shader_parameter("ai1", Style.AI1)
+	mat.set_shader_parameter("ai2", Style.AI2)
+	mat.set_shader_parameter("ai3", Style.AI3)
+	mat.set_shader_parameter("ai4", Style.AI4)
+	mat.set_shader_parameter("paper", Style.PAPER)
+	mat.set_shader_parameter("sumi", Style.SUMI)
+	mat.set_shader_parameter("beni", Style.BENI)
+	mat.set_shader_parameter("fold_near", Style.FOLD_NEAR)
+	mat.set_shader_parameter("fold_far", Style.FOLD_FAR)
+	mat.set_shader_parameter("fold_max", Style.FOLD_MAX)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Cards"
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mmi)
+	root.card_material = mat
+	root.card_count = list.size()
+
+	var sphere := SphereMesh.new()
+	sphere.radius = 380.0
+	sphere.height = 760.0
+	sphere.radial_segments = 32
+	sphere.rings = 16
+	var sky := MeshInstance3D.new()
+	sky.name = "Sky"
+	sky.mesh = sphere
+	var sky_mat := ShaderMaterial.new()
+	sky_mat.shader = SKY_SHADER
+	sky_mat.set_shader_parameter("top", Style.AI1)
+	sky_mat.set_shader_parameter("mid", Style.AI2)
+	sky_mat.set_shader_parameter("hor", Style.PAPER)
+	sky.material_override = sky_mat
+	sky.position = Vector3(48.0, 0.0, 44.0)
+	sky.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(sky)
+	return root
