@@ -34,6 +34,29 @@ float h11(float p){ return fract(sin(p * 127.1) * 43758.5453); }
 float h21(vec2 p){ p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
 float vn(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+// Foto-Ebene (J v2): echter CC0-Kartonscan als Makro-Variation ueber der prozeduralen Pappe.
+// foto = 0 -> aus (Richtungen I/K unveraendert). foto_m = Kachelgroesse in Weltmetern.
+uniform float foto = 0.0;
+uniform float foto_m = 40.0;
+uniform float foto_hue = 0.75;     // wie stark der Farbton zum gescannten Kraftbraun gezogen wird
+uniform float foto_nrm_amt = 0.9;
+uniform vec3 foto_mean : source_color = vec3(0.616, 0.510, 0.341);
+uniform sampler2D foto_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D foto_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D foto_rgh : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+void foto_apply(vec2 p, inout vec3 c, inout vec3 nm, inout float r, float far){
+	if (foto <= 0.0) return;
+	vec2 uv = p / foto_m;
+	vec3 fa = texture(foto_alb, uv).rgb;
+	vec3 fb = texture(foto_alb, uv * 0.29 + vec2(0.37, 0.11)).rgb;   // zweite, groessere Lage gegen Kachelmuster
+	vec3 det = fa / foto_mean * mix(vec3(1.0), fb / foto_mean, 0.45);
+	float cl = dot(c, vec3(0.333));
+	vec3 hue = foto_mean * (cl / max(dot(foto_mean, vec3(0.333)), 1e-3));
+	c = mix(c, mix(c, hue, foto_hue) * det, foto);
+	vec3 fn = texture(foto_nrm, uv).rgb * 2.0 - 1.0;
+	nm.xy += fn.xy * foto * foto_nrm_amt * far;
+	r = mix(r, texture(foto_rgh, uv).r, 0.5 * foto);
+}
 """
 
 # ---------------------------------------------------------------- Karton
@@ -93,6 +116,8 @@ void fragment(){
 			vec3 k = texture(alb_tex, vec2(L, tv * 0.05) / tile_m).rgb * tint * mix(0.86, 1.08, cu.w);
 			float occ = smoothstep(0.0, 0.32, dd);
 			vec3 col = mix(k * 0.10 * (1.7 - occ), k * vec3(1.10, 1.07, 1.02) * (0.9 + 0.15 * vn(vec2(L * 180.0 / edge_pitch, tv * 5.0))), paper);
+			vec3 dn = vec3(0.0); float dr = 0.9;
+			foto_apply(vec2(L, tv * 0.4) + h11(seed) * 71.0, col, dn, dr, 0.0);
 			float slope = cos(L * 6.2831 / edge_pitch) * (1.0 - inl) * paper;
 			vec3 wn0 = normalize(mat3(MODEL_MATRIX) * ((ln - (tu ? av : au) * slope * 0.6) / bs * min(bs.x, min(bs.y, bs.z))));
 			NORMAL = normalize((VIEW_MATRIX * vec4(wn0, 0.0)).xyz);
@@ -118,6 +143,7 @@ void fragment(){
 		nm.x += cos(q.x * 6.2831 / rib_pitch) * rib_amp;
 	}
 	c *= tint * bri * vec3(1.0 + 0.04 * (h11(seed * 3.1) - 0.5), 1.0, 1.0 - 0.06 * (h11(seed * 5.3) - 0.5));
+	foto_apply(q + vec2(h11(seed) * 97.0, h11(seed * 3.0) * 53.0) + float(face) * 13.0, c, nm, r, 1.0 - smoothstep(far_flat * 0.5, far_flat, vdist));
 	// Woelbung (Karton baucht aus) -> Glanzverlauf
 	vec2 nrmq = q / max(hs, vec2(0.01));
 	vec2 tilt = nrmq * 0.035 * (0.6 + h11(seed * 2.3));
@@ -257,6 +283,7 @@ void fragment(){
 	vec3 nm = texture(nrm_tex, uv).rgb * 2.0 - 1.0;
 	if (rot) nm.xy = nm.yx;
 	float r = texture(rgh_tex, uv).r;
+	foto_apply(p + vec2(h21(cell) * 61.0, h21(cell + 5.0) * 37.0), c, nm, r, 1.0 - smoothstep(far_flat * 0.5, far_flat, vdist));
 	vec2 dE = min(f, 1.0 - f) * sheet;
 	float e = min(dE.x, dE.y);
 	float seam = 1.0 - smoothstep(0.0008, 0.0025, e);

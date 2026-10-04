@@ -1,0 +1,10 @@
+config_version=5
+[application]
+config/name="Explorer Proto - J v2 Pappmodell Amsterdam (Look-Varianten)"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+limits/opengl/max_lights_per_object=16
+lights_and_shadows/positional_shadow/atlas_size=4096
+lights_and_shadows/directional_shadow/size=8192
+textures/default_filters/anisotropic_filtering_level=4

@@ -14,6 +14,7 @@ Explorer-Städte:
 | `aizuri_popup/` | G Aizuri-Pop-up (Theater-Bilderbuch, Holzschnitt in Preußischblau, Teile klappen beim Näherkommen auf) | Bilderbuchstadt, fiktiv |
 | `pappe_buehne/` | I Kartonbühne (fotorealistische Wellpappe: Kleinstadt-Gasse aus Umzugskartons auf schwarzer Bühne, Scheinwerfer, glühendes Packpapier) | fiktive Kleinstadt-Gasse mit Uhrturm |
 | `pappe_miniatur/` | J Pappmodell Amsterdam 1:100 auf Ameisenhöhe (meterhohe Wellen in jeder Schnittkante, Tageslicht, Arbeitstisch) | Amsterdam, Grachtengürtel |
+| `pappe_miniatur_v2/` | J v2: Realismus (CC0-Fotoscans, echte Wellen-Geometrie an der Kaimauer, Modellbau-Spuren) und vier Licht-Varianten `VARIANT=atelier\|abend\|studio\|nacht` | Amsterdam, Grachtengürtel |
 | `pappe_wohnung/` | K Umzugswohnung (Kartonstapel als Gänge, Edding-Etiketten als Wegweiser, Pappmöbel, Abendsonne durch Packpapier) | Altbauwohnung, fiktiv |
 
 Gemeinsame Helfer in `common/` (`geo.gd` Primitive, Figuren, Fahrzeuge, Kugel-MultiMesh,
@@ -64,3 +65,12 @@ Spiel beim Levelaufbau zu einem Mesh zusammenführen), Fenster-Omnilichter zufä
 Renderer: nur Compatibility (Software-GL) – Forward+ war in der Sandbox nicht startbar (kein
 Vulkan-Treiber mit X11-Oberfläche). Es fehlen daher GI/Bounce-Licht, SSAO, Volumetrik, Tiefenunschärfe
 und weiche Schatten; Omni-Schatten zeigen in Compatibility Dual-Paraboloid-Artefakte (deshalb Spots).
+
+Nachtrag J v2 (04.10.2026): `pappe_miniatur_v2/` nutzt erstmals **Fremdmaterial** – CC0-Fotoscans und
+CC0-HDRIs (Poly Haven, ambientCG), abgeleitet per `tools/pappe_scan.py` nach `pappe_miniatur_v2/scans/`
+(eingecheckt, Lizenzen in `docs/art/lizenzen.md`). `common/pappe.gd` hat dafür eine optionale
+Foto-Ebene (`foto` = 0 lässt I/K unverändert). Rendern: `VARIANT=abend ./render.sh pappe_miniatur_v2`
+(Bilder nach `$OUT/pappe_miniatur_v2/<variante>/`), Capsules: `python3 pappe_miniatur_v2/capsule.py <ordner>`.
+Die Optik (Tiefenunschärfe/Tilt-Shift, Vignette, Korn) ist ein Vollbild-Shader, der auch im
+Compatibility-Renderer läuft; Glow ist dort aus (verfälscht sonst den Shader). `REDUCE_FX=1` schaltet
+Unschärfe und Korn ab.
