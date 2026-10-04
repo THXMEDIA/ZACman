@@ -14,6 +14,8 @@
 #   k8_totale.png         erhöhte Totale (Falten relativ zu einem gedachten Spieler)
 #   k9_reduziert.png      wie k3 mit „Effekte reduzieren“ (alles steht)
 #   k10_theater.png       Shijo-dori nach Westen auf das Theater
+#   k11-k15               Regressionsblicke: Torii-Rand, Pagode vom Hanamikoji,
+#                         Ninenzaka Nord, Sannenzaka (Band), Start mit Blick aufs Tor
 extends SceneTree
 
 var main: Node
@@ -87,6 +89,18 @@ func _plan() -> void:
 		main.set_reduce_fx(false)
 		_pose(40.0, 20.0, W, 0.08)})
 	_steps.append({"wait": 20, "do": func(): _shot("k10_theater.png")})
+	# regression views from QA (04.10.): torii edge, pagoda from Yasaka-dori
+	# entrance, Ninenzaka north, Sannenzaka east (ribbon)
+	_steps.append({"wait": 2, "do": func(): _pose(30.0, 79.6, W, 0.02)})
+	_steps.append({"wait": 20, "do": func(): _shot("k11_torii_rand.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(46.0, 62.0, E, 0.12)})
+	_steps.append({"wait": 20, "do": func(): _shot("k12_pagode_von_hanamikoji.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(88.0, 30.0, S, 0.1)})
+	_steps.append({"wait": 20, "do": func(): _shot("k13_ninenzaka_nord.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(56.0, 74.0, E, 0.1)})
+	_steps.append({"wait": 20, "do": func(): _shot("k14_sannenzaka_band.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(8.0, 20.0, E, 0.04)})
+	_steps.append({"wait": 20, "do": func(): _shot("k15_start_fern.png")})
 	_steps.append({"wait": 2, "do": func(): quit()})
 
 

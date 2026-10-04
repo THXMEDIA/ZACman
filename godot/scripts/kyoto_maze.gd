@@ -66,8 +66,11 @@ const TRAIL_LINES := [
 	{"row": 39, "from": 1, "to": 23},
 	{"col": 44, "from": 10, "to": 41},
 ]
-const TRAIL_ENDS := [Vector2i(10, 1), Vector2i(10, 47), Vector2i(1, 23), Vector2i(43, 23), Vector2i(21, 1), Vector2i(39, 1), Vector2i(31, 36)]
-const TRAIL_COUNT := 4
+## The torii lane and the pagoda lane always carry pellets (the highlights);
+## the level seed picks TRAIL_COUNT more ends from TRAIL_ENDS.
+const MUST_ENDS := [Vector2i(39, 1), Vector2i(31, 36)]
+const TRAIL_ENDS := [Vector2i(10, 1), Vector2i(10, 47), Vector2i(1, 23), Vector2i(43, 23), Vector2i(21, 1)]
+const TRAIL_COUNT := 2
 
 
 static func street_at(row: int, col: int) -> Dictionary:
@@ -159,7 +162,7 @@ static func trail_cells(maze, metro: Array, start_cell: Vector2i, seed: int) -> 
 		var tmp = ends[i]
 		ends[i] = ends[j]
 		ends[j] = tmp
-	var seeds: Array = ends.slice(0, TRAIL_COUNT)
+	var seeds: Array = MUST_ENDS + ends.slice(0, TRAIL_COUNT)
 	if net.has(start_cell):
 		seeds.push_front(start_cell)
 

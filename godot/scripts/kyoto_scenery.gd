@@ -24,6 +24,14 @@ const RootScript := preload("res://scripts/kyoto_popup_root.gd")
 const CELL := 2.0
 const CARD_BASE_Y := 0.07 # on top of the printed block plan
 const FACADE_OUT := 0.01 # cards sit a hair in front of the collision edge
+## Torii tunnel: one gate per cell along the torii lane; the posts stand at
+## +-TORII_POST m from the lane's centre line, and a collision rail along
+## each post line keeps the camera from running through them.
+const TORII_FROM := 2
+const TORII_TO := 20
+const TORII_Z := 39.0 * 2.0
+const TORII_POST := 2.3
+const TORII_POST_HALF := 0.22
 
 ## Street id -> house kind and height range.
 const STREET_LOOK := {
@@ -38,6 +46,20 @@ const STREET_LOOK := {
 }
 
 
+static func block_depth_torii() -> float:
+	return 2.4 # a lying torii stays inside its lane (lane half-width 3 m)
+
+
+## Collision rails along the torii posts: {center, size} boxes.
+static func torii_rails() -> Array:
+	var x0 := TORII_FROM * CELL - 0.6
+	var x1 := TORII_TO * CELL + 0.6
+	var out := []
+	for side in [-1.0, 1.0]:
+		out.append({"center": Vector3((x0 + x1) * 0.5, 1.5, TORII_Z + side * TORII_POST), "size": Vector3(x1 - x0, 3.0, TORII_POST_HALF * 2.0)})
+	return out
+
+
 static func cell_of(p: Vector3) -> Vector2i:
 	return Vector2i(int(floor(p.z / CELL + 0.5)), int(floor(p.x / CELL + 0.5)))
 
@@ -50,8 +72,21 @@ static func yaw_for(n: Vector3) -> float:
 	return atan2(n.x, n.z)
 
 
-static func card(pos: Vector3, n: Vector3, w: float, h: float, kind: int, s: float) -> Dictionary:
-	return {"pos": pos, "yaw": yaw_for(n), "w": w, "h": h, "kind": kind, "s": s}
+static func card(pos: Vector3, n: Vector3, w: float, h: float, kind: int, s: float, fold_len: float = 0.0) -> Dictionary:
+	return {"pos": pos, "yaw": yaw_for(n), "w": w, "h": h, "kind": kind, "s": s, "fold_len": fold_len if fold_len > 0.0 else h}
+
+
+## How far a card at `pos` may lie back (against its normal `n`) and stay on
+## its own block: the distance to the next street cell behind it, minus a
+## margin. Off the map counts as block (the book's margin).
+static func block_depth(maze, pos: Vector3, n: Vector3) -> float:
+	var d := 0.25
+	while d < 30.0:
+		var cell := cell_of(pos - n * d)
+		if in_map(maze, cell) and maze.grid[cell.x][cell.y] == 0:
+			return maxf(0.6, d - 0.45)
+		d += 0.25
+	return 30.0
 
 
 ## All cards of the city as plain data (tests check them without a renderer).
@@ -98,34 +133,43 @@ static func cards(maze, seed: int) -> Array:
 				if kind == Style.K_TEMPLE_WALL:
 					h = 4.2
 			var s := rng.randf()
-			out.append(card(center, n, hw + 0.02, h, kind, s))
+			out.append(card(center, n, hw + 0.02, h, kind, s, block_depth(maze, center, n)))
 			# second layer: a roof or a pine behind the house, if the block is deep enough
 			if kind != Style.K_TEMPLE_WALL or temple:
 				var back := center - n * 3.6
-				var back_cell := cell_of(back)
-				if in_map(maze, back_cell) and maze.grid[back_cell.x][back_cell.y] == 1 and KyotoMazeScript.landmark_block_at(back_cell.x, back_cell.y).is_empty():
+				var bw := hw + 0.1
+				var ok := true
+				for e in [back, back + dir * bw * 0.5, back - dir * bw * 0.5]:
+					var bc := cell_of(e)
+					if not in_map(maze, bc) or maze.grid[bc.x][bc.y] != 1 or not KyotoMazeScript.landmark_block_at(bc.x, bc.y).is_empty():
+						ok = false
+				if ok:
 					var roll2 := rng.randf()
+					var depth := block_depth(maze, back, n)
 					if roll2 < 0.5:
-						out.append(card(back, n, hw + 1.0, h + rng.randf_range(2.0, 3.6), Style.K_ROOFS, rng.randf()))
+						out.append(card(back, n, bw, h + rng.randf_range(2.0, 3.6), Style.K_ROOFS, rng.randf(), depth))
 					elif roll2 < 0.68:
-						out.append(card(back, n, rng.randf_range(4.0, 5.2), rng.randf_range(6.5, 8.5), Style.K_PINE, rng.randf()))
+						out.append(card(back, n, minf(bw, rng.randf_range(4.0, 5.2)), rng.randf_range(6.5, 8.5), Style.K_PINE, rng.randf(), depth))
 
-	# ---- landmarks at the street ends ----
+	# ---- landmarks at the street ends: they never fold, so every street
+	# shows its goal from its whole length ----
+	var lf := Style.NO_FOLD
 	var x_w := 0.5 * CELL + FACADE_OUT # facade of col 0, facing east
 	var x_e := 47.5 * CELL - FACADE_OUT # facade of col 48, facing west
-	out.append(card(Vector3(x_w, CARD_BASE_Y, 10.0 * CELL), Vector3(1, 0, 0), 10.6, 13.2, Style.K_THEATER, 0.5))
-	out.append(card(Vector3(x_e, CARD_BASE_Y, 10.0 * CELL), Vector3(-1, 0, 0), 10.8, 13.0, Style.K_GATE, 0.5))
-	out.append(card(Vector3(x_w, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.4, 7.6, Style.K_SHRINE, 0.5))
-	out.append(card(Vector3(23.0 * CELL, CARD_BASE_Y, 43.5 * CELL - FACADE_OUT), Vector3(0, 0, -1), 6.4, 8.2, Style.K_TEMPLE_GATE, 0.5))
+	out.append(card(Vector3(x_w, CARD_BASE_Y, 10.0 * CELL), Vector3(1, 0, 0), 10.6, 13.2, Style.K_THEATER + lf, 0.5))
+	out.append(card(Vector3(x_e, CARD_BASE_Y, 10.0 * CELL), Vector3(-1, 0, 0), 10.8, 13.0, Style.K_GATE + lf, 0.5))
+	out.append(card(Vector3(x_w, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.4, 7.6, Style.K_SHRINE + lf, 0.5))
+	out.append(card(Vector3(23.0 * CELL, CARD_BASE_Y, 43.5 * CELL - FACADE_OUT), Vector3(0, 0, -1), 6.4, 8.2, Style.K_TEMPLE_GATE + lf, 0.5))
 	# Kiyomizu: set back 1.6 m so the exit door stands in front of it
-	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 41.5 * CELL + 1.6), Vector3(0, 0, -1), 18.4, 16.8, Style.K_KIYOMIZU, 0.5))
-	# Yasaka pagoda, inside the temple block, seen from Yasaka-dori (west) and Ninenzaka (east)
-	out.append(card(Vector3(36.5 * CELL + 4.5, CARD_BASE_Y, 31.0 * CELL), Vector3(-1, 0, 0), 11.0, 26.0, Style.K_PAGODA, 0.5))
-	out.append(card(Vector3(42.5 * CELL - 4.5, CARD_BASE_Y, 31.0 * CELL), Vector3(1, 0, 0), 11.0, 26.0, Style.K_PAGODA, 0.5))
+	out.append(card(Vector3(44.0 * CELL, CARD_BASE_Y, 41.5 * CELL + 1.6), Vector3(0, 0, -1), 18.4, 16.8, Style.K_KIYOMIZU + lf, 0.5))
+	# Yasaka pagoda in the middle of its temple block, printed on both sides:
+	# seen from Yasaka-dori (west) and Ninenzaka (east)
+	out.append(card(Vector3(39.5 * CELL, CARD_BASE_Y, 31.0 * CELL), Vector3(-1, 0, 0), 11.0, 26.0, Style.K_PAGODA + lf, 0.5))
 
 	# ---- torii tunnel: one gate every cell along the torii lane ----
-	for c in range(2, 21):
-		out.append(card(Vector3(c * CELL, CARD_BASE_Y, 39.0 * CELL), Vector3(1, 0, 0), 6.6, 5.0, Style.K_TORII, 0.5))
+	# (posts at +-2.3 m; TORII_RAIL keeps the player inside them)
+	for c in range(TORII_FROM, TORII_TO + 1):
+		out.append(card(Vector3(c * CELL, CARD_BASE_Y, TORII_Z), Vector3(1, 0, 0), 5.8, 5.0, Style.K_TORII, 0.5, block_depth_torii()))
 
 	# ---- figures in doorways (Hanamikoji, Ninenzaka, Shijo) ----
 	var spots := [
@@ -136,7 +180,7 @@ static func cards(maze, seed: int) -> Array:
 		[Vector3(31.0 * CELL, 0, 12.5 * CELL), Vector3(0, 0, -1)], [Vector3(8.0 * CELL, 0, 19.5 * CELL), Vector3(0, 0, 1)],
 	]
 	for sp in spots:
-		var p: Vector3 = sp[0] + sp[1] * 0.18
+		var p: Vector3 = sp[0] + sp[1] * 0.05
 		p.y = CARD_BASE_Y
 		out.append(card(p, sp[1], 1.5, 2.1, Style.K_FIGURE, rng.randf()))
 
@@ -169,6 +213,7 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
+	mm.use_colors = true
 	mm.mesh = quad
 	mm.instance_count = list.size()
 	for i in list.size():
@@ -176,6 +221,7 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 		var basis := Basis(Vector3.UP, c.yaw) * Basis.from_scale(Vector3(c.w, c.h, c.h))
 		mm.set_instance_transform(i, Transform3D(basis, c.pos))
 		mm.set_instance_custom_data(i, Color(float(c.kind) / 255.0, c.w / 100.0, c.h / 100.0, c.s))
+		mm.set_instance_color(i, Color(c.fold_len / 100.0, 0.0, 0.0, 1.0))
 	# Folding moves a card's top back by up to its height: one generous box
 	# for culling instead of per-frame bounds.
 	mm.custom_aabb = AABB(Vector3(-300.0, -5.0, -250.0), Vector3(650.0, 120.0, 600.0))
@@ -199,6 +245,19 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	root.add_child(mmi)
 	root.card_material = mat
 	root.card_count = list.size()
+
+	var rails := StaticBody3D.new()
+	rails.name = "ToriiRails"
+	rails.collision_layer = 2 # the wall layer the player collides with
+	rails.collision_mask = 0
+	for r in torii_rails():
+		var shape := BoxShape3D.new()
+		shape.size = r.size
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = r.center
+		rails.add_child(cs)
+	root.add_child(rails)
 
 	var sphere := SphereMesh.new()
 	sphere.radius = 380.0

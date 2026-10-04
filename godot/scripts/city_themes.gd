@@ -399,8 +399,8 @@ static func kyoto() -> Resource:
 	t.pellet_size = 0.13
 	t.pellet_height = 0.55
 
-	t.minimap_bg_color = Color(0.953, 0.933, 0.886, 0.85)
-	t.minimap_wall_color = KyotoStyle.AI2
+	t.minimap_bg_color = Color(0.953, 0.933, 0.886, 0.94) # paper, nearly opaque
+	t.minimap_wall_color = KyotoStyle.AI1
 
 	t.has_power_ups = false
 	t.permanently_word_built = false

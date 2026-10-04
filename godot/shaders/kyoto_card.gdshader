@@ -1,7 +1,9 @@
 // Kyoto pop-up card (look "Aizuri-Pop-up", docs/design/kyoto-explorer.md):
 // one quad per card in a MultiMesh, printed procedurally in woodblock blue.
-// INSTANCE_CUSTOM: r = kind / 255 (+100 = backdrop, never folds),
+// INSTANCE_CUSTOM: r = kind / 255 (+100 = never folds: landmarks, backdrop),
 //                  g = width / 100, b = height / 100, a = variation 0..1.
+// Instance COLOR.r = fold length / 100: how far back the lying card may
+// reach (the depth of its block), so a folded card never covers a street.
 // The quad's base (local y = 0) is the hinge: the card folds back flat onto
 // the page with distance to the camera (fold_on = 0 for "Effekte
 // reduzieren": everything stands). The camera itself is never touched.
@@ -39,7 +41,9 @@ void vertex() {
 	float k = smoothstep(fold_near, fold_far, d) * fold_on * foldable;
 	v_fold = k;
 	float a = -k * fold_max;
-	float y = VERTEX.y;
+	float fold_len = max(COLOR.r * 100.0, 0.5);
+	float shrink = mix(1.0, min(1.0, fold_len / max(v_dim.y, 0.01)), k);
+	float y = VERTEX.y * shrink;
 	VERTEX.y = y * cos(a);
 	VERTEX.z = VERTEX.z + y * sin(a);
 }
@@ -49,6 +53,13 @@ float h21(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23)
 float vn(vec2 p) {
 	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// Stripes along x (period-normalised coordinate t) with a duty share; fades
+// to the average tone when the stripes get finer than a pixel (no moire).
+float stripes(float t, float duty) {
+	float w = fwidth(t);
+	float m = step(fract(t), duty);
+	return mix(m, duty, clamp(w * 2.0 - 0.35, 0.0, 1.0));
 }
 float rect(vec2 p, vec2 a, vec2 b) { return step(a.x, p.x) * step(p.x, b.x) * step(a.y, p.y) * step(p.y, b.y); }
 float crect(vec2 p, float hw, float y0, float y1) { return rect(p, vec2(-hw, y0), vec2(hw, y1)); }
@@ -64,8 +75,8 @@ float roof(vec2 p, float y0, float y1, float hw0, float hw1, float curl) {
 vec4 lay(vec4 c, vec3 col, float m) { return mix(c, vec4(col, 1.0), clamp(m, 0.0, 1.0)); }
 // Tiles: rows of rounded tiles printed in two blues.
 vec3 tiles(vec2 p, vec3 base, vec3 line) {
-	float row = step(0.82, fract(p.y / 0.22));
-	float col = step(0.86, fract(p.x / 0.28 + 0.5 * floor(p.y / 0.22)));
+	float row = 1.0 - stripes(p.y / 0.22, 0.82);
+	float col = 1.0 - stripes(p.x / 0.28 + 0.5 * floor(p.y / 0.22), 0.86);
 	return mix(base, line, max(row, col * 0.7));
 }
 // Key-block roof: outline in ink, tiles inside.
@@ -93,7 +104,7 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 	c = key_rect(c, p, vec2(-hw, 0.0), vec2(hw, top), paper);
 	// ground floor: wood with koshi lattice
 	c = lay(c, ai3, crect(p, hw, 0.0, g1));
-	float slats = step(fract(p.x / 0.13), 0.42);
+	float slats = stripes(p.x / 0.13, 0.42);
 	c = lay(c, ai1, crect(p, hw, 0.15, g1 - 0.15) * slats);
 	c = lay(c, ai1, crect(p, hw, g1 - 0.15, g1)); // lintel
 	// door with noren
@@ -111,7 +122,7 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		// inu-yarai: curved bamboo fence along the base, left and right of the door
 		float fx = abs(p.x - dx);
 		float fence = step(0.85, fx) * step(abs(p.x), hw) * step(p.y, 0.75 - 0.12 * pow(fx / max(hw, 0.1), 2.0));
-		vec3 fc = mix(ai2, ai1, step(0.7, fract(p.x / 0.08)));
+		vec3 fc = mix(ai2, ai1, 1.0 - stripes(p.x / 0.08, 0.7));
 		c = lay(c, fc, fence);
 		// paper lantern (chochin): ribs in blue, vermilion caps
 		vec2 lc = vec2(dx + 1.05, 2.0);
@@ -133,9 +144,9 @@ vec4 machiya(vec2 p, float w, float h, float s, bool shop) {
 		float wy1 = fy + fh * 0.78;
 		float ww = hw * 0.62;
 		c = key_rect(c, p, vec2(-ww, wy0), vec2(ww, wy1), ai1);
-		float bars = step(0.5, fract(p.x / (shop ? 0.3 : 0.17)));
+		float bars = 1.0 - stripes(p.x / (shop ? 0.3 : 0.17), 0.5);
 		if (shop) {
-			bars = max(bars, step(0.8, fract((p.y - wy0) / 0.32)));
+			bars = max(bars, 1.0 - stripes((p.y - wy0) / 0.32, 0.8));
 		}
 		c = lay(c, ai4, rect(p, vec2(-ww, wy0), vec2(ww, wy1)) * bars);
 		if (i < floors - 1) {
@@ -243,7 +254,7 @@ vec4 gate(vec2 p, float w, float h) {
 	c = lay(c, sumi, crect(p, 4.5, 1.55, 6.05) * step(1.6, abs(p.x)));
 	c = lay(c, paper, crect(p, 4.4, 1.6, 6.0) * step(1.6, abs(p.x)));
 	c = lay(c, ai1, rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
-	float lat = step(0.55, fract(p.x / 0.18)) * (rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
+	float lat = (1.0 - stripes(p.x / 0.18, 0.55)) * (rect(p, vec2(2.15, 2.4), vec2(3.6, 5.0)) + rect(p, vec2(-3.6, 2.4), vec2(-2.15, 5.0)));
 	c = lay(c, ai3, lat);
 	for (int i = 0; i < 4; i++) {
 		float px = (i < 2 ? -1.0 : 1.0) * (i == 0 || i == 3 ? 4.15 : 1.55);
@@ -329,7 +340,7 @@ vec4 kiyomizu(vec2 p, float w, float h, float s) {
 	// great hip roof of cypress bark: fine vertical striations
 	float e = 0.08;
 	c = lay(c, sumi, roof(p, 11.8 - e, 16.3 + e, 8.8 + e, 3.0 + e, 0.65));
-	vec3 bark = mix(ai1, ai2, step(0.7, fract(p.x / 0.12)) * 0.6);
+	vec3 bark = mix(ai1, ai2, (1.0 - stripes(p.x / 0.12, 0.7)) * 0.6);
 	c = lay(c, bark, roof(p, 11.8, 16.3, 8.8, 3.0, 0.65));
 	c = lay(c, sumi, crect(p, 3.4, 16.2, 16.55));
 	// maples on both sides: blue masses with vermilion leaves
@@ -362,7 +373,7 @@ vec4 shrine(vec2 p, float w, float h) {
 	c = lay(c, sumi, crect(p, 2.75, 0.0, 0.65));
 	c = lay(c, ai3, crect(p, 2.7, 0.0, 0.6));
 	c = key_rect(c, p, vec2(-2.4, 0.6), vec2(2.4, 4.0), paper);
-	c = lay(c, ai3, rect(p, vec2(-2.0, 1.2), vec2(2.0, 3.3)) * step(0.5, fract(p.x / 0.2)));
+	c = lay(c, ai3, rect(p, vec2(-2.0, 1.2), vec2(2.0, 3.3)) * (1.0 - stripes(p.x / 0.2, 0.5)));
 	for (int i = 0; i < 4; i++) {
 		float px = -2.2 + float(i) * 1.466;
 		c = lay(c, beni, rect(p, vec2(px - 0.17, 0.6), vec2(px + 0.17, 4.0)));
@@ -383,19 +394,19 @@ vec4 shrine(vec2 p, float w, float h) {
 vec4 torii(vec2 p, float w, float h) {
 	vec4 c = vec4(0.0);
 	for (int i = 0; i < 2; i++) {
-		float px = i == 0 ? -2.85 : 2.85;
+		float px = i == 0 ? -2.3 : 2.3;
 		c = lay(c, sumi, rect(p, vec2(px - 0.22, 0.0), vec2(px + 0.22, 4.4)));
 		c = lay(c, beni, rect(p, vec2(px - 0.17, 0.45), vec2(px + 0.17, 4.4)));
 	}
-	c = lay(c, sumi, rect(p, vec2(-3.15, 3.5), vec2(3.15, 3.9)));
-	c = lay(c, beni, rect(p, vec2(-3.1, 3.55), vec2(3.1, 3.85)));
+	c = lay(c, sumi, rect(p, vec2(-2.6, 3.5), vec2(2.6, 3.9)));
+	c = lay(c, beni, rect(p, vec2(-2.55, 3.55), vec2(2.55, 3.85)));
 	c = lay(c, beni, crect(p, 0.13, 3.85, 4.35));
-	c = lay(c, sumi, crect(p, 3.05, 4.3, 4.5));
-	c = lay(c, beni, crect(p, 3.0, 4.33, 4.47));
-	float x = clamp(abs(p.x) / 3.35, 0.0, 1.0);
+	c = lay(c, sumi, crect(p, 2.5, 4.3, 4.5));
+	c = lay(c, beni, crect(p, 2.45, 4.33, 4.47));
+	float x = clamp(abs(p.x) / 2.8, 0.0, 1.0);
 	float kb = 4.5 + 0.22 * pow(x, 3.0);
 	float kt = 4.86 + 0.32 * pow(x, 3.0);
-	c = lay(c, sumi, step(abs(p.x), 3.35) * step(kb, p.y) * step(p.y, kt));
+	c = lay(c, sumi, step(abs(p.x), 2.8) * step(kb, p.y) * step(p.y, kt));
 	return c;
 }
 
@@ -505,7 +516,10 @@ void fragment() {
 	}
 	// washi grain, and the back of the card is unprinted paper
 	vec3 col = c.rgb * (0.975 + 0.035 * vn(p * vec2(9.0, 2.5)));
-	if (!FRONT_FACING) {
+	// torii, pagoda and backdrop are printed on both sides; every other card
+	// shows unprinted paper on its back
+	bool both = kind > 11.5 && kind < 12.5 || kind > 15.5 && kind < 19.5;
+	if (!FRONT_FACING && !both) {
 		col = mix(paper, c.rgb, 0.1) * 0.93;
 	}
 	col *= mix(1.0, 0.95, v_fold); // lying cards a touch darker (page shadow)

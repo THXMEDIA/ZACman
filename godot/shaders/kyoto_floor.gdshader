@@ -45,7 +45,8 @@ void fragment() {
 		// stone paving (ishidatami), offset rows
 		vec2 st = wp.xz / vec2(0.9, 0.6);
 		st.x += 0.5 * floor(st.y);
-		float joint = max(step(0.93, fract(st.x)), step(0.9, fract(st.y)));
+		float jw = clamp(max(fwidth(st.x), fwidth(st.y)) * 2.0 - 0.35, 0.0, 1.0);
+		float joint = mix(max(step(0.93, fract(st.x)), step(0.9, fract(st.y))), 0.15, jw); // fades with distance (no moire)
 		street = mix(street, ai3, joint * 0.35);
 		col = mix(col, street, 0.92);
 		// curb ink line

@@ -67,7 +67,11 @@ func _initialize() -> void:
 	_check("trails: only on open cells", trail_open)
 	_check("trails: exit cell carries no pellet", not (exit_cell in trail))
 	_check("trails: deterministic per seed", trail == KyotoMaze.trail_cells(maze, [exit_cell], start, LEVEL_SEED))
-	_check("trails: another seed lays other trails", trail != KyotoMaze.trail_cells(maze, [exit_cell], start, 99))
+	var varies := false
+	for sd in [99, 4242, 7, 123]:
+		if trail != KyotoMaze.trail_cells(maze, [exit_cell], start, sd):
+			varies = true
+	_check("trails: other seeds lay other trails", varies)
 	var ends_ok := true
 	var net := KyotoMaze.trail_network()
 	for e in KyotoMaze.TRAIL_ENDS:
@@ -86,8 +90,9 @@ func _initialize() -> void:
 		by_kind[c.kind] = by_kind.get(c.kind, 0) + 1
 	var houses: int = by_kind.get(Style.K_MACHIYA, 0) + by_kind.get(Style.K_SHOP, 0) + by_kind.get(Style.K_TEMPLE_WALL, 0)
 	_check("cards: house rows along the streets", houses > 120, "%d" % houses)
-	_check("cards: landmarks — theatre, shrine gate, Kiyomizu, Kennin-ji gate, Inari shrine", by_kind.get(Style.K_THEATER, 0) == 1 and by_kind.get(Style.K_GATE, 0) == 1 and by_kind.get(Style.K_KIYOMIZU, 0) == 1 and by_kind.get(Style.K_TEMPLE_GATE, 0) == 1 and by_kind.get(Style.K_SHRINE, 0) == 1)
-	_check("cards: the pagoda, seen from both lanes", by_kind.get(Style.K_PAGODA, 0) == 2)
+	var NF := Style.NO_FOLD
+	_check("cards: landmarks never fold — theatre, shrine gate, Kiyomizu, Kennin-ji gate, Inari shrine", by_kind.get(Style.K_THEATER + NF, 0) == 1 and by_kind.get(Style.K_GATE + NF, 0) == 1 and by_kind.get(Style.K_KIYOMIZU + NF, 0) == 1 and by_kind.get(Style.K_TEMPLE_GATE + NF, 0) == 1 and by_kind.get(Style.K_SHRINE + NF, 0) == 1)
+	_check("cards: one pagoda, printed on both sides, standing", by_kind.get(Style.K_PAGODA + NF, 0) == 1)
 	_check("cards: a torii tunnel", by_kind.get(Style.K_TORII, 0) >= 15)
 	_check("cards: backdrop hills and the tower never fold", by_kind.get(Style.K_MOUNTAINS + Style.NO_FOLD, 0) >= 3 and by_kind.get(Style.K_TOWER + Style.NO_FOLD, 0) == 1)
 	_check("cards: figures in doorways", by_kind.get(Style.K_FIGURE, 0) >= 8)
@@ -113,9 +118,43 @@ func _initialize() -> void:
 			if maze.grid[cc.x][cc.y] != 1:
 				back_ok = false
 	_check("cards: roofs and pines stand inside the blocks", back_ok)
+	# A folded card stays on its own block (never lies across a street).
+	var lying_ok := true
+	var lying_bad := ""
+	for c in cards:
+		if c.kind >= Style.NO_FOLD or c.kind == Style.K_TORII or c.kind == Style.K_FIGURE:
+			continue
+		var n := Vector3(sin(c.yaw), 0, cos(c.yaw))
+		var right := Vector3(n.z, 0, -n.x)
+		var lie: float = minf(c.h, c.fold_len)
+		for e in [Vector3.ZERO, right * c.w * 0.45, -right * c.w * 0.45]:
+			var tip := KyotoScenery.cell_of(c.pos + e - n * lie)
+			if tip.x >= 0 and tip.y >= 0 and tip.x < maze.rows and tip.y < maze.cols and maze.grid[tip.x][tip.y] == 0:
+				lying_ok = false
+				lying_bad = "kind %d at %s" % [c.kind, c.pos]
+	_check("cards: a lying card stays on its block (no card over a street)", lying_ok, lying_bad)
+	# The camera never runs through a torii post: the rails keep the player
+	# (radius 0.34) off the post line.
+	var rails: Array = KyotoScenery.torii_rails()
+	var inner: float = KyotoScenery.TORII_POST - KyotoScenery.TORII_POST_HALF
+	_check("torii: posts inside the lane, rails along them", rails.size() == 2 and inner > 1.5 and KyotoScenery.TORII_POST + KyotoScenery.TORII_POST_HALF < 3.0 - 0.34)
+	var rail_cover := true
+	for r in rails:
+		var x0: float = r.center.x - r.size.x * 0.5
+		var x1: float = r.center.x + r.size.x * 0.5
+		if x0 > KyotoScenery.TORII_FROM * 2.0 - 0.3 or x1 < KyotoScenery.TORII_TO * 2.0 + 0.3:
+			rail_cover = false
+	_check("torii: the rails cover every post", rail_cover)
+	# Trails always run through the torii lane and to the pagoda.
+	var hi_ok := true
+	for sd in [1765, 1, 2, 3, 99, 4242]:
+		var tr: Array = KyotoMaze.trail_cells(maze, [exit_cell], start, sd)
+		if not tr.has(Vector2i(39, 5)) or not tr.has(Vector2i(31, 34)):
+			hi_ok = false
+	_check("trails: every seed leads through the torii lane and to the pagoda", hi_ok)
 	var base_ok := true
 	for c in cards:
-		if c.kind < Style.NO_FOLD and absf(c.pos.y - KyotoScenery.CARD_BASE_Y) > 0.001:
+		if (c.kind < Style.NO_FOLD or c.kind < Style.NO_FOLD + Style.K_TOWER) and absf(c.pos.y - KyotoScenery.CARD_BASE_Y) > 0.001:
 			base_ok = false
 	_check("cards: all pop-ups hinge on the page (same base height)", base_ok)
 

@@ -599,7 +599,7 @@ func _build_comfort_block() -> Control:
 	row.add_theme_constant_override("separation", 14)
 	col.add_child(row)
 	var cb := CheckBox.new()
-	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen)"
+	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen, Pop-ups stehen)"
 	cb.add_theme_font_size_override("font_size", TEXT_PX)
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
 	row.add_child(cb)

@@ -88,9 +88,12 @@ func setup(cell_world_pos: Vector3) -> void:
 	var hw := 0.33
 	var y0 := 3.0
 	var pts := [Vector3(-hw, y0, 0), Vector3(0, y0 + 0.45, 0), Vector3(hw, y0, 0), Vector3(hw, RIBBON_TOP, 0), Vector3(-hw, RIBBON_TOP, 0)]
-	for tri in [[0, 1, 4], [1, 3, 4], [1, 2, 3]]:
-		for k in tri:
-			st.add_vertex(pts[k])
+	# two crossed strips, so the ribbon reads from every side
+	for rot in [0.0, PI * 0.5]:
+		var b := Basis(Vector3.UP, rot)
+		for tri in [[0, 1, 4], [1, 3, 4], [1, 2, 3]]:
+			for k in tri:
+				st.add_vertex(b * pts[k])
 	ribbon.mesh = st.commit()
 	ribbon.material_override = _unshaded(Style.EXIT, true)
 	ribbon.position = Vector3(1.45, 0.0, DOOR_Z - 0.05)
