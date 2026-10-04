@@ -336,7 +336,7 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     spielt einen voll deterministischen Lauf.
   - **Konditionen** sind zeitlich begrenzte Effekte, die nur das Kaninchen
     auslöst. Registry in `conditions.gd` mit `is_good`, `duration_s` (gut
-    10 s, schlecht 8 s) und `weight`; Grundverhältnis gut:schlecht 60:40,
+    10 s, Matrix 15 s, schlecht 8 s – E10) und `weight`; Grundverhältnis gut:schlecht 60:40,
     innerhalb gleich verteilt (`Conditions.pick_condition(rng, p_good)`).
     Pool: **Matrix** (gut; Wände ohne Kollision, Look „Durchlässiger Code“,
     in den letzten 3 s blenden die Wände blinkend ein, am Ende steht der
@@ -355,8 +355,8 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     Levelstart gecacht, Shader-Parameter und Umgebung nur bei Änderung
     (`Main.env_blend_count`/`look_param_count` für Tests).
   - **Fear & Loathing**: pro Aufnahme genau eine Manipulation, gezogen mit
-    dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: A/D getauscht,
-    Drift (25 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
+    dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: Steuerung gespiegelt (A/D und W/S),
+    Drift (40 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
     150 ms Verzögerung auf WASD (fester Ringpuffer; beim Loslassen steht man
     sofort). „Gekippt“ ist der Look, solange die Manipulation auf die
     aktuelle Eingabe wirkt. **Rote Linie**: Maus, Blickrichtung und Kamera

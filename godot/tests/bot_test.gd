@@ -1173,7 +1173,7 @@ func _run_condition_checks() -> void:
 	_check("F&L: no input -> no movement (all manipulations, also right after releasing)", no_move)
 	var fs = FearScript.new()
 	fs.set_manipulation(FearScript.SWAP)
-	_check("F&L swap: A/D mirrored, W untouched", fs.modify_input(Vector2(1, 0), 0.016) == Vector2(-1, 0) and fs.modify_input(Vector2(0, 1), 0.016) == Vector2(0, 1))
+	_check("F&L swap: A/D and W/S mirrored (E10)", fs.modify_input(Vector2(1, 0), 0.016) == Vector2(-1, 0) and fs.modify_input(Vector2(0, 1), 0.016) == Vector2(0, -1))
 	var fd = FearScript.new()
 	fd.set_manipulation(FearScript.DRIFT)
 	var dv: Vector2 = fd.modify_input(Vector2(0, 1), 0.016)

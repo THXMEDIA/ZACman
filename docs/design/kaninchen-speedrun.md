@@ -48,7 +48,7 @@ Ein gemeinsamer Wand-/Boden-Shader (aus `konditionen.patch`) mit Uniforms `look`
 - Freiwillig: Wer es liegen lässt, spielt einen voll deterministischen Lauf.
 - Figur (UX-W3): sitzendes Voxel-Kaninchen in Hasenweiß (Körper, Kopf, zwei lange Ohren, Schwanz, dunkle Augen), schwebt knapp über dem Boden, dreht sich langsam (0,24 Hz), schwacher Lichtkegel am Boden. Minimap: kleines Ohren-Symbol.
 - Aufnahme: sofortige Titelkarte oben (Symbol, Name; zweite Zeile mit Manipulation/Wirkung 15 px weiß; Chat-Zeile 12 px; rechts „GUT ▲“/„SCHLECHT ▼“ und Restsekunden „7 s“; Restzeit-Balken, der in den letzten 3 s mit 1 Hz pulsiert; Farbe gut = Grün, schlecht = Magenta), eigener Ton (gut aufsteigend, schlecht verstimmt fallend), Musikschicht für die Dauer.
-- Dauer: gute Konditionen 10 s, schlechte 8 s; Tick-Töne in den letzten 3 s (das Uhrticken der Taschenuhr setzt dann aus, damit sie hörbar sind). Kein Stapeln: ein weiteres Kaninchen (falls es später mehrere gibt) ersetzt die laufende Kondition.
+- Dauer: gute Konditionen 10 s (Matrix 15 s, E10 vom 04.10.2026: die Wette lohnte sich in der Messung kaum), schlechte 8 s; Tick-Töne in den letzten 3 s (das Uhrticken der Taschenuhr setzt dann aus, damit sie hörbar sind). Kein Stapeln: ein weiteres Kaninchen (falls es später mehrere gibt) ersetzt die laufende Kondition.
 - Tod beendet die laufende Kondition (Entscheidung Studio Head, 03.10.): Danach ist die Kollision an, der Spieler steht auf der offenen Startzelle mit Blick in den längsten Gang.
 
 ### 2.3 Konditions-Pool
@@ -65,8 +65,8 @@ Neue Konditionen = ein Skript unter `scripts/conditions/` plus Registry-Eintrag 
 
 ### 2.4 Fear & Loathing – Steuerung
 - Pro Aufnahme genau eine Manipulation, zufällig (gleicher Zufallsgenerator wie das Kaninchen), angekündigt mit Symbol in der Titelkarte:
-  - **A/D getauscht** (Seitwärts-Eingabe gespiegelt),
-  - **Drift**: beim Laufen 25 % Seitenzug (nur solange Bewegungseingabe anliegt),
+  - **Steuerung gespiegelt** (A/D und W/S getauscht; E10 – vorher nur A/D),
+  - **Drift**: beim Laufen 40 % Seitenzug (nur solange Bewegungseingabe anliegt; E10 – vorher 25 %),
   - **Verzögerung**: 150 ms Verzögerung auf WASD (fester Ringpuffer).
 - Das „Kippen“ des Looks entspricht dem aktiven Zustand der Manipulation.
 - **Rote Linie (E8e):** Maus/Blickrichtung/Kamera werden nie manipuliert. Keine Bewegung ohne Eingabe, kein Bildwackeln, kein FOV-Pulsieren, keine Zeitdilatation.
