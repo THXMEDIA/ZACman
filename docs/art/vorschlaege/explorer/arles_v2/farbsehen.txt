@@ -1,0 +1,18 @@
+Farbabstand CIE76 (ΔE) normal und simuliert (Machado 2009, Schweregrad 1,0); Kontrast = WCAG-Helligkeitsverhaeltnis
+gemessen aus den Renderings: {"Ausgang (Tuer, gerendert)": [103, 248, 241], "Kugel (gerendert)": [244, 132, 45], "Laterne/Fenster (gerendert)": [254, 232, 59]}
+
+Paar                                                                    normal    Prot    Deut    Trit Kontrast
+Kugel Zinnober #FF4A1C / Chromgelb #F6C945                                68.3    38.5    20.8    67.6     2.14
+Kugel Zinnober #FF4A1C / Laternenglas #FFE9A0                             80.8    44.6    40.9    86.2     2.79
+Kugel Zinnober #FF4A1C / Halo-Rand Gold #D4A03A                           58.0    20.1    11.1    56.6     1.42
+Kugel Zinnober #FF4A1C / Spiegelung Gold #C99A3D                          59.5    16.2    13.5    58.8     1.31
+Kugel Zinnober #FF4A1C / Pflaster #33456F                                111.2    78.4   100.3   110.5     2.81
+Kugel Zinnober #FF4A1C / Fassade Ocker #B88A3C                            59.0    10.2    18.8    58.8     1.08
+Kugel (gerendert) / Laterne/Fenster (gerendert)                           56.1    41.4    25.8    52.9     2.05
+Ausgang Minzgruen #3AF5C8 / Zypresse #1E3F30                              74.6    66.5    61.5    73.7     8.33
+Ausgang Minzgruen #3AF5C8 / Platane #34557A                               82.9    66.7    59.0    60.6     5.53
+Ausgang Minzgruen #3AF5C8 / Chromgelb #F6C945                             83.7    57.1    63.1    79.0     1.13
+Ausgang Minzgruen #3AF5C8 / Gelbes Haus #E2B34C                           79.6    46.5    53.4    84.3     1.40
+Ausgang (Tuer, gerendert) / Laterne/Fenster (gerendert)                   93.6    90.8    89.4    66.1     1.03
+Ausgang Minzgruen #3AF5C8 / Kugel Zinnober #FF4A1C                       136.3    54.9    65.4   144.4     2.41
+Ausgang Minzgruen #3AF5C8 / Himmel hell #7FB2E5                           67.4    48.4    40.3    29.0     1.60

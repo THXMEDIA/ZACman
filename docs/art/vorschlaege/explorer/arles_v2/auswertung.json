@@ -1,0 +1,145 @@
+{
+ "farbsehen": [
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Chromgelb #F6C945",
+   "Normal": 68.3,
+   "Protanopie": 38.5,
+   "Deuteranopie": 20.8,
+   "Tritanopie": 67.6,
+   "Kontrast (Helligkeit)": 2.14
+  },
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Laternenglas #FFE9A0",
+   "Normal": 80.8,
+   "Protanopie": 44.6,
+   "Deuteranopie": 40.9,
+   "Tritanopie": 86.2,
+   "Kontrast (Helligkeit)": 2.79
+  },
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Halo-Rand Gold #D4A03A",
+   "Normal": 58.0,
+   "Protanopie": 20.1,
+   "Deuteranopie": 11.1,
+   "Tritanopie": 56.6,
+   "Kontrast (Helligkeit)": 1.42
+  },
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Spiegelung Gold #C99A3D",
+   "Normal": 59.5,
+   "Protanopie": 16.2,
+   "Deuteranopie": 13.5,
+   "Tritanopie": 58.8,
+   "Kontrast (Helligkeit)": 1.31
+  },
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Pflaster #33456F",
+   "Normal": 111.2,
+   "Protanopie": 78.4,
+   "Deuteranopie": 100.3,
+   "Tritanopie": 110.5,
+   "Kontrast (Helligkeit)": 2.81
+  },
+  {
+   "paar": "Kugel Zinnober #FF4A1C / Fassade Ocker #B88A3C",
+   "Normal": 59.0,
+   "Protanopie": 10.2,
+   "Deuteranopie": 18.8,
+   "Tritanopie": 58.8,
+   "Kontrast (Helligkeit)": 1.08
+  },
+  {
+   "paar": "Kugel (gerendert) / Laterne/Fenster (gerendert)",
+   "Normal": 56.1,
+   "Protanopie": 41.4,
+   "Deuteranopie": 25.8,
+   "Tritanopie": 52.9,
+   "Kontrast (Helligkeit)": 2.05
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Zypresse #1E3F30",
+   "Normal": 74.6,
+   "Protanopie": 66.5,
+   "Deuteranopie": 61.5,
+   "Tritanopie": 73.7,
+   "Kontrast (Helligkeit)": 8.33
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Platane #34557A",
+   "Normal": 82.9,
+   "Protanopie": 66.7,
+   "Deuteranopie": 59.0,
+   "Tritanopie": 60.6,
+   "Kontrast (Helligkeit)": 5.53
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Chromgelb #F6C945",
+   "Normal": 83.7,
+   "Protanopie": 57.1,
+   "Deuteranopie": 63.1,
+   "Tritanopie": 79.0,
+   "Kontrast (Helligkeit)": 1.13
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Gelbes Haus #E2B34C",
+   "Normal": 79.6,
+   "Protanopie": 46.5,
+   "Deuteranopie": 53.4,
+   "Tritanopie": 84.3,
+   "Kontrast (Helligkeit)": 1.4
+  },
+  {
+   "paar": "Ausgang (Tuer, gerendert) / Laterne/Fenster (gerendert)",
+   "Normal": 93.6,
+   "Protanopie": 90.8,
+   "Deuteranopie": 89.4,
+   "Tritanopie": 66.1,
+   "Kontrast (Helligkeit)": 1.03
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Kugel Zinnober #FF4A1C",
+   "Normal": 136.3,
+   "Protanopie": 54.9,
+   "Deuteranopie": 65.4,
+   "Tritanopie": 144.4,
+   "Kontrast (Helligkeit)": 2.41
+  },
+  {
+   "paar": "Ausgang Minzgruen #3AF5C8 / Himmel hell #7FB2E5",
+   "Normal": 67.4,
+   "Protanopie": 48.4,
+   "Deuteranopie": 40.3,
+   "Tritanopie": 29.0,
+   "Kontrast (Helligkeit)": 1.6
+  }
+ ],
+ "gemessen": {
+  "Ausgang (Tuer, gerendert)": [
+   103,
+   248,
+   241
+  ],
+  "Kugel (gerendert)": [
+   244,
+   132,
+   45
+  ],
+  "Laterne/Fenster (gerendert)": [
+   254,
+   232,
+   59
+  ]
+ },
+ "lod": {
+  "LOD an": {
+   "flimmer_gesamt": 9.36,
+   "flimmer_fern": 4.31,
+   "hochfrequenz_fern": 19.92
+  },
+  "LOD aus": {
+   "flimmer_gesamt": 10.77,
+   "flimmer_fern": 6.27,
+   "hochfrequenz_fern": 32.72
+  }
+ }
+}

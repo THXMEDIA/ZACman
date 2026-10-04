@@ -1,0 +1,58 @@
+{
+  "_doc": "Arles-Explorer, Kartenskizze v2 (Art Director, 04.10.2026). 1 Zelle = 2 m, row = Sueden (z), col = Osten (x). Alles, was keine Strasse ist, ist Block. Echte Orte, frei angeordnet, damit jede Strasse auf ein Wahrzeichen zulaeuft. Gelesen von karte.py (ASCII, Pruefung, Minimap) und city.gd (Prototyp).",
+  "rows": 41,
+  "cols": 45,
+  "start": [35, 32],
+  "start_facing": "west",
+  "exit": [1, 7],
+  "streets": [
+    {"id": "place_lamartine", "name": "Place Lamartine (Platz)", "r0": 1, "c0": 1, "r1": 7, "c1": 17},
+    {"id": "porte_cavalerie", "name": "Durchgang Porte de la Cavalerie", "r0": 3, "c0": 18, "r1": 5, "c1": 23},
+    {"id": "rue_cavalerie", "name": "Rue de la Cavalerie", "r0": 1, "c0": 24, "r1": 11, "c1": 26},
+    {"id": "rond_point_nord", "name": "Rond-point des Arenes (Nord)", "r0": 12, "c0": 24, "r1": 14, "c1": 43},
+    {"id": "rond_point_sued", "name": "Rond-point des Arenes (Sued)", "r0": 30, "c0": 24, "r1": 32, "c1": 43},
+    {"id": "rond_point_west", "name": "Rond-point des Arenes (West)", "r0": 12, "c0": 24, "r1": 32, "c1": 26},
+    {"id": "rond_point_ost", "name": "Rond-point des Arenes (Ost)", "r0": 12, "c0": 41, "r1": 32, "c1": 43},
+    {"id": "quai", "name": "Quai am Rhone-Ufer", "r0": 1, "c0": 1, "r1": 34, "c1": 4},
+    {"id": "rue_porcelets", "name": "Seitengasse zu den Thermen", "r0": 9, "c0": 5, "r1": 10, "c1": 15},
+    {"id": "rue_forum", "name": "Rue du Forum (Ost-West)", "r0": 19, "c0": 5, "r1": 21, "c1": 23},
+    {"id": "place_forum", "name": "Place du Forum (Platz)", "r0": 15, "c0": 8, "r1": 25, "c1": 18},
+    {"id": "rue_hotel_de_ville", "name": "Rue de l'Hotel de Ville", "r0": 26, "c0": 12, "r1": 31, "c1": 14},
+    {"id": "place_republique", "name": "Place de la Republique (Platz)", "r0": 32, "c0": 8, "r1": 37, "c1": 20},
+    {"id": "rue_calade", "name": "Rue de la Calade", "r0": 34, "c0": 21, "r1": 36, "c1": 33}
+  ],
+  "landmarks": [
+    {"id": "maison_jaune", "name": "Gelbes Haus (rekonstruiert) mit gruener Tuer = AUSGANG", "r0": 0, "c0": 5, "r1": 0, "c1": 9, "face": [0, 1]},
+    {"id": "porte_cavalerie", "name": "Porte de la Cavalerie (zwei Rundtuerme)", "r0": 1, "c0": 18, "r1": 7, "c1": 23, "face": [-1, 0], "gate": true},
+    {"id": "remparts", "name": "Stadtmauer-Turm am Nordende der Rue de la Cavalerie", "r0": 0, "c0": 24, "r1": 0, "c1": 26, "face": [0, 1]},
+    {"id": "arenes", "name": "Amphitheater (Arenes), 2 Arkadengeschosse + 3 mittelalterliche Tuerme", "r0": 15, "c0": 27, "r1": 29, "c1": 40, "face": [-1, 0], "round": true},
+    {"id": "thermes", "name": "Thermen-Apsis (Thermes de Constantin)", "r0": 8, "c0": 16, "r1": 11, "c1": 17, "face": [-1, 0]},
+    {"id": "cafe", "name": "Caféterrasse: gelbe Wand, Markise, Laterne (ohne Namen)", "r0": 13, "c0": 11, "r1": 14, "c1": 15, "face": [0, 1]},
+    {"id": "colonnes_forum", "name": "Zwei roemische Saeulen in der Hausecke (Forum)", "r0": 14, "c0": 7, "r1": 14, "c1": 8, "face": [0, 1]},
+    {"id": "hotel_de_ville", "name": "Hotel de Ville mit Uhrturm (Westende der Calade-Achse)", "r0": 32, "c0": 7, "r1": 37, "c1": 7, "face": [1, 0]},
+    {"id": "saint_trophime", "name": "Saint-Trophime: romanisches Portal + Vierungsturm", "r0": 38, "c0": 11, "r1": 40, "c1": 16, "face": [0, -1]},
+    {"id": "theatre_antique", "name": "Theatre antique: zwei Saeulen ('les deux veuves') + Tour de Roland", "r0": 33, "c0": 34, "r1": 37, "c1": 36, "face": [-1, 0]},
+    {"id": "grand_prieure", "name": "Grand Prieure (Zinnenfassade am Kai, Suedende)", "r0": 35, "c0": 1, "r1": 36, "c1": 4, "face": [0, -1]}
+  ],
+  "props": [
+    {"id": "obelisk", "name": "Obelisk mit Brunnen", "r": 33, "c": 17},
+    {"id": "mistral", "name": "Statue (Mistral-Denkmal, Rivière 1909, gemeinfrei)", "r": 22, "c": 15},
+    {"id": "terrasse", "name": "Cafétische unter der Markise", "r0": 15, "c0": 11, "r1": 16, "c1": 15}
+  ],
+  "parapet": {"col": 0, "r0": 1, "r1": 34, "_doc": "Kaimauer: niedrige Bruestung statt Haeuser, dahinter die Rhone (ausserhalb der Karte)"},
+  "trail_lines": [
+    {"row": 35, "from": 9, "to": 32},
+    {"col": 13, "from": 20, "to": 35},
+    {"row": 20, "from": 3, "to": 25},
+    {"col": 3, "from": 4, "to": 33},
+    {"row": 4, "from": 3, "to": 25},
+    {"col": 7, "from": 1, "to": 4},
+    {"col": 25, "from": 2, "to": 31},
+    {"row": 13, "from": 25, "to": 42},
+    {"row": 31, "from": 25, "to": 42},
+    {"col": 42, "from": 13, "to": 31},
+    {"row": 9, "from": 3, "to": 15}
+  ],
+  "must_ends": [[13, 42], [31, 42], [9, 15]],
+  "_trail_doc": "Spur = kuerzester Weg Start->Ausgang (immer) + must_ends (Arena-Ring ganz, Thermen-Gasse) + vom Level-Seed gewaehlte Aeste (fest pro Stadt, wie Tokyo/Kyoto)."
+}

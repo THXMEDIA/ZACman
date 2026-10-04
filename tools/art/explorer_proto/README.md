@@ -74,3 +74,14 @@ Foto-Ebene (`foto` = 0 lässt I/K unverändert). Rendern: `VARIANT=abend ./rende
 Die Optik (Tiefenunschärfe/Tilt-Shift, Vignette, Korn) ist ein Vollbild-Shader, der auch im
 Compatibility-Renderer läuft; Glow ist dort aus (verfälscht sonst den Shader). `REDUCE_FX=1` schaltet
 Unschärfe und Korn ab.
+
+Nachtrag B v2 (04.10.2026, Arles verfeinert): `arles_v2/` baut die ganze Kartenskizze (`karte.json`, gleiche
+Form wie `kyoto_maze.gd`: Strassen-Rechtecke, Wahrzeichen an Strassenenden) mit echten Arles-Orten, stilisiert
+und frei angeordnet. `karte.py` prueft die Karte (Erreichbarkeit, Weg entlang der Kugeln, Blickpunkte) und
+schreibt `raster.png`/`spur.json` fuer Godot sowie Karte und Minimap. Shader in `arles_v2/shaders.gd`:
+gebackener, ringsum nahtloser Wirbelhimmel (SubViewport-Bake beim Levelaufbau, Flowmap mit 3 Textur-Taps zur
+Laufzeit), Strich-LOD (Uebergang 14–28 m zu grossen Tupfern + Pixel-Filter), Fassaden mit prozeduralen Fenstern
+aus einer Mesh fuer alle Bloecke, gemalte Laternen-Lichtpfuetzen statt Omni-Lichtern (7 echte Lichter),
+Halo-MultiMesh, Rhone mit Laternen-Spiegelungen, Kugeln mit Kontur. Alles neu rendern + auswerten:
+`arles_v2/render_all.sh` (~2,5 min; `VARIANT=nacht|blau`, `REDUCE_FX=1`, `LOD=0`, freie Kamera `VIEW=name,x,y,z,lx,ly,lz,fov`).
+Ergebnis: `docs/art/vorschlaege/explorer/arles_v2/` (Farbsehen-Tabelle `farbsehen.txt`, LOD-Flimmertest `lod_vergleich.png`).

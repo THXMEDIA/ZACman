@@ -1,0 +1,50 @@
+     000000000011111111112222222222333333333344444
+     012345678901234567890123456789012345678901234
+  0  #####YYYYY##############MMM##################
+  1  ≈      X          PPPPPP   ##################
+  2  ≈      o          PPPPPP · ##################
+  3  ≈      o                 · ##################
+  4  ≈  ooooo·················· ##################
+  5  ≈  o                     · ##################
+  6  ≈  o              PPPPPP · ##################
+  7  ≈  o              PPPPPP · ##################
+  8  ≈  o ###########TT###### · ##################
+  9  ≈  o············TT###### · ##################
+ 10  ≈  o            TT###### · ##################
+ 11  ≈  o ###########TT###### · ##################
+ 12  ≈  o ################### ·                  #
+ 13  ≈  o ######KKKKK######## ·················· #
+ 14  ≈  o ##cc##KKKKK######## ·                · #
+ 15  ≈  o ###           ##### · AAAAAAAAAAAAAA · #
+ 16  ≈  o ###           ##### · AAAAAAAAAAAAAA · #
+ 17  ≈  o ###           ##### · AAAAAAAAAAAAAA · #
+ 18  ≈  o ###           ##### · AAAAAAAAAAAAAA · #
+ 19  ≈  o                     · AAAAAAAAAAAAAA · #
+ 20  ≈  ooooooooooo············ AAAAAAAAAAAAAA · #
+ 21  ≈  ·         o           · AAAAAAAAAAAAAA · #
+ 22  ≈  · ###     o     ##### · AAAAAAAAAAAAAA · #
+ 23  ≈  · ###     o     ##### · AAAAAAAAAAAAAA · #
+ 24  ≈  · ###     o     ##### · AAAAAAAAAAAAAA · #
+ 25  ≈  · ###     o     ##### · AAAAAAAAAAAAAA · #
+ 26  ≈  · ####### o ######### · AAAAAAAAAAAAAA · #
+ 27  ≈  · ####### o ######### · AAAAAAAAAAAAAA · #
+ 28  ≈  · ####### o ######### · AAAAAAAAAAAAAA · #
+ 29  ≈  · ####### o ######### · AAAAAAAAAAAAAA · #
+ 30  ≈  · ####### o ######### ·                · #
+ 31  ≈  · ####### o ######### ·················· #
+ 32  ≈  · ##H     o       ###                    #
+ 33  ≈  · ##H     o       #############VVV########
+ 34  ≈    ##H     o                    VVV########
+ 35  #GGGG##H ····ooooooooooooooooooo@ VVV########
+ 36  #GGGG##H                          VVV########
+ 37  #######H             #############VVV########
+ 38  ###########SSSSSS############################
+ 39  ###########SSSSSS############################
+ 40  ###########SSSSSS############################
+
+Strassenzellen: 790 | Kugelspur-Zellen (alle Linien): 206
+Weg entlang der Kugeln Start->Ausgang: 67 Zellen = 134 m (~30 s bei 4,4 m/s); kuerzester Weg ueberhaupt: 65 Zellen
+Strassen am Weg: rue_calade > place_republique > rue_hotel_de_ville > place_forum > rue_forum > quai > place_lamartine
+Wahrzeichen am Weg (Reihenfolge): theatre_antique, hotel_de_ville, saint_trophime, colonnes_forum, cafe, maison_jaune, grand_prieure, porte_cavalerie, thermes
+Strassenenden -> Blickpunkt: place_lamartine->Rhone/Bruestung; rue_cavalerie->remparts; rond_point_nord->Hausfassade; rond_point_nord->Hausfassade; rond_point_sued->Hausfassade; rond_point_sued->Hausfassade; rond_point_west->Hausfassade; rond_point_ost->Hausfassade; rond_point_ost->Hausfassade; quai->Hausfassade; quai->grand_prieure; rue_porcelets->thermes; place_republique->hotel_de_ville; rue_calade->theatre_antique
+Weg-Zellen ohne Kugelspur: 0
