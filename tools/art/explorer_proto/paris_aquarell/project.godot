@@ -1,0 +1,6 @@
+config_version=5
+[application]
+config/name="Explorer Proto - Paris Aquarell"
+[rendering]
+renderer/rendering_method="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
