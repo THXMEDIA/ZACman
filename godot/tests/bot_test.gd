@@ -885,6 +885,54 @@ func _run_checks() -> void:
 	main.begin_game()
 	await get_tree().process_frame
 
+	# ---- Arles Explorer city (docs/design/arles-explorer.md): the painted
+	# starry night, exit = the green door of the Yellow House into a speedrun;
+	# the speedrun gets its own look back (no moon, no omni lights, no glow) ----
+	_check("arles: the start screen has a button for it", main.hud.explorer_buttons.has("arles") and main.hud.explorer_buttons["arles"].text == "ARLES")
+	main.hud.explorer_pressed.emit("arles")
+	await get_tree().process_frame
+	_check("arles: the ARLES button starts the Arles explorer city", main.running and main.playing_explorer and main.explorer_city_id == "arles")
+	_check("arles: HUD level chip says ARLES", main.hud.level_label.text == "ARLES", main.hud.level_label.text)
+	_check("arles: no ghosts, no traffic, one exit (the green door)", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("arles_exit.gd"))
+	var ar_sr = main.maze_view.scenery_root
+	_check("arles: the painted city is built (houses, objects, halos)", ar_sr != null and main.maze_view.city_theme.id == "arles" and ar_sr.house_box_count > 100 and ar_sr.halo_count > 70)
+	_check("arles: vermilion pellets lead the way", main.maze_view.pellet_cells.size() > 150)
+	_check("arles: the exit is on the minimap, in mint green", main.hud.minimap_exit_cells.size() == 1 and main.maze_view.city_theme.minimap_exit_color.to_html(false) == "3af5c8")
+	_check("arles: night with glow, colour background, the sky baked at start", main.world_env.environment.glow_enabled and main.world_env.environment.background_mode == Environment.BG_COLOR and ar_sr.sky_state != "")
+	_check("arles: no ghost siren (quiet city)", Sfx.siren_state() == "")
+	main.set_reduce_fx(true)
+	_check("arles: 'Effekte reduzieren' stops sky and exit pulse", main.metro_stations[0].pulse_enabled() == false and ar_sr.fx_reduced() and ar_sr.animated_nodes().is_empty())
+	main.set_reduce_fx(false)
+	_check("arles: both run again without it", main.metro_stations[0].pulse_enabled() == true and not ar_sr.animated_nodes().is_empty())
+	var ar_exit: Vector3 = main.metro_stations[0].position
+	main.player.global_position = Vector3(ar_exit.x, main.player.global_position.y, ar_exit.z + 0.6)
+	var ar_tries := 0
+	while main.playing_explorer and ar_tries < 400:
+		await get_tree().process_frame
+		ar_tries += 1
+	await get_tree().process_frame
+	_check("arles: the green door ends the Arles run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("theme reset Arles -> speedrun: no painted city, no glow, speedrun background", main.maze_view.scenery_root == null
+		and main.world_env.environment.glow_enabled == normal_theme.env_glow_enabled
+		and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color)
+		and main.world_env.environment.tonemap_mode == normal_theme.env_tonemap_mode)
+	var ar_lights := []
+	for n in main.maze_view.find_children("*", "Light3D", true, false):
+		var gone := false
+		var up: Node = n
+		while up != null:
+			if up.is_queued_for_deletion():
+				gone = true
+			up = up.get_parent()
+		if not gone:
+			ar_lights.append(n)
+	var ar_left: Array = ar_lights.filter(func(l): return String(l.name) in ["Moon", "Cafe", "Statue", "Portal", "Arena", "QuayNorth", "QuaySouth"] or l is DirectionalLight3D)
+	_check("speedrun after Arles: the moon and the lamps are gone", ar_left.is_empty(), str(ar_left.map(func(l): return str(l.get_path()))))
+	_check("speedrun after Arles: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)
 	main.start_condition(ConditionsScript.get_condition("matrix"))

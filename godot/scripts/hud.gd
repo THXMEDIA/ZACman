@@ -1582,6 +1582,7 @@ func _draw_minimap() -> void:
 	var pellet_col: Color = ct.pellet_color if ct != null else Color(1.0, 0.82, 0.4)
 	var power_col: Color = ct.power_color if ct != null else Color(1.0, 0.365, 0.635)
 	var frightened_col: Color = ct.minimap_frightened_color if ct != null else Color(0.35, 0.82, 1.0)
+	var pellet_rim: Color = ct.minimap_pellet_outline if ct != null else Color(0, 0, 0, 0)
 	minimap.draw_rect(Rect2(Vector2.ZERO, size), bg_col)
 	# Amsterdam: canals in their own colour (CityTheme.minimap_water_script).
 	var water_script = ct.minimap_water_script if ct != null else null
@@ -1598,6 +1599,8 @@ func _draw_minimap() -> void:
 			if not minimap_maze_view.pellet_alive[i]:
 				continue
 			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
+			if pellet_rim.a > 0.0: # Arles: a dark ring keeps the pellets readable
+				minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 1.6, pellet_rim)
 			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, pellet_col)
 		for i in minimap_maze_view.power_cells.size():
 			if not minimap_maze_view.power_alive[i]:

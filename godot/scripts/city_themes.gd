@@ -17,6 +17,9 @@ const KyotoStyle := preload("res://scripts/kyoto_style.gd")
 const AmsterdamMazeScript := preload("res://scripts/amsterdam_maze.gd")
 const AmsterdamSceneryScript := preload("res://scripts/amsterdam_scenery.gd")
 const AmsterdamStyle := preload("res://scripts/amsterdam_style.gd")
+const ArlesMazeScript := preload("res://scripts/arles_maze.gd")
+const ArlesSceneryScript := preload("res://scripts/arles_scenery.gd")
+const ArlesStyle := preload("res://scripts/arles_style.gd")
 
 ## ---- Speedrun base look "Lagune" (docs/design/kaninchen-speedrun.md 1.1) ----
 ## Every wall has the same turquoise glowing top edge; the gradient down to
@@ -502,6 +505,80 @@ static func amsterdam() -> Resource:
 	return t
 
 
+## Arles Explorer city, look "Sternennacht, echte Orte stilisiert", main look
+## "tiefe Nacht" (direction B v2, owner decisions E19/E23 04.10.2026; spec
+## docs/design/arles-explorer.md): real places of Arles, stylised and freely
+## arranged, painted with impasto strokes under a baked swirl sky. The wall
+## MultiMesh is pure physics (not drawn); houses, landmarks, the quay and the
+## Rhône come from arles_scenery.gd. Lit: the moon and 7 omni lights without
+## shadows (6 in the city, 1 at the exit); every other lamp only paints light
+## pools. Glow for lamp heads and pellets.
+static func arles() -> Resource:
+	var t = CityThemeScript.new()
+	t.id = "arles"
+	t.display_name = "Arles"
+	t.wall_word = ""
+	t.wall_footprint_scale = 1.0
+	t.wall_alternate_rotation = false
+	t.landmark_provider_script = ArlesMazeScript
+	t.landmark_default_height = ArlesMazeScript.WALL_H
+	t.wall_height_min = ArlesMazeScript.WALL_H
+	t.wall_height_max = ArlesMazeScript.WALL_H
+	t.walls_visible = false
+	t.scenery_builder_script = ArlesSceneryScript
+	t.pellet_trail_provider_script = ArlesMazeScript
+
+	t.floor_color = ArlesStyle.PAVE[0]
+	t.floor_shader_path = "res://shaders/arles_floor.gdshader"
+	t.floor_setup_script = ArlesSceneryScript # paving colours, light pools
+	t.ceil_enabled = false
+
+	t.env_bg_color = ArlesStyle.BG
+	t.env_fog_color = ArlesStyle.FOG
+	t.env_fog_density = 0.003
+	t.env_fog_sky_affect = 0.0
+	t.env_ambient_color = ArlesStyle.AMBIENT
+	t.env_ambient_energy = 0.9
+	t.env_glow_enabled = true
+	t.env_glow_intensity = 0.5
+	t.env_glow_strength = 1.0
+	t.env_glow_bloom = 0.08
+	t.env_glow_hdr_threshold = 1.1
+	t.env_ssr_enabled = false
+	t.env_ssao_enabled = false
+	t.env_volumetric_fog_enabled = false
+	t.env_tonemap_mode = 2 # Environment.TONE_MAPPER_FILMIC
+	t.env_tonemap_exposure = 1.05
+	t.env_tonemap_white = 1.0
+	t.player_light_color = ArlesStyle.LAMP_LIGHT
+	t.player_light_energy = 0.0
+	t.player_light_range = 1.0
+	t.camera_far = 800.0 # the baked sky sphere, Montmajour and the Alpilles
+
+	# Pickups: vermilion with a dark contour, exclusive (the only red-orange).
+	t.pellet_color = ArlesStyle.PELLET
+	t.pellet_emission = ArlesStyle.PELLET
+	t.pellet_energy = 1.5
+	t.pellet_shader_path = "res://shaders/arles_orb.gdshader"
+	t.pellet_shape = "sphere"
+	t.pellet_size = 0.24
+	t.pellet_height = 0.55
+
+	# Minimap: dark streets, pale blocks, the quay parapet as water, the
+	# pellets with a contour, the exit mint green with a dark rim.
+	t.minimap_bg_color = Color(ArlesStyle.GUTTER, 0.94)
+	t.minimap_wall_color = ArlesStyle.FACADE_C[0]
+	t.minimap_water_script = ArlesMazeScript
+	t.minimap_water_color = ArlesStyle.WATER[1]
+	t.minimap_exit_color = ArlesStyle.EXIT
+	t.minimap_pellet_outline = ArlesStyle.PELLET_RIM
+
+	t.has_power_ups = false
+	t.permanently_word_built = false
+	t.pellets_follow_metro_trails = true
+	return t
+
+
 static func get_theme(id: String) -> Resource:
 	match id:
 		"manhattan":
@@ -512,6 +589,8 @@ static func get_theme(id: String) -> Resource:
 			return kyoto()
 		"amsterdam":
 			return amsterdam()
+		"arles":
+			return arles()
 		_:
 			return normal()
 

@@ -16,7 +16,7 @@ godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
   shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Kyoto, Amsterdam, Twitch, Chat-Abstimmung, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Kyoto, Amsterdam, Arles, Twitch, Chat-Abstimmung, Bot-Simulation)
 tools/qa/          QA-Skripte: Screenshots (qa_*_shots.gd), Messung der Kaninchen-Wette (qa_rabbit_balance.gd)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
@@ -109,7 +109,7 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   „Regen reduzieren“ in einer Zeile, Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
   Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
   und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
-  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO | KYOTO | AMSTERDAM**
+  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO | KYOTO | AMSTERDAM | ARLES**
   (von Anfang an spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
   Spiel-HUD (Chips, Minimap, Energie) erscheint nur im laufenden Spiel; alle
   Chips sind mindestens 170 px breit. Pause: WEITER / NEUSTART / HAUPTMENÜ
@@ -210,6 +210,14 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Damrak; Stecknadeln als Kugeln, grüne Papp-Tram als Ausgang; Tisch,
   Schneidematte, Bleistift und Becher jenseits der Modellkante. CC0-Fotoscans
   in `godot/textures/amsterdam/` (`docs/art/lizenzen.md`).
+- **Explorer-Stadt Arles** (Spezifikation `docs/design/arles-explorer.md`):
+  Sternennacht über echten Orten von Arles, stilisiert und frei angeordnet
+  (`arles_maze.gd`, `arles_scenery.gd`, `arles_exit.gd`, Shader `arles_*`):
+  gebackener, ringsum nahtloser Wirbelhimmel, Impasto-Striche mit Strich-LOD,
+  Caféterrasse am Forum (ohne Namen), Arena, Saint-Trophime, Théâtre antique,
+  Rhône-Kai mit gespiegelten Laternen; Kugeln Zinnober, Ausgang ist die grüne
+  Tür des Gelben Hauses unter einem grünen Stern. Alles prozedural, kein
+  Fremdmaterial.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte

@@ -239,6 +239,8 @@ var env_adjustment_saturation := 1.0
 ## cells are drawn in minimap_water_color instead of the wall colour.
 var minimap_water_script: Script = null
 var minimap_water_color := Color(0, 0, 0, 0)
+## Minimap: a dark ring around every pellet (Arles); alpha 0 = none.
+var minimap_pellet_outline := Color(0, 0, 0, 0)
 
 ## ---- Gameplay ----
 ## Manhattan-style "calm explorer" levels have no power pellets, no white
