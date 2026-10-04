@@ -739,7 +739,8 @@ func _run_checks() -> void:
 	_check("tokyo M2: All Walk is announced (walk_started)", tk_walk_tone[0] == 1 and tk_life.is_walk_phase())
 	main.player.global_position = Vector3(main.start_cell.y * main.CELL, main.player.global_position.y, main.start_cell.x * main.CELL)
 	var tenv: Environment = main.world_env.environment
-	_check("tokyo: glow and SSR on, filmic tonemap", tenv.glow_enabled and tenv.ssr_enabled and tenv.tonemap_mode == Environment.TONE_MAPPER_FILMIC and not tenv.volumetric_fog_enabled)
+	var ssr_expected: bool = RenderingServer.get_rendering_device() != null # SSR only in Forward+ (QA K2)
+	_check("tokyo: glow on, SSR only where Forward+ has it, filmic tonemap", tenv.glow_enabled and tenv.ssr_enabled == ssr_expected and tenv.tonemap_mode == Environment.TONE_MAPPER_FILMIC and not tenv.volumetric_fog_enabled)
 	_check("tokyo: warm player lamp, far plane for the skyline", main.player.light.light_color.is_equal_approx(tokyo_theme.player_light_color) and is_equal_approx(main.player.camera.far, tokyo_theme.camera_far))
 	_check("tokyo: player starts on the southern avenue looking north", main.player.cell() == main.start_cell and is_equal_approx(main.player.yaw, 0.0))
 	# Collision sits exactly at the neon base line: walk west on the sidewalk
@@ -782,6 +783,27 @@ func _run_checks() -> void:
 	main.skip_start_intro = true
 	main.begin_game()
 	await get_tree().process_frame
+
+	# ---- QA W1/W3 (04.10.): the start screen lists every registered city,
+	# and HAUPTMENÜ from a city leaves no frozen city behind the panel ----
+	var reg_ids: Array = load("res://scripts/explorer_cities.gd").EXPLORER_IDS
+	var btn_ok: bool = main.hud.explorer_buttons.size() == reg_ids.size()
+	for cid in reg_ids:
+		btn_ok = btn_ok and main.hud.explorer_buttons.has(cid)
+	_check("start screen: one explorer button per registered city", btn_ok, str(main.hud.explorer_buttons.keys()))
+	_check("explorer ids: one list (CityThemes == ExplorerCities)", load("res://scripts/city_themes.gd").EXPLORER_IDS == reg_ids)
+	main.hud.explorer_pressed.emit("tokyo")
+	await get_tree().process_frame
+	_check("tokyo: exit banner does not say LEVEL GESCHAFFT", main._explorer_city().get("exit_title", "") != "LEVEL GESCHAFFT!")
+	main.go_to_main_menu()
+	await get_tree().process_frame
+	_check("main menu from Tokyo: city life cleared", main.tokyo_life == null and main.metro_stations.is_empty() and main.taxis.is_empty() and main.pedestrians.is_empty())
+	_check("main menu from Tokyo: maze hidden behind the start screen", main.maze_view.visible == false)
+	_check("main menu from Tokyo: no SSR outside Forward+", main.world_env.environment.ssr_enabled == false)
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+	_check("speedrun after main menu: maze visible again", main.maze_view.visible == true)
 
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)

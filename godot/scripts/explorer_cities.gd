@@ -15,7 +15,9 @@ extends RefCounted
 ##   traffic       "manhattan" = Manhattan's word traffic and pedestrians,
 ##                 "tokyo" = rain, wire cars, passers-by and the scramble
 ##                 crossing (tokyo_life.gd), "" = none
-##   exit_text     level-clear banner when the player takes the subway
+##   exit_text     level-clear banner subtitle when the player takes the exit
+##   exit_title    banner title (explorer cities have no "level clear")
+##   metro_radius  how close to the exit node triggers it (m)
 
 const EXPLORER_IDS := ["manhattan", "tokyo"]
 
@@ -28,6 +30,7 @@ static func get_city(id: String) -> Dictionary:
 				"maze_script": "res://scripts/manhattan_maze.gd", "seed": 0,
 				"metro": "random", "metro_count": 4, "metro_script": "res://scripts/metro_station.gd",
 				"traffic": "manhattan", "exit_text": "SUBWAY — los zum Speedrun!",
+				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 0.75,
 			}
 		"tokyo":
 			return {
@@ -35,6 +38,7 @@ static func get_city(id: String) -> Dictionary:
 				"maze_script": "res://scripts/tokyo_maze.gd", "seed": 7310,
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/tokyo_metro_station.gd",
 				"traffic": "tokyo", "exit_text": "U-BAHN — los zum Speedrun!",
+				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 1.3,
 			}
 	return {}
 

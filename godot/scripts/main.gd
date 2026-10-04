@@ -372,7 +372,8 @@ func _apply_theme_environment(theme_id: String) -> void:
 	env.glow_hdr_threshold = ct.env_glow_hdr_threshold
 	for i in ct.env_glow_levels.size():
 		env.set_glow_level(i, ct.env_glow_levels[i])
-	env.ssr_enabled = ct.env_ssr_enabled
+	# SSR exists only in Forward+; asking for it elsewhere just logs an error.
+	env.ssr_enabled = ct.env_ssr_enabled and RenderingServer.get_rendering_device() != null
 	env.ssr_max_steps = ct.env_ssr_max_steps
 	env.ssr_fade_in = ct.env_ssr_fade_in
 	env.ssr_fade_out = ct.env_ssr_fade_out
@@ -860,9 +861,12 @@ func _check_explorer_obstacles() -> void:
 ## Proximity check: stepping close enough to a metro station's sign is the
 ## exit: it starts a speedrun on a random level of the pool (see _enter_metro).
 func _check_metro_entry() -> void:
+	if metro_stations.is_empty():
+		return
+	var radius := float(_explorer_city().get("metro_radius", MANHATTAN_METRO_RADIUS))
 	for m in metro_stations:
 		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
-		if d < MANHATTAN_METRO_RADIUS:
+		if d < radius:
 			_enter_metro()
 			return
 
@@ -871,7 +875,8 @@ func _enter_metro() -> void:
 	running = false
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
-	hud.show_levelclear(true, _explorer_city().get("exit_text", "SUBWAY — los zum Speedrun!"))
+	var city := _explorer_city()
+	hud.show_levelclear(true, city.get("exit_text", "SUBWAY — los zum Speedrun!"), city.get("exit_title", "NÄCHSTER HALT: SPEEDRUN"))
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var token := _run_token
 	await get_tree().create_timer(1.4).timeout
@@ -1261,6 +1266,14 @@ func go_to_main_menu() -> void:
 	hud.show_levelclear(false)
 	Sfx.stop_all()
 	playing_explorer = false
+	# QA W1: the start screen shows no frozen city behind the panel (and does
+	# not keep rendering it): city life, ghosts and the maze go away; the
+	# next start_level/start_explorer_level rebuilds and shows the maze.
+	_clear_explorer_obstacles()
+	for e in enemies:
+		e.queue_free()
+	enemies.clear()
+	maze_view.visible = false
 	_apply_theme_environment("normal")
 	hud.set_game_hud_visible(false)
 	hud.set_start_highscore(high_score)

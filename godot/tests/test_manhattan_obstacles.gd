@@ -241,11 +241,17 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL metro_station should have an attached light for the pulsing glow")
 	else:
-		var energy_a: float = metro.light.light_energy
-		metro.update(0.1, 0.31) # a different phase of the pulse
-		var energy_b: float = metro.light.light_energy
+		# Three phases a third of a pulse apart: a sine can't take the same
+		# value at all three, whatever the random phase offset (the old
+		# initial-vs-one-update compare failed when the offset hit the minimum).
+		var energies := []
+		for k in 3:
+			metro.update(0.1, k * TAU / 3.0 / 3.6)
+			energies.append(metro.light.light_energy)
+		var energy_a: float = energies[0]
+		var spread: float = energies.max() - energies.min()
 		checks += 1
-		if absf(energy_a - energy_b) < 0.0001:
+		if spread < 0.0001:
 			failures += 1
 			print("FAIL metro_station light should pulse (energy changed between updates), stayed at %f" % energy_a)
 	metro.free()

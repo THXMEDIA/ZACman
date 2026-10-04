@@ -1,4 +1,6 @@
 extends CanvasLayer
+
+const ExplorerCitiesReg := preload("res://scripts/explorer_cities.gd")
 ## Hud — score/level/lives, minimap, power-timer bar, and the start / pause /
 ## game-over / level-clear overlays. Built entirely in code (no .tscn UI tree
 ## to keep in sync by hand).
@@ -164,6 +166,7 @@ var final_level_label: Label
 var final_hs_label: Label
 var gameover_note_label: Label
 var start_hs_label: Label
+var explorer_buttons: Dictionary = {} # city id -> Button
 var manhattan_btn: Button
 var tokyo_btn: Button
 var manhattan_bonus_label: Label
@@ -541,15 +544,21 @@ func _build_start_panel() -> void:
 	explorer_tag.text = "EXPLORER"
 	explorer_tag.add_theme_color_override("font_color", MUTED)
 	explorer_row.add_child(explorer_tag)
-	manhattan_btn = _make_button("MANHATTAN")
-	manhattan_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	manhattan_btn.pressed.connect(func(): explorer_pressed.emit("manhattan"))
-	explorer_row.add_child(manhattan_btn)
-	tokyo_btn = _make_button("TOKYO")
-	tokyo_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tokyo_btn.pressed.connect(func(): explorer_pressed.emit("tokyo"))
-	explorer_row.add_child(tokyo_btn)
-	box.add_child(_subtitle_label("Ruhige Stadt ohne Uhr und Punkte: Manhattan oder Tokyo. Die Kugeln zeigen den Weg zur U-Bahn; sie ist der Ausgang in einen Speedrun."))
+	# One button per registered city (ExplorerCities.EXPLORER_IDS is the
+	# single list; QA W3), so a new city only needs its registry entry.
+	explorer_buttons.clear()
+	for city_id in ExplorerCitiesReg.EXPLORER_IDS:
+		var city: Dictionary = ExplorerCitiesReg.get_city(city_id)
+		var b := _make_button(String(city.get("label", city_id.to_upper())))
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if ExplorerCitiesReg.EXPLORER_IDS.size() > 3:
+			b.add_theme_font_size_override("font_size", 15)
+		b.pressed.connect(func(): explorer_pressed.emit(city_id))
+		explorer_row.add_child(b)
+		explorer_buttons[city_id] = b
+	manhattan_btn = explorer_buttons.get("manhattan")
+	tokyo_btn = explorer_buttons.get("tokyo")
+	box.add_child(_subtitle_label("Ruhige Städte ohne Uhr und Punkte. Die Kugeln zeigen den Weg zum Ausgang; er führt in einen Speedrun."))
 	manhattan_bonus_label = _subtitle_label("★ Zielzeit in einem Level geschafft")
 	manhattan_bonus_label.add_theme_color_override("font_color", PELLET_COLOR)
 	manhattan_bonus_label.visible = false
@@ -1496,9 +1505,10 @@ func show_gameover(score: int, level, highscore: int, chat_blocked: bool = false
 	gameover_panel.visible = true
 
 
-func show_levelclear(visible_flag: bool, subtitle: String = "") -> void:
+func show_levelclear(visible_flag: bool, subtitle: String = "", title: String = "LEVEL GESCHAFFT!") -> void:
 	levelclear_panel.visible = visible_flag
 	if visible_flag:
+		levelclear_label.text = title
 		levelclear_sub.text = subtitle
 		levelclear_sub.visible = subtitle != ""
 

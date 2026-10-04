@@ -116,6 +116,7 @@ var fruit_material: StandardMaterial3D
 ## (Tokyo: floor bands, background silhouettes, which trails carry pellets) —
 ## the same seed always builds the same city (tests/test_tokyo.gd).
 func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "", level_seed: int = 0) -> void:
+	visible = true # Main hides the maze behind the start screen (QA W1)
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()

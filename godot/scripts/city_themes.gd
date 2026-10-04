@@ -361,7 +361,7 @@ static func get_theme(id: String) -> Resource:
 ## The "calm explorer" city themes (see main.gd's start_explorer_level and
 ## explorer_cities.gd) — not the speedrun levels, which aren't part of that
 ## rotation. Add a new city's id here once it has its own static func above.
-const EXPLORER_IDS := ["manhattan", "tokyo"]
+const EXPLORER_IDS: Array = preload("res://scripts/explorer_cities.gd").EXPLORER_IDS
 
 
 ## A different registered explorer city id than `current_id`, for the
