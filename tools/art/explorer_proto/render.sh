@@ -9,6 +9,8 @@ GODOT=${GODOT:-$B/bin/godot}
 OUT=${OUT:-$B/explorer_shots}
 P=$B/explorer_proto/$1
 mkdir -p "$P" "$OUT/$1"
+# Richtungen E-G: gedruckte/gemalte Texturen werden per Pillow-Skript erzeugt (nicht im Repo)
+[ -f "$HERE/$1/prints.py" ] && python3 "$HERE/$1/prints.py" >/dev/null
 cp -r "$HERE/$1"/* "$P"/
 cp "$HERE"/common/*.gd "$P"/
 cd "$P"

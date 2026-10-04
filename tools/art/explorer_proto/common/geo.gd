@@ -177,3 +177,95 @@ static func hull_all(root: Node, col: Color, width: float, px := 0.0, skip: Arra
 			var mode := 0 if c.mesh is BoxMesh else 1
 			hull(c, col, width, mode, px, shader)
 		hull_all(c, col, width, px, skip, shader)
+
+# ---------- Nachtrag E–G (Kabuki/Pappe): ausgeschnittene Kulissen ----------
+# Extrudiertes 2D-Polygon (Kulisse/Ausschnitt). Polygon in Metern in der lokalen XY-Ebene
+# (y nach oben, Fuss bei y = 0), Dicke entlang lokal z (-depth/2..+depth/2).
+# Flaechen: UV = Polygon-Koordinate (Meter), Material face_m (Vorder- und Rueckseite;
+# Rueckseite bekommt back_m, falls gesetzt). Schnittkanten: UV.x = Umfangslaenge (Meter),
+# UV.y = 0..1 ueber die Dicke, Material edge_m. Ergebnis: ein MeshInstance3D mit 3 Flaechen.
+static func extrude(parent: Node, poly: PackedVector2Array, depth: float, face_m: Material, edge_m: Material,
+		pos := Vector3.ZERO, rot := Vector3.ZERO, back_m: Material = null) -> MeshInstance3D:
+	var am := ArrayMesh.new()
+	var idx := Geometry2D.triangulate_polygon(poly)
+	var hz := depth * 0.5
+	# Vorderseite (+z) und Rueckseite (-z)
+	for side in [1.0, -1.0]:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for t in range(0, idx.size(), 3):
+			var tri: Array = [idx[t], idx[t + 1], idx[t + 2]]
+			# Umlaufsinn so waehlen, dass die Flaeche nach aussen zeigt (Godot: CW = vorn)
+			var a: Vector2 = poly[tri[0]]
+			var b: Vector2 = poly[tri[1]]
+			var c: Vector2 = poly[tri[2]]
+			var cross := (b - a).cross(c - a)
+			var order: Array = [0, 1, 2]
+			if (cross > 0.0) == (side > 0.0):
+				order = [0, 2, 1]
+			for o in order:
+				var p: Vector2 = poly[tri[o]]
+				st.set_normal(Vector3(0, 0, side))
+				st.set_uv(Vector2(p.x if side > 0.0 else -p.x, p.y))
+				st.add_vertex(Vector3(p.x, p.y, hz * side))
+		st.commit(am)
+	# Schnittkanten
+	var se := SurfaceTool.new()
+	se.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := poly.size()
+	var area := 0.0
+	for i in n:
+		area += poly[i].cross(poly[(i + 1) % n])
+	var s := 1.0 if area > 0.0 else -1.0  # CCW: Aussennormale = (dy, -dx)
+	var run := 0.0
+	for i in n:
+		var a: Vector2 = poly[i]
+		var b: Vector2 = poly[(i + 1) % n]
+		var e := b - a
+		var L := e.length()
+		if L < 1e-5:
+			continue
+		var nn := Vector3(e.y, -e.x, 0).normalized() * s
+		var q: Array = [Vector3(a.x, a.y, hz), Vector3(b.x, b.y, hz), Vector3(b.x, b.y, -hz), Vector3(a.x, a.y, -hz)]
+		var uv: Array = [Vector2(run, 0), Vector2(run + L, 0), Vector2(run + L, 1), Vector2(run, 1)]
+		var tris: Array = [[0, 1, 2], [0, 2, 3]]
+		for tr in tris:
+			var ord: Array = tr
+			# Umlaufsinn gegen die Normale pruefen
+			var p0: Vector3 = q[tr[0]]
+			var p1: Vector3 = q[tr[1]]
+			var p2: Vector3 = q[tr[2]]
+			if (p1 - p0).cross(p2 - p0).dot(nn) > 0.0:
+				ord = [tr[0], tr[2], tr[1]]
+			for k in ord:
+				se.set_normal(nn)
+				se.set_uv(uv[k])
+				se.add_vertex(q[k])
+		run += L
+	se.commit(am)
+	var mi := MeshInstance3D.new()
+	mi.mesh = am
+	mi.set_surface_override_material(0, face_m)
+	mi.set_surface_override_material(1, back_m if back_m != null else face_m)
+	mi.set_surface_override_material(2, edge_m)
+	mi.position = pos
+	mi.rotation = rot
+	parent.add_child(mi)
+	return mi
+
+# Rechteck/Kreis/Bogen-Polygone fuer Kulissen
+static func rect_poly(w: float, h: float, x0 := 0.0) -> PackedVector2Array:
+	return PackedVector2Array([Vector2(x0 - w / 2, 0), Vector2(x0 + w / 2, 0), Vector2(x0 + w / 2, h), Vector2(x0 - w / 2, h)])
+
+static func circle_poly(r: float, n := 32, c := Vector2.ZERO, sy := 1.0) -> PackedVector2Array:
+	var p := PackedVector2Array()
+	for i in n:
+		var a := float(i) / n * TAU
+		p.append(c + Vector2(cos(a) * r, sin(a) * r * sy))
+	return p
+
+# Bild per Pillow-Skript erzeugt (im Richtungsordner) -> Textur. Kein Import-Schritt noetig.
+static func tex(path: String) -> ImageTexture:
+	var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)

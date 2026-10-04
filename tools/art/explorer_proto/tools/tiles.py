@@ -333,4 +333,174 @@ for k, D in DIRS.items():
         continue
     tile(k, D)
     capsule(k, D)
+
+# ---------- Nachtrag 04.10.2026: Richtungen E–G (Kabuki × Pappausschnitt) ----------
+PROTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+SERIFJP = os.path.join(PROTO, "kabuki_buehne", "fonts", "NotoSerifJP-Black-Subset.otf")
+SANSJP = os.path.join(PROTO, "pappkarton", "fonts", "NotoSansJP-Black-Subset.otf")
+def PR(k, f): return Image.open(os.path.join(PROTO, k, "prints", f)).convert("RGBA")
+
+DIRS2 = {
+ "kabuki_buehne": dict(
+   title="E  BÜHNENSTADT SHIBAI-MACHI", city="SHIBAI-MACHI · HANAMICHI",
+   idea="Die Stadt ist eine Kabuki-Bühne: Hinoki-Boden, Hanamichi als Hauptstraße, gemalte Schiebekulissen, Streifenvorhang, Kirschzweig-Borten, Kuromaku-Nacht.",
+   bg="#0E0B0A", fg="#F2ECE0",
+   pal=[("#0E0B0A","Kuromaku (Himmel = Nacht)"),("#D9B884","Hinoki-Bühnenboden"),("#F2ECE0","Gofun-Weiß (Putz, Papier)"),("#6B4A2E","Holzgitter"),
+        ("#B4542A","Kaki (Vorhang)"),("#3A5034","Moegi gedeckt (Vorhang)"),("#C1272D","Beni (Held, Laternenband)"),("#2B3A67","Ai (Gegenspieler)"),
+        ("#FFC629","Kugeln Blattgold (exklusiv)"),("#29E36B","Ausgang/Versenkung (exklusiv)")],
+   fonts=[("Noto Serif CJK JP Black (SIL OFL 1.1, Subset) — Schilder (Ausgang, Hanamichi, Laternen), Titel", ""), ("Inter (SIL OFL 1.1) — HUD", "")],
+   font=SERIFJP),
+ "pappkarton": dict(
+   title="F  PAPPSTADT DANBORU-CHO", city="DANBORU-CHO · KARTONGASSE",
+   idea="Die Stadt aus Versandkartons: Wellpappe mit Wellen-Schnittkanten, Klebeband, Druckreste („Diese Seite oben“), Marker-Masken, Aufsteller, Drehbühne als Pappscheibe.",
+   bg="#98714A", fg="#201A16",
+   pal=[("#98714A","Kraft (Karton)"),("#A88158","Kraft hell"),("#7C5A39","Kraft dunkel / Rahmen"),("#6E6558","Graupappe (Fahrbahn)"),
+        ("#201A16","Druckfarbe / Marker"),("#B02824","Druckrot / Marker"),("#5E93C6","Plakatfarbe Himmel"),("#B4542A","Plakatfarbe Kaki"),
+        ("#FFD21A","Kugeln Papiergelb (exklusiv)"),("#22C25E","Ausgang grüner Karton (exklusiv)")],
+   fonts=[("Noto Sans CJK JP Black (SIL OFL 1.1, Subset) — Druckreste, Schablonen-Ausgangsschild", ""), ("Noto Serif CJK JP Black (OFL) — Marker-Schilder · Inter — HUD", "")],
+   font=SANSJP),
+ "aizuri_popup": dict(
+   title="G  AIZURI-POP-UP · BILDERBUCHSTADT", city="BILDERBUCH · SEITE 12",
+   idea="Ein aufgeschlagenes Theater-Bilderbuch: Straße im Falz, Häuser als Pop-up-Holzschnitte in Preußischblau, die beim Näherkommen aufklappen.",
+   bg="#F3EEE2", fg="#1E3A6E",
+   pal=[("#F3EEE2","Washi-Papier"),("#CFE0EE","Ai 4 (Weg, Nebel)"),("#8DB0D6","Ai 3"),("#3F6CA8","Ai 2"),("#1E3A6E","Ai 1 / Bokashi-Himmel"),
+        ("#1C1A1E","Sumi-Konturplatte"),("#C8384B","Beni (sparsamer Akzent)"),("#24304F","Einband"),
+        ("#FFC714","Kugeln Blattgold (exklusiv)"),("#22C460","Lesebändchen/Ausgang (exklusiv)")],
+   fonts=[("Noto Serif CJK JP Black/Bold (SIL OFL 1.1, Subset) — Kartusche, Ausgangsschild, Titel", ""), ("Inter (SIL OFL 1.1) — HUD", "")],
+   font=SERIFJP),
+}
+
+def tile2(key, D):
+    W, Hh = 1600, 1000
+    img = Image.new("RGB", (W, Hh), rgb(D["bg"]))
+    if key == "pappkarton":
+        g = noise_img((W, Hh), 2, 3).point(lambda v: 225 + v // 9)
+        img = ImageChops.multiply(img, Image.merge("RGB", (g, g, g)))
+    d = ImageDraw.Draw(img)
+    fg = rgb(D["fg"]); bg = rgb(D["bg"])
+    dim = tuple(int(c * 0.75 + bg[i] * 0.25) for i, c in enumerate(fg))
+    d.text((60, 36), D["title"], font=F(D["font"], 52), fill=fg)
+    d.text((60, 112), D["idea"], font=F(INTER % "Regular", 20), fill=dim)
+    x, y = 60, 170
+    for i, (h, role) in enumerate(D["pal"]):
+        cx = x + (i % 5) * 160; cy = y + (i // 5) * 150
+        d.rectangle([cx, cy, cx + 136, cy + 84], fill=rgb(h), outline=dim, width=2)
+        d.text((cx, cy + 90), h.upper(), font=F(MONOB, 16), fill=fg)
+        d.text((cx, cy + 110), role, font=F(INTER % "Regular", 12), fill=dim)
+    sx, sy = 60, 490
+    d.text((sx, sy), "Beispielformen", font=F(INTER % "SemiBold", 18), fill=dim)
+    if key == "kabuki_buehne":
+        # Vorhangstreifen mit Falten
+        for i in range(220):
+            k = (i // 24) % 3
+            col = [rgb("#1A1714"), rgb("#B4542A"), rgb("#3A5034")][k]
+            f = 0.8 + 0.2 * (0.5 + 0.5 * math.sin(i / 3.8))
+            d.line([(sx + i, sy + 30), (sx + i, sy + 170)], fill=tuple(int(c * f) for c in col))
+        # Hinoki-Dielen
+        for j in range(7):
+            col = tuple(int(c * (0.88 + 0.16 * ((j * 37) % 7) / 7)) for c in rgb("#D9B884"))
+            d.rectangle([sx + 240 + j * 31, sy + 30, sx + 268 + j * 31, sy + 170], fill=col)
+        img.paste(PR(key, "laterne.png").resize((70, 140)), (sx + 480, sy + 30), PR(key, "laterne.png").resize((70, 140)))
+        fb = PR(key, "fahne_held.png").resize((60, 210)).crop((0, 0, 60, 140))
+        img.paste(fb, (sx + 570, sy + 30))
+        ts = PR(key, "tsurieda.png").resize((180, 90))
+        img.paste(ts, (sx + 650, sy + 30), ts)
+    elif key == "pappkarton":
+        # Querschnitt Wellpappe: zwei Liner, Welle dazwischen
+        bx0, by0, bx1, by1 = sx, sy + 40, sx + 300, sy + 150
+        d.rectangle([bx0, by0, bx1, by1], fill=(60, 40, 24))
+        d.rectangle([bx0, by0, bx1, by0 + 12], fill=rgb("#B28A5E")); d.rectangle([bx0, by1 - 12, bx1, by1], fill=rgb("#B28A5E"))
+        pts = [(bx0 + t, (by0 + by1) / 2 + 40 * math.sin(t / 300 * 2 * math.pi * 6)) for t in range(0, 301, 2)]
+        d.line(pts, fill=rgb("#C49A6A"), width=7)
+        # Klebeband
+        tp = Image.new("RGBA", (260, 50), (184, 135, 62, 185)); img.paste(tp, (sx + 330, sy + 70), tp)
+        d.text((sx + 330, sy + 126), "Klebeband (transparent)", font=F(INTER % "Regular", 13), fill=dim)
+        t = PR(key, "tenchi.png").resize((200, 100)); img.paste(t, (sx + 620, sy + 40), t)
+        f2 = PR(key, "gesicht_held.png").resize((96, 120)); img.paste(f2, (sx + 840, sy + 34), f2)
+    else:
+        # Bokashi-Verlauf, Passerversatz-Demo, Wellendruck, Pop-up-Falzschema
+        for yy in range(140):
+            t = yy / 140
+            c = tuple(int(a * (1 - t) + b * t) for a, b in zip(rgb("#1E3A6E"), rgb("#F3EEE2")))
+            d.line([(sx, sy + 30 + yy), (sx + 200, sy + 30 + yy)], fill=c)
+        d.rectangle([sx + 236, sy + 44, sx + 356, sy + 164], fill=rgb("#3F6CA8"))
+        d.rectangle([sx + 230, sy + 40, sx + 350, sy + 160], outline=rgb("#1C1A1E"), width=5)
+        d.text((sx + 230, sy + 168), "Konturplatte + Versatz", font=F(INTER % "Regular", 12), fill=dim)
+        w = PR(key, "wellen.png").resize((260, 92)); img.paste(w, (sx + 390, sy + 50), w)
+        # Falzschema: liegend -> stehend
+        ox, oy = sx + 700, sy + 160
+        for a, col in [(5, "#CFE0EE"), (40, "#8DB0D6"), (90, "#1E3A6E")]:
+            r = math.radians(a)
+            d.line([(ox, oy), (ox + 120 * math.cos(r), oy - 120 * math.sin(r))], fill=rgb(col), width=8)
+        d.line([(ox - 40, oy), (ox + 170, oy)], fill=fg, width=3)
+        d.text((ox - 40, oy + 6), "klappt beim Näherkommen auf", font=F(INTER % "Regular", 12), fill=dim)
+    rx, ry = 60, 700
+    d.text((rx, ry), "Kugel · Ausgang · HUD-Chip", font=F(INTER % "SemiBold", 18), fill=dim)
+    kug = rgb(D["pal"][-2][0]); met = rgb(D["pal"][-1][0])
+    for k in range(4):
+        cx = rx + 40 + k * 60; cy = ry + 70
+        d.ellipse([cx - 20, cy - 20, cx + 20, cy + 20], fill=kug, outline=rgb("#1C1A1E") if key == "aizuri_popup" else None, width=3)
+        d.ellipse([cx - 8, cy - 10, cx + 6, cy + 4], fill=tuple(min(255, int(c * 0.5 + 128)) for c in kug))
+    d.rectangle([rx + 300, ry + 35, rx + 440, ry + 110], fill=met, outline=rgb("#1A1714"), width=4)
+    d.text((rx + 322, ry + 40), "出口", font=F(D["font"], 48), fill=(255, 255, 255))
+    chip = {"kabuki_buehne": rgb("#1A1714"), "pappkarton": rgb("#201A16"), "aizuri_popup": rgb("#1E3A6E")}[key]
+    d.rounded_rectangle([rx + 500, ry + 40, rx + 840, ry + 104], 14, fill=chip, outline=dim if key == "kabuki_buehne" else None, width=2)
+    d.text((rx + 520, ry + 56), "EXPLORER", font=F(INTER % "Bold", 20), fill=rgb("#F3EEE2"))
+    d.text((rx + 650, ry + 56), D["city"].split(" · ")[0][:14], font=F(INTER % "Regular", 20), fill=kug)
+    ty = 840
+    d.text((60, ty), "Schrift", font=F(INTER % "SemiBold", 18), fill=dim)
+    sample = {"kabuki_buehne": "花道 · 大入 · Shibai-machi", "pappkarton": "天地無用 · 段ボール町", "aizuri_popup": "芝居絵本 · Bilderbuch"}[key]
+    d.text((60, ty + 22), sample, font=F(D["font"], 46), fill=fg)
+    yy = ty + 90
+    for fname, use in D["fonts"]:
+        d.text((60, yy), fname, font=F(INTER % "Regular", 15), fill=fg); yy += 20
+    sh = Image.open(os.path.join(B, key, "strasse.png")).convert("RGB").resize((640, 360))
+    img.paste(sh, (W - 640 - 60, Hh - 360 - 110))
+    d.text((W - 640 - 60, Hh - 100), "Godot-4.3-Prototyp, Compatibility-Renderer (Software), 1280x720", font=F(INTER % "Regular", 14), fill=dim)
+    img.save(os.path.join(B, key, "styletile.png"))
+
+def capsule2(key, D):
+    src = Image.open(os.path.join(B, key, "capsule.png")).convert("RGB")
+    crop = src.crop((0, 60, 1280, 60 + 598)).resize((920, 430), Image.LANCZOS)
+    d = ImageDraw.Draw(crop)
+    W, Hh = crop.size
+    if key == "kabuki_buehne":
+        # Titel auf schwarzer Vorhangbahn, darunter Kaki-Linie; Ortsname senkrecht rechts
+        band = Image.new("RGBA", (560, 122), (14, 11, 10, 228)); crop.paste(band, (0, 0), band)
+        d = ImageDraw.Draw(crop)
+        d.rectangle([0, 122, 560, 128], fill=rgb("#B4542A"))
+        d.text((30, 0), "ZAPmaniac", font=F(SERIFJP, 76), fill=rgb("#F2ECE0"))
+        d.text((34, 88), "EXPLORER · BÜHNENSTADT", font=F(INTER % "SemiBold", 22), fill=rgb("#FFC629"))
+        f = F(SERIFJP, 60)
+        for i, ch in enumerate("花道"):
+            d.text((W - 92, 10 + i * 66), ch, font=f, fill=rgb("#F2ECE0"))
+    elif key == "pappkarton":
+        # Titel als Schablonendruck auf einem Klebebandstreifen ueber dem Bild
+        tp = Image.new("RGBA", (640, 130), (196, 150, 80, 215))
+        crop.paste(tp, (30, 26), tp)
+        d = ImageDraw.Draw(crop)
+        d.text((52, 22), "ZAPmaniac", font=F(SANSJP, 92), fill=rgb("#201A16"))
+        d.rectangle([30, 166, 420, 206], fill=rgb("#201A16"))
+        d.text((42, 166), "EXPLORER · 段ボール町", font=F(SANSJP, 28), fill=rgb("#F2EBDD"))
+    else:
+        # Titel in einer Bilderbuch-Kartusche (Papier, Beni-Rahmen), oben mittig
+        f1 = F(SERIFJP, 76)
+        tw = d.textlength("ZAPmaniac", font=f1)
+        d.rectangle([W / 2 - tw / 2 - 28, 18, W / 2 + tw / 2 + 28, 132], fill=rgb("#F3EEE2"), outline=rgb("#1C1A1E"), width=5)
+        d.rectangle([W / 2 - tw / 2 - 18, 28, W / 2 + tw / 2 + 18, 122], outline=rgb("#C8384B"), width=3)
+        d.text((W / 2 - tw / 2, 18), "ZAPmaniac", font=f1, fill=rgb("#1E3A6E"))
+        t2 = "EXPLORER · 芝居絵本"
+        f2 = F(SERIFJP, 28); tw2 = d.textlength(t2, font=f2)
+        d.rectangle([W / 2 - tw2 / 2 - 12, 140, W / 2 + tw2 / 2 + 12, 180], fill=rgb("#1E3A6E"))
+        d.text((W / 2 - tw2 / 2, 140), t2, font=f2, fill=rgb("#F3EEE2"))
+    crop.save(os.path.join(B, key, "capsule_920x430.png"))
+    crop.resize((460, 215), Image.LANCZOS).save(os.path.join(B, key, "capsule_460x215.png"))
+
+for k, D in DIRS2.items():
+    if ONLY and k not in ONLY.split(","):
+        continue
+    if not os.path.exists(os.path.join(B, k, "strasse.png")):
+        continue
+    tile2(k, D)
+    capsule2(k, D)
 print("ok")
