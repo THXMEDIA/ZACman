@@ -14,6 +14,9 @@ const TokyoStyle := preload("res://scripts/tokyo_style.gd")
 const KyotoMazeScript := preload("res://scripts/kyoto_maze.gd")
 const KyotoSceneryScript := preload("res://scripts/kyoto_scenery.gd")
 const KyotoStyle := preload("res://scripts/kyoto_style.gd")
+const AmsterdamMazeScript := preload("res://scripts/amsterdam_maze.gd")
+const AmsterdamSceneryScript := preload("res://scripts/amsterdam_scenery.gd")
+const AmsterdamStyle := preload("res://scripts/amsterdam_style.gd")
 
 ## ---- Speedrun base look "Lagune" (docs/design/kaninchen-speedrun.md 1.1) ----
 ## Every wall has the same turquoise glowing top edge; the gradient down to
@@ -415,6 +418,90 @@ static func kyoto() -> Resource:
 	return t
 
 
+## Amsterdam Explorer city, look "Pappmodell Amsterdam 1:100, Abend"
+## (direction J / J v2, owner decision E21 04.10.2026; spec
+## docs/design/amsterdam-explorer.md): the canal ring as an architecture model
+## of corrugated cardboard, seen from ant height at golden hour. The wall
+## MultiMesh is pure physics (not drawn); houses, quays, bridges, water and the
+## desk beyond the model edge come from amsterdam_scenery.gd. Lit: a low warm
+## sun with shadows, the desk lamp, a warm bounce light, the blurred evening
+## room (CC0 HDRI) as sky, ambient and reflection. No depth of field or grain
+## in the game view.
+static func amsterdam() -> Resource:
+	var t = CityThemeScript.new()
+	t.id = "amsterdam"
+	t.display_name = "Amsterdam"
+	t.wall_word = ""
+	t.wall_footprint_scale = 1.0
+	t.wall_alternate_rotation = false
+	t.landmark_provider_script = AmsterdamMazeScript
+	t.landmark_default_height = AmsterdamMazeScript.WALL_H
+	t.wall_height_min = AmsterdamMazeScript.WALL_H
+	t.wall_height_max = AmsterdamMazeScript.WALL_H
+	t.walls_visible = false
+	t.scenery_builder_script = AmsterdamSceneryScript
+	t.pellet_trail_provider_script = AmsterdamMazeScript
+
+	t.floor_color = AmsterdamStyle.KRAFT
+	t.floor_roughness = 0.9
+	t.floor_shader_path = "res://shaders/amsterdam_floor.gdshader"
+	t.floor_setup_script = AmsterdamSceneryScript # cell kinds + scans
+	t.ceil_enabled = false
+
+	t.env_bg_color = AmsterdamStyle.HAZE
+	t.env_fog_color = AmsterdamStyle.FOG
+	t.env_fog_density = 0.004
+	t.env_fog_sky_affect = 0.0
+	t.env_sky_script = AmsterdamStyle
+	t.env_bg_energy = 1.3 # the room behind stays dim; the lacquer mirrors it dark
+	t.env_sky_rotation_deg = 110.0
+	t.env_ambient_color = AmsterdamStyle.BOUNCE_COLOR
+	t.env_ambient_energy = 0.36
+	t.env_ambient_sky_contribution = 1.0
+	t.env_adjustment_enabled = true
+	t.env_adjustment_contrast = 1.1
+	t.env_adjustment_saturation = 1.08
+	t.env_glow_enabled = false
+	# Forward+ only (Main guards them): the lacquered canals mirror the houses,
+	# contact shadows in the joints of the boards.
+	t.env_ssr_enabled = true
+	t.env_ssr_max_steps = 48
+	t.env_ssr_fade_in = 0.15
+	t.env_ssr_fade_out = 2.0
+	t.env_ssr_depth_tolerance = 0.3
+	t.env_ssao_enabled = true
+	t.env_volumetric_fog_enabled = false
+	t.env_tonemap_mode = 3 # Environment.TONE_MAPPER_ACES
+	t.env_tonemap_exposure = 0.76
+	t.env_tonemap_white = 6.0
+	t.player_light_color = AmsterdamStyle.LAMP_COLOR
+	t.player_light_energy = 0.0
+	t.player_light_range = 1.0
+	t.camera_far = 420.0 # the desk, mug and pencil beyond the model edge
+
+	# Pickups: glass-head pins (cobalt, exclusive) on a needle in the plate.
+	t.pellet_color = AmsterdamStyle.PIN
+	t.pellet_emission = AmsterdamStyle.PIN
+	t.pellet_energy = 0.6
+	t.pellet_shader_path = "res://shaders/amsterdam_pin.gdshader"
+	t.pellet_shape = "pin"
+	t.pellet_size = 0.17
+	t.pellet_height = 0.62
+
+	# Minimap: dark streets (the pins and the cyan arrow need contrast), kraft
+	# blocks, slate canals, green exit.
+	t.minimap_bg_color = Color(AmsterdamStyle.VOID.darkened(0.55), 0.94)
+	t.minimap_wall_color = AmsterdamStyle.KRAFT_LIT
+	t.minimap_water_script = AmsterdamMazeScript
+	t.minimap_water_color = AmsterdamStyle.MINIMAP_WATER
+	t.minimap_exit_color = AmsterdamStyle.EXIT
+
+	t.has_power_ups = false
+	t.permanently_word_built = false
+	t.pellets_follow_metro_trails = true
+	return t
+
+
 static func get_theme(id: String) -> Resource:
 	match id:
 		"manhattan":
@@ -423,6 +510,8 @@ static func get_theme(id: String) -> Resource:
 			return tokyo()
 		"kyoto":
 			return kyoto()
+		"amsterdam":
+			return amsterdam()
 		_:
 			return normal()
 

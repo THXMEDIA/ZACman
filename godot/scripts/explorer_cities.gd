@@ -18,11 +18,11 @@ extends RefCounted
 ##   exit_text     level-clear banner subtitle when the player takes the exit
 ##   exit_title    banner title (explorer cities have no "level clear")
 ##   metro_radius  how close to the exit node triggers it (m)
-##   siren         ghost-siren drone on (default true; Kyoto: quiet)
+##   siren         ghost-siren drone on (default true; Kyoto, Amsterdam: quiet)
 ##   intro_hint    optional hint shown once at the start (not with reduce_fx)
 ##   exit_hint     optional hint shown once within 4.5 m of the exit
 
-const EXPLORER_IDS := ["manhattan", "tokyo", "kyoto"]
+const EXPLORER_IDS := ["manhattan", "tokyo", "kyoto", "amsterdam"]
 
 
 static func get_city(id: String) -> Dictionary:
@@ -53,6 +53,17 @@ static func get_city(id: String) -> Dictionary:
 				"siren": false,
 				"intro_hint": "Die Stadt klappt beim Laufen auf. Ruhiger: Esc → Effekte reduzieren",
 				"exit_hint": "Grüne Tür: umblättern in den Speedrun",
+			}
+		"amsterdam":
+			return {
+				"id": "amsterdam", "theme": "amsterdam", "label": "AMSTERDAM",
+				"maze_script": "res://scripts/amsterdam_maze.gd", "seed": 2121,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/amsterdam_exit.gd",
+				"traffic": "", "exit_text": "Einsteigen – los zum Speedrun!",
+				"exit_title": "NÄCHSTE HALTESTELLE: SPEEDRUN", "metro_radius": 1.3,
+				"siren": false,
+				"intro_hint": "Ein Pappmodell im Maßstab 1:100 – die blauen Stecknadeln zeigen den Weg zur grünen Tram",
+				"exit_hint": "Grüne Tram: einsteigen in den Speedrun",
 			}
 	return {}
 

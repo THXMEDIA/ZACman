@@ -837,6 +837,54 @@ func _run_checks() -> void:
 	main.begin_game()
 	await get_tree().process_frame
 
+	# ---- Amsterdam Explorer city (docs/design/amsterdam-explorer.md): the
+	# cardboard model at golden hour, exit = green tram into a speedrun; the
+	# speedrun gets its own look back (no lights, no HDRI sky) ----
+	_check("amsterdam: the start screen has a button for it", main.hud.explorer_buttons.has("amsterdam") and main.hud.explorer_buttons["amsterdam"].text == "AMSTERDAM")
+	main.hud.explorer_pressed.emit("amsterdam")
+	await get_tree().process_frame
+	_check("amsterdam: the AMSTERDAM button starts the Amsterdam explorer city", main.running and main.playing_explorer and main.explorer_city_id == "amsterdam")
+	_check("amsterdam: HUD level chip says AMSTERDAM", main.hud.level_label.text == "AMSTERDAM", main.hud.level_label.text)
+	_check("amsterdam: no ghosts, no traffic, one exit (the tram)", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("amsterdam_exit.gd"))
+	var am_sr = main.maze_view.scenery_root
+	_check("amsterdam: the cardboard model is built", am_sr != null and main.maze_view.city_theme.id == "amsterdam" and am_sr.panel_count > 3000)
+	_check("amsterdam: pins lead the way", main.maze_view.pellet_cells.size() > 80)
+	_check("amsterdam: the exit is on the minimap, in #00B894", main.hud.minimap_exit_cells.size() == 1 and main.maze_view.city_theme.minimap_exit_color.to_html(false) == "00b894")
+	_check("amsterdam: evening room as sky, lit by the sun and the desk lamp", main.world_env.environment.background_mode == Environment.BG_SKY and main.world_env.environment.sky != null and am_sr.sun != null and am_sr.lamp != null)
+	_check("amsterdam: no ghost siren (quiet city)", Sfx.siren_state() == "")
+	main.set_reduce_fx(true)
+	_check("amsterdam: 'Effekte reduzieren' stops the exit pulse", main.metro_stations[0].pulse_enabled() == false and am_sr.fx_reduced())
+	main.set_reduce_fx(false)
+	_check("amsterdam: the pulse runs again without it", main.metro_stations[0].pulse_enabled() == true)
+	var am_exit: Vector3 = main.metro_stations[0].position
+	main.player.global_position = Vector3(am_exit.x - 0.6, main.player.global_position.y, am_exit.z)
+	var am_tries := 0
+	while main.playing_explorer and am_tries < 400:
+		await get_tree().process_frame
+		am_tries += 1
+	await get_tree().process_frame
+	_check("amsterdam: the tram ends the Amsterdam run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("theme reset Amsterdam -> speedrun: no model, no lights, colour background, no SSAO/adjustment", main.maze_view.scenery_root == null
+		and main.world_env.environment.background_mode == Environment.BG_COLOR and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color)
+		and main.world_env.environment.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR and not main.world_env.environment.adjustment_enabled
+		and not main.world_env.environment.ssao_enabled and main.world_env.environment.tonemap_mode == normal_theme.env_tonemap_mode)
+	var am_lights := []
+	for n in main.maze_view.find_children("*", "Light3D", true, false):
+		var gone := false
+		var up: Node = n
+		while up != null:
+			if up.is_queued_for_deletion():
+				gone = true
+			up = up.get_parent()
+		if not gone:
+			am_lights.append(n)
+	var am_left: Array = am_lights.filter(func(l): return String(l.name) in ["Sun", "DeskLamp", "Bounce"] or l is DirectionalLight3D)
+	_check("speedrun after Amsterdam: the sun and the desk lamp are gone", am_left.is_empty(), str(am_left.map(func(l): return str(l.get_path()))))
+	_check("speedrun after Amsterdam: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)
 	main.start_condition(ConditionsScript.get_condition("matrix"))

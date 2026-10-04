@@ -126,7 +126,7 @@ var screen_overlay_shader_path := "" # full-screen canvas_item overlay (CRT line
 var pellet_color := Color(1.0, 0.82, 0.4)
 var pellet_emission := Color(1.0, 0.69, 0.18)
 var pellet_energy := 1.3
-var pellet_shape := "sphere" # "sphere" | "cube"
+var pellet_shape := "sphere" # "sphere" | "cube" | "pin" (sphere head on a needle down to the floor)
 ## Optional spatial shader for the pellets (uniforms col, core, key); "" =
 ## the StandardMaterial from pellet_color/emission/energy.
 var pellet_shader_path := ""
@@ -194,6 +194,7 @@ var env_ssr_fade_in := 0.15
 var env_ssr_fade_out := 2.0
 var env_ssr_depth_tolerance := 0.2
 var env_volumetric_fog_enabled := false
+var env_ssao_enabled := false # Forward+ only (Amsterdam: contact shadows in the joints)
 var env_tonemap_mode := 0 # Environment.TONE_MAPPER_LINEAR
 var env_tonemap_exposure := 1.0
 var env_tonemap_white := 1.0
@@ -218,6 +219,26 @@ var pellet_trail_provider_script: Script = null
 ## int)` that MazeView calls once the floor_shader_path material exists
 ## (Tokyo: baked puddle mask, the lights the wet floor reflects); null = none.
 var floor_setup_script: Script = null
+
+## ---- Lit model city (Amsterdam, docs/design/amsterdam-explorer.md) ----
+## false: the wall MultiMesh is not drawn (pure physics); the theme's
+## scenery shows the buildings. Collision is unchanged.
+var walls_visible := true
+## A script with a static `sky() -> Sky`: Main then shows that sky as the
+## background and takes ambient light and reflections from it (an HDRI room
+## behind the model). null = the plain env_bg_color background (all others).
+var env_sky_script: Script = null
+var env_bg_energy := 1.0
+var env_sky_rotation_deg := 0.0
+var env_ambient_sky_contribution := 1.0
+## Colour adjustment (Environment.adjustment_*), reset on every theme switch.
+var env_adjustment_enabled := false
+var env_adjustment_contrast := 1.0
+var env_adjustment_saturation := 1.0
+## Minimap: a script with a static `is_water(row, col) -> bool`; those wall
+## cells are drawn in minimap_water_color instead of the wall colour.
+var minimap_water_script: Script = null
+var minimap_water_color := Color(0, 0, 0, 0)
 
 ## ---- Gameplay ----
 ## Manhattan-style "calm explorer" levels have no power pellets, no white

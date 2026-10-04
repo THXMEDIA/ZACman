@@ -380,9 +380,32 @@ func _apply_theme_environment(theme_id: String) -> void:
 	env.ssr_fade_out = ct.env_ssr_fade_out
 	env.ssr_depth_tolerance = ct.env_ssr_depth_tolerance
 	env.volumetric_fog_enabled = ct.env_volumetric_fog_enabled
+	# SSAO exists only in Forward+ (like SSR).
+	env.ssao_enabled = ct.env_ssao_enabled and RenderingServer.get_rendering_device() != null
 	env.tonemap_mode = ct.env_tonemap_mode
 	env.tonemap_exposure = ct.env_tonemap_exposure
 	env.tonemap_white = ct.env_tonemap_white
+	# A lit model city (Amsterdam) shows an HDRI room behind the model and
+	# takes ambient light and reflections from it; every other theme gets the
+	# plain colour background back (set on EVERY switch, like the glow).
+	if ct.env_sky_script != null:
+		env.sky = ct.env_sky_script.sky()
+		env.background_mode = Environment.BG_SKY
+		env.background_energy_multiplier = ct.env_bg_energy
+		env.sky_rotation = Vector3(0.0, deg_to_rad(ct.env_sky_rotation_deg), 0.0)
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		env.ambient_light_sky_contribution = ct.env_ambient_sky_contribution
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	else:
+		env.background_mode = Environment.BG_COLOR
+		env.background_energy_multiplier = 1.0
+		env.sky_rotation = Vector3.ZERO
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_sky_contribution = 1.0
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_BG
+	env.adjustment_enabled = ct.env_adjustment_enabled
+	env.adjustment_contrast = ct.env_adjustment_contrast
+	env.adjustment_saturation = ct.env_adjustment_saturation
 	if player != null and player.camera != null:
 		player.camera.far = ct.camera_far
 		if player.light != null:
@@ -688,10 +711,14 @@ func _facing_yaw_for_start(cell: Vector2i) -> float:
 
 
 ## Kyoto: "Effekte reduzieren" stops the pop-up folding (everything stands).
+## Amsterdam: it stops the exit pulse (the exit node has set_reduce_fx too).
 func _apply_scenery_comfort() -> void:
 	var sr = maze_view.scenery_root if maze_view != null else null
 	if sr != null and is_instance_valid(sr) and sr.has_method("set_reduce_fx"):
 		sr.set_reduce_fx(reduce_fx)
+	for m in metro_stations:
+		if is_instance_valid(m) and m.has_method("set_reduce_fx"):
+			m.set_reduce_fx(reduce_fx)
 
 
 func _clear_explorer_obstacles() -> void:

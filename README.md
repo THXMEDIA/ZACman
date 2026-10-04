@@ -16,7 +16,7 @@ godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
   shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Twitch, Chat-Abstimmung, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Kyoto, Amsterdam, Twitch, Chat-Abstimmung, Bot-Simulation)
 tools/qa/          QA-Skripte: Screenshots (qa_*_shots.gd), Messung der Kaninchen-Wette (qa_rabbit_balance.gd)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
@@ -109,7 +109,7 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   „Regen reduzieren“ in einer Zeile, Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
   Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
   und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
-  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO**
+  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO | KYOTO | AMSTERDAM**
   (von Anfang an spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
   Spiel-HUD (Chips, Minimap, Energie) erscheint nur im laufenden Spiel; alle
   Chips sind mindestens 170 px breit. Pause: WEITER / NEUSTART / HAUPTMENÜ
@@ -200,6 +200,16 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   reduzieren“ dämpft den Regen ebenfalls. Alle Kugeln (auch Manhattan und
   Speedrun) sind jetzt eine MultiMesh. Draw-Call-Bilanz in
   `docs/design/tokyo-explorer.md` 4.3.
+- **Explorer-Städte Kyoto und Amsterdam** (Spezifikationen
+  `docs/design/kyoto-explorer.md`, `docs/design/amsterdam-explorer.md`):
+  Kyoto als Pop-up-Bilderbuch im Holzschnitt-Blau; **Amsterdam** als
+  Architekturmodell aus Wellpappe im Maßstab 1:100 zur goldenen Stunde
+  (`amsterdam_maze.gd`, `amsterdam_scenery.gd`, `amsterdam_exit.gd`):
+  Grachtengürtel mit Kaimauern aus echter Wellen-Geometrie, Giebelhäuser mit
+  ausgeschnittenen Fenstern, Westerkerk-Turm, Magere Brug, Tanzende Häuser am
+  Damrak; Stecknadeln als Kugeln, grüne Papp-Tram als Ausgang; Tisch,
+  Schneidematte, Bleistift und Becher jenseits der Modellkante. CC0-Fotoscans
+  in `godot/textures/amsterdam/` (`docs/art/lizenzen.md`).
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte

@@ -1583,10 +1583,16 @@ func _draw_minimap() -> void:
 	var power_col: Color = ct.power_color if ct != null else Color(1.0, 0.365, 0.635)
 	var frightened_col: Color = ct.minimap_frightened_color if ct != null else Color(0.35, 0.82, 1.0)
 	minimap.draw_rect(Rect2(Vector2.ZERO, size), bg_col)
+	# Amsterdam: canals in their own colour (CityTheme.minimap_water_script).
+	var water_script = ct.minimap_water_script if ct != null else null
+	var water_col: Color = ct.minimap_water_color if ct != null else Color(0, 0, 0, 0)
 	for r in minimap_maze.rows:
 		for c in minimap_maze.cols:
 			if minimap_maze.grid[r][c] == 1:
-				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), wall_col)
+				var col := wall_col
+				if water_script != null and water_script.is_water(r, c):
+					col = water_col
+				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), col)
 	if minimap_maze_view != null:
 		for i in minimap_maze_view.pellet_cells.size():
 			if not minimap_maze_view.pellet_alive[i]:

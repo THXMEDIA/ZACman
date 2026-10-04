@@ -345,6 +345,8 @@ func _build_walls() -> void:
 	normal_wall_mmi.multimesh = mm
 	# On the instance, not the mesh, so set_look() can swap it in place.
 	normal_wall_mmi.material_override = wall_material
+	# Amsterdam: the boxes are only physics, the scenery shows the houses.
+	normal_wall_mmi.visible = city_theme.walls_visible
 	add_child(normal_wall_mmi)
 
 	# The word-built-world skin (permanently word-built themes only, e.g.
@@ -597,7 +599,7 @@ func set_word_mode(active: bool) -> void:
 	word_mode_active = active and word_wall_root != null
 	if word_wall_root != null:
 		word_wall_root.visible = word_mode_active
-	normal_wall_mmi.visible = not word_mode_active
+	normal_wall_mmi.visible = not word_mode_active and city_theme.walls_visible
 
 
 ## ---- Look API (rabbit conditions switch looks at runtime) ----
@@ -928,6 +930,8 @@ func pellet_mesh() -> Mesh:
 
 
 func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
+	if shape == "pin":
+		return _pin_mesh(size, city_theme.pellet_height, mat)
 	if shape == "cube":
 		var b := BoxMesh.new()
 		b.size = Vector3.ONE * size * 2.0
@@ -938,6 +942,48 @@ func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
 	sp.height = size * 2.0
 	sp.material = mat
 	return sp
+
+
+## A glass-head pin (Amsterdam): a sphere head of radius `size` at the
+## instance origin on a thin needle that runs down to the floor (`height`
+## below), slightly slanted as if pressed into the base plate by hand. One
+## mesh, one draw call; the pellet shader colours the needle by its UV2.x = 1.
+func _pin_mesh(size: float, height: float, mat: Material) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sp := SphereMesh.new()
+	sp.radius = size
+	sp.height = size * 2.0
+	sp.radial_segments = 20
+	sp.rings = 10
+	var arr := sp.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	for i in idx:
+		st.set_uv2(Vector2(0.0, 0.0))
+		st.set_normal(norms[i])
+		st.add_vertex(verts[i])
+	# needle: 8-sided, from inside the head down to (and a little into) the floor
+	var r := maxf(0.012, size * 0.13)
+	var tilt := Basis(Vector3(1, 0, 0.6).normalized(), 0.07)
+	var top := Vector3(0, -size * 0.5, 0)
+	var bot := Vector3(0, -height - 0.05, 0)
+	var n := 8
+	for k in n:
+		var a0 := TAU * float(k) / n
+		var a1 := TAU * float(k + 1) / n
+		var d0 := Vector3(cos(a0), 0, sin(a0))
+		var d1 := Vector3(cos(a1), 0, sin(a1))
+		var q := [top + d0 * r, top + d1 * r, bot + d1 * r * 0.6, bot + d0 * r * 0.6]
+		var qn := [d0, d1, d1, d0]
+		for j in [0, 2, 1, 0, 3, 2]:
+			st.set_uv2(Vector2(1.0, 0.0))
+			st.set_normal(tilt * qn[j])
+			st.add_vertex(tilt * q[j])
+	var m := st.commit()
+	m.surface_set_material(0, mat)
+	return m
 
 
 ## Full-screen overlay (the Speedrun look's CRT lines + vignette) on a
