@@ -50,7 +50,8 @@ var _recv_buffer := ""
 
 func connect_to_channel(channel_name: String) -> void:
 	channel = channel_name.strip_edges().to_lower().trim_prefix("#")
-	if channel == "":
+	if channel == "" or not _valid_login(channel):
+		channel = ""
 		return
 	_tcp = StreamPeerTCP.new()
 	var err := _tcp.connect_to_host(HOST, PORT)
@@ -131,11 +132,23 @@ func _handle_line(line: String) -> void:
 ## connection; "" or the primary channel is ignored.
 func join_extra(channel_name: String) -> void:
 	var c := channel_name.strip_edges().to_lower().trim_prefix("#")
-	if c == "" or c == channel or extra_channels.has(c):
+	if c == "" or c == channel or extra_channels.has(c) or not _valid_login(c):
 		return
 	extra_channels.append(c)
 	if _tcp != null and _registered:
 		_tcp.put_data(("JOIN #%s\r\n" % c).to_utf8_buffer())
+
+
+## Twitch logins: a–z, 0–9, _, 1–25 characters. Anything else could smuggle
+## IRC commands onto the connection (Versus code review K2).
+static func _valid_login(c: String) -> bool:
+	if c.length() < 1 or c.length() > 25:
+		return false
+	for ch in c:
+		var u := ch.unicode_at(0)
+		if not ((u >= 97 and u <= 122) or (u >= 48 and u <= 57) or u == 95):
+			return false
+	return true
 
 
 ## Stops reading every extra channel (end of a Versus match).

@@ -71,9 +71,9 @@ func _run() -> void:
 	var port := OS.get_environment("VS_PORT").to_int()
 	if port <= 0:
 		port = 47950
-	vs.session.round_decided.connect(func(r, won, why): decided.append([r, won, why]))
+	vs.session.round_decided.connect(func(r, outcome, cause): decided.append([r, outcome, cause]))
 	vs.session.match_over.connect(func(won, a, b): over.append([won, a, b]))
-	vs.session.opponent_rabbit.connect(func(cond, p): opp_rabbit = cond)
+	vs.session.opponent_rabbit.connect(func(cond, good, p): opp_rabbit = cond)
 	main.rabbit_week_override = Vector2i(2026, 41)
 
 	vs.open_lobby()
@@ -92,11 +92,10 @@ func _run() -> void:
 	_check("start only for the host", vs.ui.start_btn.disabled == (role != "host"))
 
 	for r in 3:
-		if role == "host":
+		if role == "host" and r == 0:
 			await _frames(20)
-			if r == 0:
-				vs.ui.start_requested.emit() # press MATCH STARTEN
-		ok = await _wait(func(): return vs.session.round_index == r and main.running, 900)
+			vs.ui.start_requested.emit() # press MATCH STARTEN; later rounds start after the intermission
+		ok = await _wait(func(): return vs.session.round_index == r and main.running, 60000)
 		_check("round %d starts" % (r + 1), ok)
 		if not ok:
 			break
@@ -118,7 +117,7 @@ func _run() -> void:
 			var speed := 3 if (r == 0 and role == "host") or (r == 1 and role == "client") else 1
 			await _autopilot(speed, r)
 		var n_before := r + 1
-		ok = await _wait(func(): return decided.size() >= n_before, 1200)
+		ok = await _wait(func(): return decided.size() >= n_before, 60000)
 		_check("round %d decided" % (r + 1), ok)
 		if r == 0:
 			_check("the opponent's progress arrived", vs._opp_frac > 0.0, str(vs._opp_frac))
@@ -127,12 +126,14 @@ func _run() -> void:
 		if over.size() > 0:
 			break
 
-	ok = await _wait(func(): return over.size() > 0, 900)
+	ok = await _wait(func(): return over.size() > 0, 60000)
 	_check("match over", ok)
 	if decided.size() >= 3:
-		_check("round 1 to the host", decided[0][1] == (role == "host"), str(decided[0]))
-		_check("round 2 to the client", decided[1][1] == (role == "client"), str(decided[1]))
-		_check("round 3 to the host", decided[2][1] == (role == "host"), str(decided[2]))
+		var w := "win" if role == "host" else "loss"
+		var l := "loss" if role == "host" else "win"
+		_check("round 1 to the host", decided[0][1] == w, str(decided[0]))
+		_check("round 2 to the client", decided[1][1] == l, str(decided[1]))
+		_check("round 3 to the host", decided[2][1] == w, str(decided[2]))
 	if over.size() > 0:
 		_check("host wins the match 2:1", over[0][0] == (role == "host") and over[0][1] + over[0][2] == 3, str(over[0]))
 	var lb_key := "%s|woche|pvp" % vs.session.match_levels[0]

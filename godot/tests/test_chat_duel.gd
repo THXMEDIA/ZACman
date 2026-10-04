@@ -41,14 +41,32 @@ func _initialize() -> void:
 	var full_sab := Vector2(0, 1)
 	var half := Vector2(0.5, 0.5)
 	var none := Vector2.ZERO
-	_check("both chats help -> 80 % each", _approx(ChatDuel.p_for(full_help, full_help), 0.8))
+	# help weighs 0.5, sabotage 1.0 (design review K1): d_A = 0.5·h_A − s_B
+	_check("weights: help half, sabotage full", is_equal_approx(ChatDuel.HELP_WEIGHT, 0.5) and is_equal_approx(ChatDuel.SABOTAGE_WEIGHT, 1.0))
+	_check("both chats help -> 72.5 % each", _approx(ChatDuel.p_for(full_help, full_help), 0.725), str(ChatDuel.p_for(full_help, full_help)))
 	_check("both chats sabotage -> 20 % each", _approx(ChatDuel.p_for(full_sab, full_sab), 0.2))
-	_check("A helps, B sabotages -> A 60 % (help and sabotage cancel)", _approx(ChatDuel.p_for(full_help, full_sab), 0.6))
-	_check("A helps, B sabotages -> B 60 % (B's chat did not help B)", _approx(ChatDuel.p_for(full_sab, full_help), 0.6))
-	_check("A half/half, B full help -> A 72.5 %", _approx(ChatDuel.p_for(half, full_help), 0.725), str(ChatDuel.p_for(half, full_help)))
-	_check("A half/half, B full help -> B 72.5 % (A sabotaged B by half)", _approx(ChatDuel.p_for(full_help, half), 0.725))
+	_check("A helps, B sabotages -> A 42.5 %", _approx(ChatDuel.p_for(full_help, full_sab), 0.425), str(ChatDuel.p_for(full_help, full_sab)))
+	_check("A helps, B sabotages -> B 60 %", _approx(ChatDuel.p_for(full_sab, full_help), 0.6))
 	_check("no votes at all -> 60 %", _approx(ChatDuel.p_for(none, none), 0.6))
-	_check("help share 0.7, no sabotage -> 0.60 + 0.21 - 0.049 = 76.1 %", _approx(ChatDuel.p_for(Vector2(0.7, 0.3), none), 0.761))
+	_check("help share 0.7 alone -> d 0.35 -> 69.275 %", _approx(ChatDuel.p_for(Vector2(0.7, 0.3), none), 0.6 + 0.3 * 0.35 - 0.1 * 0.35 * 0.35))
+	# The chats now decide WHO gets the better share: p_A − p_B follows h_A − h_B
+	# (with equal weights both shares were always equal once both chats voted).
+	var decides := true
+	var differs := false
+	for i in 11:
+		for j in 11:
+			var hA := i / 10.0
+			var hB := j / 10.0
+			var pA := ChatDuel.p_for(Vector2(hA, 1.0 - hA), Vector2(hB, 1.0 - hB))
+			var pB := ChatDuel.p_for(Vector2(hB, 1.0 - hB), Vector2(hA, 1.0 - hA))
+			if not is_equal_approx(pA, pB):
+				differs = true
+			if hA > hB + 1e-9 and pA > pB + 1e-9:
+				decides = false # more help in A's chat must not put A ahead
+			if hA < hB - 1e-9 and pA < pB - 1e-9:
+				decides = false
+	_check("the chats can give the two players different shares", differs)
+	_check("sabotage pushes its player ahead: less help (more sabotage) in A's chat never leaves A behind", decides)
 	var bounded := true
 	for i in 11:
 		for j in 11:
@@ -80,29 +98,29 @@ func _initialize() -> void:
 	_check("inactive duel (a chat missing) -> 60 % for both", _approx(duel.p_good(0, 1.0), 0.6) and _approx(duel.p_good(1, 1.0), 0.6))
 	_check("inactive duel never shifts", not duel.shifted(0, 1.0) and not duel.shifted(1, 1.0))
 	duel.active = true
-	_check("A all help, B all sabotage -> A 60 %", _approx(duel.p_good(0, 1.0), 0.6), str(duel.p_good(0, 1.0)))
+	_check("A all help, B all sabotage -> A 42.5 %", _approx(duel.p_good(0, 1.0), 0.425), str(duel.p_good(0, 1.0)))
 	_check("A all help, B all sabotage -> B 60 %", _approx(duel.p_good(1, 1.0), 0.6))
-	_check("help and sabotage cancel: no shift for A", not duel.shifted(0, 1.0))
+	_check("A shifted (help and sabotage), B not", duel.shifted(0, 1.0) and not duel.shifted(1, 1.0))
 	_check("influence A: beides", duel.influence(0, 1.0) == "beides")
 	_check("influence B: nothing (A's chat only helped A, B's chat only sabotaged A)", duel.influence(1, 1.0) == "")
 
 	duel.clear()
 	_votes(duel, ChatDuel.SIDE_A, 3, 0)
-	_check("only A's chat helps -> A 80 %, shifted", _approx(duel.p_good(0, 1.0), 0.8) and duel.shifted(0, 1.0))
+	_check("only A's chat helps -> A 72.5 %, shifted", _approx(duel.p_good(0, 1.0), 0.725) and duel.shifted(0, 1.0))
 	_check("only A's chat helps -> B untouched 60 %", _approx(duel.p_good(1, 1.0), 0.6) and not duel.shifted(1, 1.0))
 	_check("influence A: hilfe", duel.influence(0, 1.0) == "hilfe")
 
 	duel.clear()
 	_votes(duel, ChatDuel.SIDE_A, 0, 3)
 	_check("A's chat sabotages -> B 20 %", _approx(duel.p_good(1, 1.0), 0.2))
-	_check("A's chat sabotaging never hurts A", _approx(duel.p_good(0, 1.0), 0.6))
+	_check("A's chat sabotaging (no help) leaves A at 60 %", _approx(duel.p_good(0, 1.0), 0.6))
 	_check("influence B: sabotage", duel.influence(1, 1.0) == "sabotage")
 
 	# Normalization: a big chat does not outweigh a small one.
 	duel.clear()
 	_votes(duel, ChatDuel.SIDE_A, 3, 0) # small chat, all help
 	_votes(duel, ChatDuel.SIDE_B, 0, 3000) # huge chat, all sabotage
-	_check("3 helpers weigh as much as 3000 saboteurs (shares, not votes)", _approx(duel.p_good(0, 1.0), 0.6))
+	_check("shares, not votes: 3 helpers vs 3000 saboteurs = full help vs full sabotage", _approx(duel.p_good(0, 1.0), 0.425))
 
 	# Votes expire with ChatVote's window.
 	_check("votes expire after the window", _approx(duel.p_good(0, 1.0 + ChatVote.WINDOW_S), 0.6))
@@ -129,6 +147,15 @@ func _initialize() -> void:
 			same_when_equal = false
 	_check("same share -> both players get the same condition", same_when_equal)
 	_check("a higher share never turns a good rabbit bad (shared u)", never_worse)
+
+	# --- channel / id validation (code review K2) ---------------------------------
+	_check("valid channel", ChatDuel.valid_channel("alice_tv_2026"))
+	_check("channel with CRLF refused", not ChatDuel.valid_channel("x\r\nPART #foo"))
+	_check("channel with space refused", not ChatDuel.valid_channel("a b"))
+	_check("channel too long refused", not ChatDuel.valid_channel("a".repeat(26)))
+	_check("empty channel refused", not ChatDuel.valid_channel(""))
+	_check("clean_id keeps a condition id", ChatDuel.clean_id("fear_and_loathing") == "fear_and_loathing")
+	_check("clean_id drops junk", ChatDuel.clean_id("matrix<script>") == "")
 
 	# --- commit-reveal ----------------------------------------------------------
 	var commit := ChatDuel.commit(987654)

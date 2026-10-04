@@ -68,6 +68,9 @@ var minimap: Control
 var game_hud: Control
 
 var start_panel: PanelContainer
+var pause_restart_btn: Button
+var pause_confirm_q: Label
+var pause_confirm_yes: Button
 ## Versus screens (lobby, race bar, countdown, result) — versus_ui.gd (E17).
 var versus_ui
 ## The Versus opponent's cell on the minimap (-1, -1 = none).
@@ -506,14 +509,20 @@ func _build_start_panel() -> void:
 	twitch_status_label = _subtitle_label("Aus — für ernsthafte Speedruns ausgeschaltet lassen.")
 	box.add_child(twitch_status_label)
 
+	# QA N6: SPEEDRUN and VERSUS share one row, so the start screen still fits.
+	var run_row := HBoxContainer.new()
+	run_row.add_theme_constant_override("separation", 10)
+	box.add_child(run_row)
 	var btn := _make_button("SPEEDRUN")
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.size_flags_stretch_ratio = 2.0
 	btn.pressed.connect(func(): start_pressed.emit())
-	box.add_child(btn)
-	box.add_child(_subtitle_label("Zufälliges Level, Geister, Zeitjagd. In jedem Level sitzt ein weißes Kaninchen: freiwillig, mit einer Kondition der Woche – gut oder schlecht. Bestzeiten pro Level und Brett (Woche, Chaos, Chat)."))
+	run_row.add_child(btn)
 	var vs_btn := _make_button("VERSUS")
+	vs_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vs_btn.pressed.connect(func(): versus_pressed.emit())
-	box.add_child(vs_btn)
-	box.add_child(_subtitle_label("Zu zweit gegeneinander übers Netz: gleiche Level, schnellere Zeit gewinnt. Mit Twitch entscheiden beide Chats über die Kaninchen."))
+	run_row.add_child(vs_btn)
+	box.add_child(_subtitle_label("Speedrun: zufälliges Level, Zeitjagd, in jedem Level ein weißes Kaninchen – gut oder schlecht. Versus: zu zweit übers Netz, gleiche Level, schnellere Zeit gewinnt."))
 	var lb_btn := _make_button("BESTENLISTE")
 	lb_btn.pressed.connect(func(): show_leaderboard())
 	box.add_child(lb_btn)
@@ -680,6 +689,7 @@ func _build_pause_panel() -> void:
 	var restart_btn := _make_button("NEUSTART")
 	restart_btn.pressed.connect(func(): restart_pressed.emit())
 	box.add_child(restart_btn)
+	pause_restart_btn = restart_btn
 	menu_btn = _make_button("HAUPTMENÜ")
 	menu_btn.pressed.connect(_on_pause_menu_pressed)
 	box.add_child(menu_btn)
@@ -690,12 +700,14 @@ func _build_pause_panel() -> void:
 	var q := _subtitle_label("Lauf abbrechen? Die Zeit dieses Levels wird nicht gewertet.")
 	q.add_theme_color_override("font_color", RABBIT_WHITE)
 	confirm.add_child(q)
+	pause_confirm_q = q
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
 	confirm.add_child(row)
 	var yes := Button.new()
 	yes.text = "JA, ZUM MENÜ"
+	pause_confirm_yes = yes
 	yes.custom_minimum_size = Vector2(150, 40)
 	yes.pressed.connect(func():
 		menu_confirm_row.visible = false
@@ -711,6 +723,22 @@ func _build_pause_panel() -> void:
 	reduce_fx_pause = comfort_pause_block.get_meta("reduce_fx")
 	reduce_rain_pause = comfort_pause_block.get_meta("reduce_rain")
 	box.add_child(comfort_pause_block)
+
+
+## Versus pause (QA N1, design W6): no NEUSTART, HAUPTMENÜ becomes
+## MATCH AUFGEBEN with its own question, the note says the clock runs on.
+func set_versus_pause(on: bool) -> void:
+	pause_restart_btn.visible = not on
+	menu_btn.text = "MATCH AUFGEBEN" if on else "HAUPTMENÜ"
+	pause_confirm_q.text = "Match aufgeben? Der Gegner gewinnt kampflos." if on else "Lauf abbrechen? Die Zeit dieses Levels wird nicht gewertet."
+	pause_confirm_yes.text = "JA, AUFGEBEN" if on else "JA, ZUM MENÜ"
+	if on:
+		pause_note_label.text = "Die Rennuhr läuft weiter – der Gegner läuft auch."
+
+
+## Versus: the condition card sits below the race bar (QA W5).
+func set_condition_card_top(px: float) -> void:
+	condition_card.offset_top = px
 
 
 ## Whether HAUPTMENÜ in the pause asks first (speedrun: yes; Manhattan: no).
@@ -1556,8 +1584,8 @@ func _draw_minimap() -> void:
 	# Versus: the opponent's position in their own copy of the maze (E17).
 	if minimap_opponent_cell.x >= 0:
 		var oc := Vector2((minimap_opponent_cell.y + 0.5) * sx, (minimap_opponent_cell.x + 0.5) * sy)
-		minimap.draw_circle(oc, 3.6, Color(0, 0, 0))
-		minimap.draw_circle(oc, 2.6, POWER_COLOR)
+		minimap.draw_circle(oc, 4.2, Color(0, 0, 0))
+		minimap.draw_circle(oc, 3.2, Color("ff9f1c")) # VersusUI.OPP_COLOR, own orange (QA N2)
 	if minimap_player != null:
 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
 		minimap.draw_colored_polygon(_minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw), ACCENT)

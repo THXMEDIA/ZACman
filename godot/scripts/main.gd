@@ -458,7 +458,10 @@ func start_level(level: Dictionary) -> void:
 	start_cell = LevelsScript.start_cell(MazeGen, maze)
 	level_chat_assisted = false
 	level_condition_id = ""
-	level_board = LevelsScript.BOARD_CHAOS if chaos_mode else LevelsScript.BOARD_WEEK # N2: frozen for this level
+	# N2: frozen for this level. A Versus round never counts on "chaos" (its
+	# rabbit comes from the match, QA 04.10. W7).
+	var in_versus: bool = versus != null and versus.active
+	level_board = LevelsScript.BOARD_CHAOS if chaos_mode and not in_versus else LevelsScript.BOARD_WEEK
 	rabbit_rng = _make_rabbit_rng(level_id)
 
 	# The rabbit's position follows the level seed (deterministic per level).
@@ -1033,8 +1036,13 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 			hud.set_twitch_status("Bitte einen Twitch-Kanalnamen eingeben.")
 			Twitch.enabled = false
 			return
-		hud.set_twitch_status("Verbinde mit #%s ..." % channel.strip_edges().to_lower())
 		Twitch.connect_to_channel(channel)
+		if Twitch.channel == "":
+			# only a–z, 0–9 and _ (Twitch logins; Versus code review K2)
+			hud.set_twitch_status("Ungültiger Kanalname – nur Buchstaben, Ziffern und _.")
+			Twitch.enabled = false
+			return
+		hud.set_twitch_status("Verbinde mit #%s ..." % Twitch.channel)
 	else:
 		Twitch.disconnect_chat()
 		chat_vote.clear()
@@ -1043,6 +1051,8 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 
 func _on_twitch_connection_changed(is_connected: bool) -> void:
 	_update_chat_hud(true)
+	if versus != null:
+		versus.on_twitch_changed()
 	if is_connected:
 		hud.set_twitch_status("Verbunden mit #%s — !power, !fruit, !gut und !schlecht sind aktiv." % Twitch.channel)
 	elif Twitch.enabled:
@@ -1218,6 +1228,24 @@ func end_game() -> void:
 	game_over.emit()
 
 
+## Versus (code review W7): ends this player's running round in one place —
+## the same steps as the start of go_to_main_menu, without leaving the match.
+func stop_run_for_versus() -> void:
+	running = false
+	paused = false
+	_run_token += 1
+	_end_condition(false)
+	start_hold = false
+	player.movement_locked = false
+	player.input_enabled = false
+	hud.show_start_intro(false)
+	hud.show_clock_hint(false)
+	hud.show_levelclear(false)
+	hud.hide_all_panels()
+	Sfx.stop_all()
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+
 ## UX-K2: back to the start screen from the pause or the game over. A run
 ## that is still going is abandoned without a game over: no high score, no
 ## board entry.
@@ -1262,7 +1290,8 @@ func level_complete_sequence() -> void:
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
 	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week)
-	Leaderboard.submit_time(cleared_id, board, elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode, week, level_condition_id)
+	var player_name: String = versus.player_name() if versus != null and versus.active else Leaderboard.DEFAULT_PLAYER_NAME
+	Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
 	if board != LevelsScript.BOARD_WEEK:
@@ -1318,14 +1347,19 @@ func toggle_pause() -> void:
 	if not running:
 		return
 	paused = not paused
+	var in_versus: bool = versus != null and versus.active
+	hud.set_versus_pause(in_versus)
 	if paused:
+		if in_versus:
+			versus.on_paused(true) # countdown digit off while the menu is up (QA W4)
 		# QA 03.10. W1: the start intro must never cover the pause menu. Pausing
 		# during the intro ends it (the clock is held anyway until the first step).
-		if start_hold:
+		if start_hold and not in_versus:
 			intro_until_real = real_now
 			hud.show_start_intro(false)
 			hud.show_clock_hint(false)
-		hud.set_pause_note(not playing_explorer)
+		if not in_versus:
+			hud.set_pause_note(not playing_explorer)
 		hud.set_reduce_fx(reduce_fx)
 		hud.set_comfort(fov, mouse_sens)
 		hud.set_menu_confirm(not playing_explorer) # UX-K2: abandoning a speedrun asks once
@@ -1335,7 +1369,9 @@ func toggle_pause() -> void:
 		player.input_enabled = false
 	else:
 		hud.hide_all_panels()
-		if start_hold:
+		if in_versus:
+			versus.on_paused(false)
+		elif start_hold:
 			hud.show_clock_hint(true)
 		Sfx.set_siren(true, now < frightened_until)
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -1653,8 +1689,10 @@ func _on_rabbit_picked() -> void:
 		c.set_manipulation(forced_fl_manipulation)
 	level_condition_id = c.id
 	if versus != null and versus.active:
-		versus.rabbit_picked(c.id, p)
-	if chat_shifted:
+		versus.rabbit_picked(c.id, c.is_good, p)
+	if versus != null and versus.active:
+		chat_line = versus.chat_line(p, c)
+	elif chat_shifted:
 		chat_line = "Chat %d %% → %s" % [ChatVoteScript.percent(p), c.display_name.to_upper()]
 	start_condition(c, chat_line)
 

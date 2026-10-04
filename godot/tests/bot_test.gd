@@ -1825,6 +1825,10 @@ func _run_review_fix_checks() -> void:
 		var ch = box.get_child(i)
 		if ch is Button and ch.text == "SPEEDRUN":
 			speedrun_idx = i
+		elif ch is HBoxContainer: # QA N6 (Versus): SPEEDRUN and VERSUS share a row
+			for b in ch.get_children():
+				if b is Button and b.text == "SPEEDRUN":
+					speedrun_idx = i
 	_check("UX-W5: options (Chaos, comfort) above the SPEEDRUN button", main.hud.chaos_start.get_index() < speedrun_idx and main.hud.comfort_start_block.get_index() < speedrun_idx)
 	var small := []
 	for l in _labels_under(main.hud.start_panel):

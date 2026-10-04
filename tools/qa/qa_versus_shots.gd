@@ -10,8 +10,8 @@
 #   rm godot/qa_versus_shots.gd
 #
 # Erzeugt: v1_start (VERSUS-Knopf), v2_lobby_leer, v3_lobby_bereit,
-# v4_countdown, v5_rennen (Rennbalken + Gegner auf der Minimap),
-# v6_im_ziel, v7_runde_gewonnen, v8_match_sieg.
+# v4_countdown, v5_rennen (Rennbalken + Gegner auf der Minimap + Ereignis),
+# v6_im_ziel, v7_runde_gewonnen (mit Zwischenpause), v8_match_sieg.
 extends SceneTree
 
 const Session := preload("res://scripts/versus_session.gd")
@@ -80,9 +80,12 @@ func _run() -> void:
 	var mv = main.maze_view
 	for i in 40:
 		var c: Vector2i = mv.pellet_cells[i]
-		main.player.global_position = Vector3(c.y * CELL, main.player.EYE_H, c.x * CELL)
+		main.player.global_position = Vector3(c.y * CELL, main.player.global_position.y, c.x * CELL)
 		main._check_pickups()
-	opp.send_progress(0.31, main.start_cell, 3, true)
+	# look down the corridor of the last pellet
+	main.player.warp_to(main.player.cell(), main._facing_yaw_for_start(main.player.cell()))
+	opp.send_progress(0.31, main.start_cell, 2, true)
+	opp.send_rabbit("stromausfall", false, 0.4, Vector2i(0, 4), Vector2i(3, 0))
 	await _frames(30)
 	await _shot("v5_rennen")
 

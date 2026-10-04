@@ -1,6 +1,6 @@
 # Multiplayer – Spezifikation v1 (E17)
 
-**Stand:** 04.10.2026 · **Freigabe:** Inhaber, E17 (Paket a–e wie empfohlen) · **Studio-Konzept:** `studio/projekte/zapmaniac/multiplayer-konzept-v1.md` (BeachVibeStudio-Project)
+**Stand:** 04.10.2026 (nach QA und Reviews) · **Freigabe:** Inhaber, E17 (Paket a–e wie empfohlen) · **Studio-Konzept:** `studio/projekte/zapmaniac/multiplayer-konzept-v1.md` (BeachVibeStudio-Project)
 
 Vorgabe des Inhabers: Multiplayer zu zweit – Koop (gemeinsam ein Speed-Maze-Level clearen) und gegeneinander („Gegenwind“). Im Versus stimmen die Twitch-Chats beider Speedrunner jeweils für ihren Spieler ab und entscheiden, welcher Spieler als Nächstes ein gutes oder schlechtes weißes Kaninchen bekommt.
 
@@ -17,13 +17,19 @@ Vorgabe des Inhabers: Multiplayer zu zweit – Koop (gemeinsam ein Speed-Maze-Le
 ## 2. Versus „Gegenwind“ (umgesetzt, Branch `feature/multiplayer`)
 
 **Ablauf**
-1. Startscreen → **VERSUS** → Lobby: Name, **HOSTEN** (Port, Standard 47823/UDP) oder **BEITRETEN** (IP-Adresse des Hosts).
+1. Startscreen → **VERSUS** (neben SPEEDRUN) → Lobby: Name (vorbelegt mit dem Twitch-Kanal), Twitch-Schalter, Block **DU HOSTEST** (eigene LAN-IP verdeckt mit ZEIGEN/KOPIEREN, Port, Standard 47823/UDP) – „oder“ – Block **DU TRITTST BEI** (IP-Feld verdeckt, ZEIGEN, Enter tritt bei). Keine IP steht je im Klartext ohne Klick im Bild (Streamer-Schutz). „VERBINDUNG KLAPPT NICHT?“ erklärt Firewall, Portweiterleitung und Tailscale/ZeroTier. Beitreten gibt nach 10 s mit „Host nicht erreichbar“ auf. Verlässt ein Gegner die Lobby, wartet der Host auf den nächsten.
 2. Verbindung → Abgleich per Commit-Reveal: Beide senden erst den Hash ihres geheimen Seeds, dann den Seed. Der Match-Seed folgt aus beiden (`ChatDuel.match_seed`), keiner kann ihn wählen. Aus ihm leiten beide dieselben **drei verschiedenen Level** ab (`VersusSession.levels_for`).
 3. Der Host drückt **MATCH STARTEN**. Jede Runde beginnt für beide gleichzeitig mit **3-2-1-LOS!** (statt Intro und „Uhr startet mit dem ersten Schritt“); die Uhr läuft ab LOS.
-4. Während der Runde: oben ein Rennbalken (beide Namen, Fortschritt in %, Runde, Stand), der Gegner als magentafarbener Punkt auf der eigenen Minimap (seine Position in seiner Kopie).
-5. **Rundensieg:** die niedrigere Zielzeit. Wer im Ziel ist, wartet; sobald die eigene Uhr die Zeit des Gegners überschreitet, ist die Runde verloren und endet sofort. Wer das letzte Leben verliert, verliert die Runde. Verlieren beide alle Leben: kein Punkt. Gleichstand auf die Hundertstel: Runde an den Host.
-6. **Match:** Best-of-3 (wer zuerst 2 Runden hat). Danach SIEG / NIEDERLAGE / UNENTSCHIEDEN mit HAUPTMENÜ. Verlässt der Gegner das Match, gewinnt der Verbliebene kampflos.
-7. Pause ist möglich, die Rennzeit läuft weiter (wie im Solo). NEUSTART ist im Versus gesperrt.
+4. Während der Runde: oben mittig der Rennbalken („BEST OF 3 · RUNDE 1 · 0:0 · MATCHBALL …“, je Spieler „DU“-Markierung, Name, Balken, Prozent, Leben), darunter das Chat-Duell (beide Anteile + „Chat: !gut = Hilfe für …“), Ereignisse („BOB IM ZIEL · 1:02.31“, „BOB: STROMAUSFALL · schlecht · Sabotage von #alice wirkt!“, „BOB −1 LEBEN“) und, sobald der Gegner im Ziel ist, „BOB IM ZIEL 1:02.31 · NOCH 0:07.4“ (unter 5 s rot). Der Gegner ist ein oranger Punkt auf der eigenen Minimap (seine Position in seiner Kopie). Die Kaninchen-Titelkarte sitzt unter dem Rennbalken.
+5. **Rundenentscheidung – der Host entscheidet** (beide melden, der Host wendet die Regeln an und schickt `result`, beide zeigen dasselbe):
+   - beide im Ziel → niedrigere Zeit auf die Hundertstel; gleich → Host
+   - im Ziel gegen tot/aufgegeben → wer im Ziel ist; die eigene Uhr über der Gegnerzeit beendet die Runde sofort („ZU LANGSAM“)
+   - tot gegen noch laufend → wer noch läuft (nach 0,6 s Karenz, damit zwei fast gleichzeitige Tode als „beide tot“ zählen)
+   - beide tot → wer weiter kam (Anteil Kugeln), sonst wer später starb, sonst kein Punkt
+6. **Zwischenpause 12 s** mit Ergebnis (beide Zeiten und Abstand), Vorschau „Runde 2: Klassik III in 12 s · Chats, stimmt jetzt ab!“.
+7. **Match:** Best-of-3 (wer zuerst 2 Runden hat). Danach SIEG / NIEDERLAGE / UNENTSCHIEDEN (neutral gefärbt) mit Rundentabelle, **REVANCHE** (beide drücken → neues Commit-Reveal auf derselben Verbindung, neue Level, Start nach 5 s) und HAUPTMENÜ. Verlässt der Gegner ein laufendes Match, gewinnt der Verbliebene kampflos; nach Match-Ende bleibt das Ergebnis stehen.
+8. Pause ist möglich, die Rennuhr läuft weiter. Im Versus heißt HAUPTMENÜ „MATCH AUFGEBEN“ (mit Rückfrage), NEUSTART fehlt, der Countdown verschwindet hinter dem Menü.
+9. Geister-Zufall (verängstigte Geister) folgt im Versus dem Match-Seed, nicht dem Rechner.
 
 **Kaninchen im Versus**
 - Ein Kaninchen pro Level wie im Solo, freiwillig.
@@ -33,18 +39,24 @@ Vorgabe des Inhabers: Multiplayer zu zweit – Koop (gemeinsam ein Speed-Maze-Le
 **Chat-Duell (E17a)**
 - Beide Spieler schalten am Startscreen ihren Twitch-Chat ein. Jeder Client liest beide Kanäle (eine anonyme IRC-Verbindung, zweiter Kanal per JOIN).
 - `!gut` in Chat X = Spieler X soll ein gutes Kaninchen bekommen. `!schlecht` in Chat X = der **Gegner** von X soll ein schlechtes bekommen.
-- Pro Chat Anteile: h = gut/n, s = schlecht/n (unter 3 Stimmen 0). d_A = h_A − s_B. Gut-Anteil p_A = 0,60 + 0,30·d − 0,10·d², begrenzt 20–80 % (dieselbe Kurve wie solo).
-- Beispiele: beide Chats helfen → 80/80; beide sabotieren → 20/20; A hilft, B sabotiert → 60/60; A halb/halb, B hilft voll → 72,5/72,5.
-- Normierung auf Anteile: 3 Stimmen in einem kleinen Chat wiegen so viel wie 3.000 in einem großen. Kein Befehl in Chat X kann Spieler X schaden.
-- Das Duell läuft nur, wenn beide Chats verbunden sind; sonst ziehen beide mit 60 %. `!power`/`!fruit` wirken im Versus nicht.
-- HUD-Chip: „Kaninchen: Duell 60 %“ bzw. „Kaninchen: 35 % gut“, sobald die Chats den Anteil verschoben haben.
+- Pro Chat Anteile: h = gut/n, s = schlecht/n (unter 3 Stimmen 0). **d_A = 0,5·h_A − 1,0·s_B** (Hilfe zählt halb, Sabotage voll). Gut-Anteil p_A = 0,60 + 0,30·d − 0,10·d², begrenzt 20–80 % (dieselbe Kurve wie solo).
+- Warum die Gewichte (Design-Review 04.10., K1): Mit gleichen Gewichten gilt bei abgestimmten Chats immer d_A = h_A + h_B − 1 = d_B – beide Spieler hätten stets denselben Anteil, die Chats entschieden nie, *wer* das gute Kaninchen bekommt. Mit 0,5/1,0 folgt p_A − p_B dem Unterschied der Chats: Sabotage bringt den eigenen Spieler relativ nach vorn, kostet ihn aber absolut (Gefangenendilemma – „Gegenwind“).
+
+  | | B hilft | B sabotiert |
+  |---|---|---|
+  | **A hilft** | 72,5 / 72,5 | 42,5 / 60 |
+  | **A sabotiert** | 60 / 42,5 | 20 / 20 |
+- Normierung auf Anteile: 3 Stimmen in einem kleinen Chat wiegen so viel wie 3.000 in einem großen. Jedes `!schlecht` in Chat X trifft den Gegner von X; es senkt nebenbei den Hilfe-Anteil von X (der Preis der Sabotage).
+- Das Duell läuft nur, wenn dieses Spiel beide Kanäle auf einer verbundenen Twitch-Verbindung liest und beide Kanalnamen gültig sind (nur a–z, 0–9, _); sonst ziehen beide mit 60 %. `!power`/`!fruit` wirken im Versus nicht.
+- Anzeige im Rennbalken statt im Chip links; die Titelkarte nennt, wer gekippt hat („Duell 42 % → STROMAUSFALL · Sabotage von #bob“).
 
 **Bretter**
-- Rundenzeiten zählen im Modus `pvp` (`level|brett|pvp`): Brett `woche`, oder `chat`, sobald das Duell den eigenen Anteil verschoben hat (Hilfe oder Sabotage). Kein Highscore im Versus.
+- Rundenzeiten zählen im Modus `pvp` (`level|brett|pvp`) mit dem Spielernamen: Brett `woche` (auch bei eingeschaltetem Chaos-Modus), oder `chat`, sobald das Duell den eigenen Anteil verschoben hat. Kein Highscore im Versus. Eine sichtbare pvp-Bestenliste gibt es bewusst nicht (Design-Review N3); später eher eine Kopf-an-Kopf-Bilanz.
 
 **Netz**
-- Godots `ENetMultiplayerPeer` als reiner Paket-Peer (JSON, keine RPCs). Nachrichten: `hello`, `reveal`, `round`, `prog` (5/s, unzuverlässig), `rabbit`, `finish`, `died`, `lost`, `bye` (Kopf von `versus_session.gd`).
-- Jeder Client simuliert nur sein eigenes Rennen; es gibt keine Host-Autorität über Kugeln oder Geister und daher keinen Latenzvorteil.
+- Godots `ENetMultiplayerPeer` als reiner Paket-Peer (JSON, keine RPCs), Protokoll 2. Nachrichten: `hello`, `reveal`, `rematch`, `round`, `prog` (5/s, eigener Kanal, zuverlässig), `rabbit`, `finish`, `died`, `lost`, `result`, `bye` (Kopf von `versus_session.gd`). Zeiten als Hundertstel (ganze Zahlen).
+- Jeder Client simuliert nur sein eigenes Rennen; keine Autorität über Kugeln oder Geister, daher kein Latenzvorteil. Nur die Rundenentscheidung trifft der Host.
+- Alles aus dem Netz wird geprüft: Typen, Wertebereiche (NaN/∞, Zeiten, `go_in` 0,5–10 s, Woche), Zustand (kein zweites hello/reveal, kein Rundensprung), Kanalnamen (sonst IRC-Injection auf die eigene Twitch-Verbindung), Namen ohne Steuerzeichen; max. 1 KB je Paket, 64 Pakete je Frame, `prog` höchstens alle 50 ms. ENet erkennt einen stillen Abbruch nach 2–8 s.
 - Vertrauensbasiert: Ein manipulierter Client könnte eine falsche Zeit melden. Für Freundes-Matches akzeptiert; vor öffentlichem Matchmaking oder Ranglisten-PvP nachzurüsten (z. B. Abgleich der Chat-Zählerstände, die `rabbit` schon mitsendet).
 - Heute per IP und Port; NAT/Portfreigabe nötig. Steam-Lobby und Freundeseinladung folgen mit der Steam-App-ID (E16) und vermutlich einem Godot-Upgrade auf 4.4+ (GodotSteam-Multiplayer-Builds).
 
@@ -54,7 +66,7 @@ Vorgabe des Inhabers: Multiplayer zu zweit – Koop (gemeinsam ein Speed-Maze-Le
 - `scripts/versus_controller.gd` – Lobby, Rundenablauf, Hooks in `main.gd`
 - `scripts/versus_ui.gd` – Lobby, Rennbalken, Countdown, Ergebnis
 - `scripts/twitch_chat.gd` – zusätzliche Kanäle (`join_extra`, Signal `channel_command`)
-- Tests: `tests/test_chat_duel.gd`, `tests/test_versus_session.gd` (zwei Sitzungen in einem Prozess), `tests/versus_e2e.gd` + `tools/qa/versus_e2e.sh` (zwei Spielinstanzen über localhost)
+- Tests: `tests/test_chat_duel.gd` (50), `tests/test_versus_session.gd` (50: zwei Sitzungen in einem Prozess, feindliche Pakete, gleichzeitiger Tod, Revanche, zweiter Gegner, Join ohne Host), `tests/versus_e2e.gd` + `tools/qa/versus_e2e.sh` (zwei Spielinstanzen über localhost), Screenshots `tools/qa/qa_versus_shots.gd`
 
 ## 3. Koop (nächster Schritt, noch nicht gebaut)
 

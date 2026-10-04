@@ -9,16 +9,27 @@ extends RefCounted
 ## one:
 ##
 ##   h_X = gut_X / n_X,  s_X = schlecht_X / n_X   (both 0 under 3 voters)
-##   d_A = h_A − s_B,    d_B = h_B − s_A           (−1 … +1)
+##   d_A = 0.5·h_A − 1.0·s_B,  d_B = 0.5·h_B − 1.0·s_A
 ##   p_A = 0.60 + 0.30·d_A − 0.10·d_A²,  clamped to 20–80 %  (ChatVote.share_for's curve)
+##
+## Why help counts half (design review 04.10., K1): with equal weights
+## d_A = h_A − s_B = h_A + h_B − 1 = d_B whenever both chats voted (h + s = 1
+## per chat) — both players always got the SAME share and the chats never
+## decided who gets the good rabbit. With help weighing less than sabotage,
+## p_A − p_B follows h_A − h_B: a chat that sabotages pushes its player ahead
+## of the opponent but lowers the own player's share too (a prisoner's
+## dilemma — "Gegenwind"):
+##                 B helps      B sabotages
+##   A helps       72.5/72.5    42.5/60
+##   A sabotages   60/42.5      20/20
 ##
 ## Both players draw their rabbit with the SAME generator per round
 ## (round_rng: match seed + round), so the first number u is the same for
 ## both; whoever has the higher p gets the good condition when u falls in
 ## between — "which player gets a good or a bad rabbit next" (E17a).
 ##
-## A raid can not hurt its own streamer: every command in chat X only ever
-## works FOR player X. The duel only runs while BOTH chats are connected
+## Every !schlecht in chat X targets X's opponent; it lowers X's own help
+## share as a side effect (that is the price of sabotage). The duel only runs while BOTH chats are connected
 ## (`active`); otherwise both rabbits are drawn as without chat (60 %).
 ##
 ## Pure logic like ChatVote: no nodes, the caller passes the time.
@@ -28,6 +39,9 @@ const ChatVoteScript := preload("res://scripts/chat_vote.gd")
 ## Player sides of a match: the host is A, the client B.
 const SIDE_A := 0
 const SIDE_B := 1
+## Weights of help and sabotage in d (see the header).
+const HELP_WEIGHT := 0.5
+const SABOTAGE_WEIGHT := 1.0
 
 ## The two chats, one ChatVote each (same window and one-vote rule as solo).
 var votes: Array = [ChatVoteScript.new(), ChatVoteScript.new()]
@@ -126,7 +140,7 @@ static func shares_for(good: int, bad: int) -> Vector2:
 ## Good share for a player whose own chat has shares `own` and whose
 ## opponent's chat has shares `opp` (both Vector2(h, s)).
 static func p_for(own: Vector2, opp: Vector2) -> float:
-	var d := clampf(own.x - opp.y, -1.0, 1.0)
+	var d := clampf(HELP_WEIGHT * own.x - SABOTAGE_WEIGHT * opp.y, -1.0, 1.0)
 	return clampf(ChatVoteScript.P_BASE + ChatVoteScript.SPREAD * d - ChatVoteScript.CURVE * d * d, ChatVoteScript.P_MIN, ChatVoteScript.P_MAX)
 
 
@@ -155,4 +169,34 @@ static func verify(seed: int, commit_hex: String) -> bool:
 
 
 static func _norm(channel: String) -> String:
+	return norm_channel(channel)
+
+
+## "#Alice_TV " -> "alice_tv".
+static func norm_channel(channel: String) -> String:
 	return channel.strip_edges().to_lower().trim_prefix("#")
+
+
+## A Twitch login: a–z, 0–9, _, 1–25 characters. Everything else (spaces,
+## line breaks, '#', …) is refused, so a name from the network can never
+## become an IRC command on our connection (code review K2).
+static func valid_channel(channel: String) -> bool:
+	if channel.length() < 1 or channel.length() > 25:
+		return false
+	for ch in channel:
+		var c := ch.unicode_at(0)
+		var ok := (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95
+		if not ok:
+			return false
+	return true
+
+
+## A condition id from the network: lower-case letters and _ only, ≤ 32.
+static func clean_id(id: String) -> String:
+	if id.length() > 32:
+		return ""
+	for ch in id:
+		var c := ch.unicode_at(0)
+		if not ((c >= 97 and c <= 122) or c == 95):
+			return ""
+	return id
