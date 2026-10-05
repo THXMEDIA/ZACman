@@ -19,8 +19,12 @@ extends RefCounted
 ##   exit_title    banner title (explorer cities have no "level clear")
 ##   metro_radius  how close to the exit node triggers it (m)
 ##   siren         ghost-siren drone on (default true; Kyoto, Amsterdam, Arles: quiet)
-##   intro_hint    optional hint shown once at the start (not with reduce_fx)
-##   exit_hint     optional hint shown once within 4.5 m of the exit
+##   intro_hint    optional hint shown once at the start (not with reduce_fx,
+##                 unless intro_hint_always)
+##   intro_hint_always  the intro hint is about the way, not an effect: it
+##                 comes with "Effekte reduzieren" too (Amsterdam, Arles; QA W1)
+##   exit_hint     optional hint shown once within 12 m of the exit
+##   desc          one line for the start screen (shown on hover / focus)
 
 const EXPLORER_IDS := ["manhattan", "tokyo", "kyoto", "amsterdam", "arles"]
 
@@ -34,6 +38,7 @@ static func get_city(id: String) -> Dictionary:
 				"metro": "random", "metro_count": 4, "metro_script": "res://scripts/metro_station.gd",
 				"traffic": "manhattan", "exit_text": "SUBWAY — los zum Speedrun!",
 				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 0.75,
+				"desc": "Manhattan – Wort-Stadt bei Nacht, Verkehr aus Wörtern",
 			}
 		"tokyo":
 			return {
@@ -42,6 +47,7 @@ static func get_city(id: String) -> Dictionary:
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/tokyo_metro_station.gd",
 				"traffic": "tokyo", "exit_text": "U-BAHN — los zum Speedrun!",
 				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 1.3,
+				"desc": "Tokyo – Neon im Regen, Verkehr und Menschen",
 			}
 		"kyoto":
 			return {
@@ -53,6 +59,7 @@ static func get_city(id: String) -> Dictionary:
 				"siren": false,
 				"intro_hint": "Die Stadt klappt beim Laufen auf. Ruhiger: Esc → Effekte reduzieren",
 				"exit_hint": "Grüne Tür: umblättern in den Speedrun",
+				"desc": "Kyoto – Pop-up-Bilderbuch, Häuser klappen auf",
 			}
 		"amsterdam":
 			return {
@@ -62,19 +69,21 @@ static func get_city(id: String) -> Dictionary:
 				"traffic": "", "exit_text": "Einsteigen – los zum Speedrun!",
 				"exit_title": "NÄCHSTE HALTESTELLE: SPEEDRUN", "metro_radius": 1.3,
 				"siren": false,
-				"intro_hint": "Ein Pappmodell im Maßstab 1:100 – die blauen Stecknadeln zeigen den Weg zur grünen Tram",
+				"intro_hint": "Folge den blauen Nadeln zur grünen Tram", "intro_hint_always": true,
 				"exit_hint": "Grüne Tram: einsteigen in den Speedrun",
+				"desc": "Amsterdam – Pappmodell 1:100 im Abendlicht, ruhig",
 			}
 		"arles":
 			return {
 				"id": "arles", "theme": "arles", "label": "ARLES",
 				"maze_script": "res://scripts/arles_maze.gd", "seed": 1888,
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/arles_exit.gd",
-				"traffic": "", "exit_text": "Durch die grüne Tür – los zum Speedrun!",
-				"exit_title": "DURCH DIE GRÜNE TÜR: SPEEDRUN", "metro_radius": 1.3,
+				"traffic": "", "exit_text": "Hinein – los zum Speedrun!",
+				"exit_title": "HINTER DER TÜR: SPEEDRUN", "metro_radius": 1.3,
 				"siren": false,
-				"intro_hint": "Die roten Kugeln führen zur grünen Tür. Ruhiger: Esc → Effekte reduzieren",
+				"intro_hint": "Folge den Kugeln zur grünen Tür", "intro_hint_always": true,
 				"exit_hint": "Grüne Tür: hinein in den Speedrun",
+				"desc": "Arles – gemalte Sternennacht, bewegter Himmel",
 			}
 	return {}
 

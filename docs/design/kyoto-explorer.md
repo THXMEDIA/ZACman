@@ -34,13 +34,13 @@ Start: Westende der Shijo-dori, Blick nach Osten auf das Schreintor. Ausgang: vo
 - **Farbregeln:** Gold nur für Kugeln (`#FFC714`), Grün nur für den Ausgang (`#22C460`); Zinnober nur als Akzent (Torii, Schreintor, Laternen, Maiko).
 - **Kugeln:** Blattgold mit Tuscherand (`kyoto_orb.gdshader`), damit sie auch in Graustufen und bei Tritanopie vom hellen Papier abheben.
 - **Torii-Gasse:** Pfosten bei ±2,3 m; ein Kollisionsgeländer füllt den Streifen vom Pfosten bis zur Mauer, der Boden druckt dort Kies und eine Tuschelinie (Regel „Tuschelinie = Kollisionskante“ bleibt gültig).
-- **Minimap:** dunkle Straßen (AI1), helle Blöcke (AI3), Ausgang als grünes Quadrat (für alle Explorer-Städte).
+- **Minimap:** dunkle Straßen (AI1), helle Blöcke (AI3), Ausgang als grüner Ring mit dunklem Rand und 0,5-Hz-Puls, Spielerpfeil weiß mit schwarzem Rand (seit 05.10.2026 für alle Explorer-Städte, UX K-A).
 - **Ton:** keine Geister-Sirene in Kyoto (`siren: false`); eigene Kyoto-Musik ist offen.
 - **Schrift:** keine in der Stadt (kein Fake-Japanisch). Einzige Beschriftung: „出口 EXIT“ am Ausgang (Standardzeichen, auch in Tokyo verwendet).
 
 ## Ausgang (`kyoto_exit.gd`)
 
-Aufgeklappte Seitentür mit grünem Licht vor der Kiyomizu-Bühne, grüne Lichtfläche auf der Seite, und ein langes grünes Lesebändchen (zwei gekreuzte Streifen), das vom Himmel bis über die Tür hängt (15 m, ohne Nebel, von weit her über den Dächern sichtbar). Puls 0,5 Hz. Auslöseradius 1,2 m; ab 4,5 m einmal der Hinweis „Grüne Tür: umblättern in den Speedrun“. Banner: „NÄCHSTE SEITE: SPEEDRUN“ / „Umblättern – los zum Speedrun!“.
+Aufgeklappte Seitentür mit grünem Licht vor der Kiyomizu-Bühne, grüne Lichtfläche auf der Seite, und ein langes grünes Lesebändchen (zwei gekreuzte Streifen), das vom Himmel bis über die Tür hängt (15 m, ohne Nebel, von weit her über den Dächern sichtbar). Puls 0,5 Hz. Auslöseradius 1,2 m; ab 12 m einmal der Hinweis „Grüne Tür: umblättern in den Speedrun“ (seit 05.10.2026 für alle Städte, GD W6; Hinweisbox oben mittig). Banner: „NÄCHSTE SEITE: SPEEDRUN“ / „Umblättern – los zum Speedrun!“.
 
 ## Technik und Budget
 

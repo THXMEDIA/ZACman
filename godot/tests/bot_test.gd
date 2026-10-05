@@ -733,6 +733,8 @@ func _run_checks() -> void:
 	main.set_reduce_fx(false)
 	_check("tokyo M2: both off -> full rain, settings stored", tk_life.rain_visible_count() == 8000 and not SettingsScript.load_settings().reduce_rain)
 	_check("tokyo M2: the crossing tone exists (synthetic, short)", Sfx.has_method("crossing_signal") and Sfx.crossing_streams().size() == 2 and Sfx.crossing_streams()[0].get_length() < 0.2)
+	_check("QA K4: 'Regen reduzieren' in the pause where it rains (Tokyo), named on the start screen", main.hud.reduce_rain_pause.visible and main.hud.reduce_rain_start.text.contains("Tokyo"))
+	_check("UX K-A: explorer minimap - white player arrow, exit ring glyph pulsing", main.hud._explorer_hud and main.hud.exit_glyph_pulsing() and main.hud.MINIMAP_PLAYER_EXPLORER.to_html(false) == "f4f1e8")
 	var tk_walk_tone := [0]
 	tk_life.walk_started.connect(func(): tk_walk_tone[0] += 1)
 	tk_life.advance(tk_life.WALK_START - tk_life.cycle_time + 0.1)
@@ -791,6 +793,19 @@ func _run_checks() -> void:
 	for cid in reg_ids:
 		btn_ok = btn_ok and main.hud.explorer_buttons.has(cid)
 	_check("start screen: one explorer button per registered city", btn_ok, str(main.hud.explorer_buttons.keys()))
+	# UX N-B: a short description per city, shown when a button is hovered or
+	# focused; buttons in 16 px; the order stays the owner's
+	var desc_ok := true
+	for cid in reg_ids:
+		var dsc: String = load("res://scripts/explorer_cities.gd").get_city(cid).get("desc", "")
+		desc_ok = desc_ok and dsc.begins_with(load("res://scripts/explorer_cities.gd").get_city(cid).label.capitalize()) and dsc.length() < 70
+		main.hud.explorer_buttons[cid].mouse_entered.emit()
+		desc_ok = desc_ok and main.hud.explorer_desc_label.text == dsc
+		main.hud.explorer_buttons[cid].mouse_exited.emit()
+	_check("UX N-B: every city describes itself in the line under the buttons (hover / focus)", desc_ok and main.hud.explorer_desc_label.text == main.hud.EXPLORER_DESC_DEFAULT)
+	_check("UX N-B: city buttons in 16 px, order Manhattan, Tokyo, Kyoto, Amsterdam, Arles", main.hud.explorer_buttons["arles"].get_theme_font_size("font_size") == 16 and reg_ids == ["manhattan", "tokyo", "kyoto", "amsterdam", "arles"])
+	_check("code W6: SSR / SSAO only in Forward+ (asked by renderer name)", main.is_forward_plus() == (String(ProjectSettings.get_setting_with_override("rendering/renderer/rendering_method")) == "forward_plus" and RenderingServer.get_rendering_device() != null))
+
 	_check("explorer ids: one list (CityThemes == ExplorerCities)", load("res://scripts/city_themes.gd").EXPLORER_IDS == reg_ids)
 	main.hud.explorer_pressed.emit("tokyo")
 	await get_tree().process_frame
@@ -817,10 +832,26 @@ func _run_checks() -> void:
 	_check("kyoto: pellets lead the way", main.maze_view.pellet_cells.size() > 50)
 	_check("kyoto: the exit is on the minimap", main.hud.minimap_exit_cells.size() == 1)
 	_check("kyoto: the book opens on start (intro)", main.maze_view.scenery_root.intro_running())
-	_check("kyoto: the fold is explained once on start", main.hud.clock_hint.visible and main.hud.clock_hint_label.text.contains("Effekte reduzieren"))
+	_check("kyoto: the fold is explained once on start", main.hud.is_hint_visible() and main.hud.hint_text().contains("Effekte reduzieren"))
+	# UX W-C: the hint box sits centred in the upper third, at most 560 px wide
+	var hb: Control = main.hud.hint_box
+	var vr2: Vector2 = main.hud.get_viewport().get_visible_rect().size
+	var hbr: Rect2 = hb.get_global_rect()
+	_check("UX W-C: hint box centred, <= 560 px wide, upper third (off the pellet trail)", absf(hbr.get_center().x - vr2.x * 0.5) < 2.0 and hbr.size.x <= 560.0 and hbr.end.y < vr2.y / 3.0, str(hbr))
+	# UX N-A: its time stands while the pause is open
+	var left0: float = main.hud._hint_left
+	main.toggle_pause()
+	for k in 10:
+		await get_tree().process_frame
+	_check("UX N-A: the hint waits while paused (hidden, time stands)", not main.hud.is_hint_visible() and is_equal_approx(main.hud._hint_left, left0))
+	_check("QA K4: no 'Regen reduzieren' in the pause of a city without rain", not main.hud.reduce_rain_pause.visible)
+	main.toggle_pause()
+	await get_tree().process_frame
+	_check("UX N-A: ... and comes back after the pause", main.hud.is_hint_visible())
 	_check("kyoto: paper sky, no glow", main.world_env.environment.glow_enabled == false and main.world_env.environment.background_color.is_equal_approx(load("res://scripts/kyoto_style.gd").PAPER))
 	main.set_reduce_fx(true)
 	_check("kyoto: 'Effekte reduzieren' reaches the pop-ups", main.maze_view.scenery_root.fold_enabled() == false)
+	_check("UX K-A: the minimap's exit ring stands still with 'Effekte reduzieren'", not main.hud.exit_glyph_pulsing())
 	main.set_reduce_fx(false)
 	_check("kyoto: pop-ups fold again without it", main.maze_view.scenery_root.fold_enabled() == true)
 	var ky_exit: Vector3 = main.metro_stations[0].position
@@ -841,6 +872,15 @@ func _run_checks() -> void:
 	# cardboard model at golden hour, exit = green tram into a speedrun; the
 	# speedrun gets its own look back (no lights, no HDRI sky) ----
 	_check("amsterdam: the start screen has a button for it", main.hud.explorer_buttons.has("amsterdam") and main.hud.explorer_buttons["amsterdam"].text == "AMSTERDAM")
+	# QA W1: the way hint also comes with "Effekte reduzieren" (Kyoto's fold hint not)
+	main.set_reduce_fx(true)
+	main.hud.explorer_pressed.emit("amsterdam")
+	await get_tree().process_frame
+	_check("QA W1: Amsterdam's way hint also with 'Effekte reduzieren'", main.hud.is_hint_visible() and main.hud.hint_text() == "Folge den blauen Nadeln zur grünen Tram", main.hud.hint_text())
+	main.hud.explorer_pressed.emit("kyoto")
+	await get_tree().process_frame
+	_check("QA W1: Kyoto's fold hint stays off with 'Effekte reduzieren'", not main.hud.is_hint_visible())
+	main.set_reduce_fx(false)
 	main.hud.explorer_pressed.emit("amsterdam")
 	await get_tree().process_frame
 	_check("amsterdam: the AMSTERDAM button starts the Amsterdam explorer city", main.running and main.playing_explorer and main.explorer_city_id == "amsterdam")
@@ -857,13 +897,21 @@ func _run_checks() -> void:
 	main.set_reduce_fx(false)
 	_check("amsterdam: the pulse runs again without it", main.metro_stations[0].pulse_enabled() == true)
 	var am_exit: Vector3 = main.metro_stations[0].position
+	# GD W6: the exit hint comes from ~12 m on, the banner hides it
+	main.player.global_position = Vector3(am_exit.x - 0.5, main.player.global_position.y, am_exit.z - 10.0)
+	main._check_metro_entry()
+	_check("GD W6: the exit hint shows from ~12 m", main.hud.is_hint_visible() and main.hud.hint_text() == "Grüne Tram: einsteigen in den Speedrun", main.hud.hint_text())
 	main.player.global_position = Vector3(am_exit.x - 0.6, main.player.global_position.y, am_exit.z)
+	main._check_metro_entry()
+	_check("GD W6: the banner takes over, the hint goes (no overlap)", main.hud.levelclear_panel.visible and not main.hud.is_hint_visible())
 	var am_tries := 0
 	while main.playing_explorer and am_tries < 400:
 		await get_tree().process_frame
 		am_tries += 1
 	await get_tree().process_frame
 	_check("amsterdam: the tram ends the Amsterdam run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("code H1: back in the speedrun the HDRI sky is dropped (env.sky = null)", main.world_env.environment.sky == null)
+	_check("UX K-A: speedrun minimap - cyan arrow again", not main.hud._explorer_hud)
 	_check("theme reset Amsterdam -> speedrun: no model, no lights, colour background, no SSAO/adjustment", main.maze_view.scenery_root == null
 		and main.world_env.environment.background_mode == Environment.BG_COLOR and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color)
 		and main.world_env.environment.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR and not main.world_env.environment.adjustment_enabled
@@ -896,10 +944,12 @@ func _run_checks() -> void:
 	_check("arles: no ghosts, no traffic, one exit (the green door)", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("arles_exit.gd"))
 	var ar_sr = main.maze_view.scenery_root
 	_check("arles: the painted city is built (houses, objects, halos)", ar_sr != null and main.maze_view.city_theme.id == "arles" and ar_sr.house_box_count > 100 and ar_sr.halo_count > 70)
-	_check("arles: vermilion pellets lead the way", main.maze_view.pellet_cells.size() > 150)
+	_check("arles: vermilion pellets lead the way (way dense, branches dotted)", main.maze_view.pellet_cells.size() > 110)
 	_check("arles: the exit is on the minimap, in mint green", main.hud.minimap_exit_cells.size() == 1 and main.maze_view.city_theme.minimap_exit_color.to_html(false) == "3af5c8")
 	_check("arles: night with glow, colour background, the sky baked at start", main.world_env.environment.glow_enabled and main.world_env.environment.background_mode == Environment.BG_COLOR and ar_sr.sky_state != "")
 	_check("arles: no ghost siren (quiet city)", Sfx.siren_state() == "")
+	_check("arles: the way hint 'Folge den Kugeln zur grünen Tür' on start", main.hud.is_hint_visible() and main.hud.hint_text() == "Folge den Kugeln zur grünen Tür", main.hud.hint_text())
+
 	main.set_reduce_fx(true)
 	_check("arles: 'Effekte reduzieren' stops sky and exit pulse", main.metro_stations[0].pulse_enabled() == false and ar_sr.fx_reduced() and ar_sr.animated_nodes().is_empty())
 	main.set_reduce_fx(false)

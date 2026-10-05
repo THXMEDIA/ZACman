@@ -43,6 +43,9 @@ const FLIP_FRAME_COLOR := Color("4dccf2")
 const FLIP_FRAME_PX := 6.0
 ## UX-W5/Nice: chips keep a fixed minimum width, explanation texts >= 14 px.
 const CHIP_MIN_W := 170.0
+## Explorer city buttons on the start screen (UX N-B; checked at 1280x800
+## and 1152x648).
+const EXPLORER_BTN_FONT := 16
 const TEXT_PX := 14
 ## UX-W6: the Bestenliste always has room for this many rows.
 const LB_ROWS := 10
@@ -158,6 +161,30 @@ var clock_hint_label: Label
 const CLOCK_HINT_TEXT := "Die Uhr startet mit deinem ersten Schritt"
 ## Explorer exits drawn on the minimap (cells), see set_minimap_exits.
 var minimap_exit_cells: Array = []
+## Explorer hints (the fold, the way, the exit): own box in the upper third,
+## centred under the level chip, off the pellet trail (UX W-C). Counts down
+## in _process only while the pause is closed (UX N-A: the game pause is not
+## the tree pause, so a SceneTreeTimer would run on).
+const HINT_MAX_W := 560.0
+const HINT_TOP := 96.0
+var hint_box: PanelContainer
+var hint_label: Label
+var _hint_left := 0.0
+## Minimap (UX K-A, QA K3, code H3): the static layer (background, walls,
+## water) is painted once per maze into a texture; in explorer cities the
+## player arrow is white with a black rim and the exit a ring glyph that
+## pulses at 0.5 Hz (still with "Effekte reduzieren").
+const MINIMAP_PLAYER_EXPLORER := Color("f4f1e8")
+const MINIMAP_EXIT_PULSE_HZ := 0.5
+var _explorer_hud := false
+var _reduce_fx := false
+var _mm_static_tex: ImageTexture = null
+var _mm_static_key := []
+var _mm_t := 0.0
+## Start screen: one line under the city buttons that says what the hovered
+## or focused city is like (UX N-B).
+var explorer_desc_label: Label
+const EXPLORER_DESC_DEFAULT := "Ruhige Städte ohne Uhr und Punkte. Die Kugeln zeigen den Weg zum Ausgang; er führt in einen Speedrun."
 ## UX-K1: thin frame of the Kippbild with "Effekte reduzieren".
 var flip_frame: Control
 var flip_frame_alpha := 0.0
@@ -197,6 +224,7 @@ func _ready() -> void:
 	_build_condition_card()
 	_build_start_intro()
 	_build_clock_hint()
+	_build_hint_box()
 	versus_ui = load("res://scripts/versus_ui.gd").new()
 	add_child(versus_ui)
 	versus_ui.setup(self)
@@ -263,6 +291,7 @@ func _build_hud_bar() -> void:
 	minimap.offset_top = 0
 	minimap.offset_right = -16
 	minimap.offset_bottom = 150
+	minimap.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST # the static layer: one pixel per cell
 	minimap.draw.connect(_draw_minimap)
 	top.add_child(minimap)
 
@@ -346,6 +375,9 @@ func _build_power_timer() -> void:
 
 ## Manhattan has no clock, score, lives or best time: hide those chips.
 func set_explorer_hud(is_explorer: bool) -> void:
+	_explorer_hud = is_explorer
+	if not is_explorer:
+		hide_hint()
 	for chip in timed_chips:
 		chip.visible = not is_explorer
 	if is_explorer:
@@ -477,6 +509,7 @@ func _build_start_panel() -> void:
 	comfort_start_block = _build_comfort_block()
 	reduce_fx_start = comfort_start_block.get_meta("reduce_fx")
 	reduce_rain_start = comfort_start_block.get_meta("reduce_rain")
+	reduce_rain_start.text = "Regen reduzieren (Tokyo)"
 	box.add_child(comfort_start_block)
 
 	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus.  WASD laufen · Maus umschauen · Esc Pause"))
@@ -554,14 +587,20 @@ func _build_start_panel() -> void:
 		var city: Dictionary = ExplorerCitiesReg.get_city(city_id)
 		var b := _make_button(String(city.get("label", city_id.to_upper())))
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if ExplorerCitiesReg.EXPLORER_IDS.size() > 3:
-			b.add_theme_font_size_override("font_size", 15)
+		b.add_theme_font_size_override("font_size", EXPLORER_BTN_FONT)
 		b.pressed.connect(func(): explorer_pressed.emit(city_id))
+		var desc := String(city.get("desc", ""))
+		b.tooltip_text = desc
+		b.mouse_entered.connect(func(): show_explorer_desc(city_id))
+		b.focus_entered.connect(func(): show_explorer_desc(city_id))
+		b.mouse_exited.connect(func(): show_explorer_desc(""))
+		b.focus_exited.connect(func(): show_explorer_desc(""))
 		explorer_row.add_child(b)
 		explorer_buttons[city_id] = b
 	manhattan_btn = explorer_buttons.get("manhattan")
 	tokyo_btn = explorer_buttons.get("tokyo")
-	box.add_child(_subtitle_label("Ruhige Städte ohne Uhr und Punkte. Die Kugeln zeigen den Weg zum Ausgang; er führt in einen Speedrun."))
+	explorer_desc_label = _subtitle_label(EXPLORER_DESC_DEFAULT)
+	box.add_child(explorer_desc_label)
 	manhattan_bonus_label = _subtitle_label("★ Zielzeit in einem Level geschafft")
 	manhattan_bonus_label.add_theme_color_override("font_color", PELLET_COLOR)
 	manhattan_bonus_label.visible = false
@@ -670,12 +709,29 @@ func set_comfort(fov_deg: float, sens: float) -> void:
 	_comfort_syncing = false
 
 
+## Start screen: the description of the hovered / focused city (registry
+## "desc") in the line under the buttons; "" = the general line.
+func show_explorer_desc(city_id: String) -> void:
+	if explorer_desc_label == null:
+		return
+	var d := ""
+	if city_id != "":
+		d = String(ExplorerCitiesReg.get_city(city_id).get("desc", ""))
+	if d == "":
+		# leaving one button while another has the focus keeps that one's line
+		for cid in explorer_buttons:
+			if explorer_buttons[cid].has_focus() and cid != city_id:
+				d = String(ExplorerCitiesReg.get_city(cid).get("desc", ""))
+	explorer_desc_label.text = d if d != "" else EXPLORER_DESC_DEFAULT
+
+
 func set_chaos_mode(on: bool) -> void:
 	if chaos_start != null:
 		chaos_start.set_pressed_no_signal(on)
 
 
 func set_reduce_fx(on: bool) -> void:
+	_reduce_fx = on
 	for cb in [reduce_fx_start, reduce_fx_pause]:
 		if cb != null:
 			cb.set_pressed_no_signal(on)
@@ -685,6 +741,13 @@ func set_reduce_rain(on: bool) -> void:
 	for cb in [reduce_rain_start, reduce_rain_pause]:
 		if cb != null:
 			cb.set_pressed_no_signal(on)
+
+
+## QA K4: "Regen reduzieren" in the pause only where it rains (Tokyo); the
+## start screen names the city.
+func set_rain_option_visible(on: bool) -> void:
+	if reduce_rain_pause != null:
+		reduce_rain_pause.visible = on
 
 
 ## Pause (UX-K2): WEITER / NEUSTART / HAUPTMENÜ — HAUPTMENÜ asks once in a
@@ -1193,15 +1256,87 @@ func show_clock_hint(on: bool) -> void:
 	clock_hint.visible = on
 
 
-## A short hint in the clock-hint box (explorer cities: the fold, the exit);
-## hides itself after `seconds` unless another text replaced it meanwhile.
+## The explorer hint box: anchored at the top centre, growing to both sides
+## (really centred at any width), at most HINT_MAX_W wide, wrapping.
+func _build_hint_box() -> void:
+	hint_box = PanelContainer.new()
+	hint_box.name = "HintBox"
+	hint_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	hint_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	hint_box.grow_vertical = Control.GROW_DIRECTION_END
+	hint_box.offset_top = HINT_TOP
+	hint_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint_box.visible = false
+	var sb := _panel_style()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.72)
+	sb.border_color = Color(RABBIT_WHITE, 0.3)
+	sb.set_content_margin_all(10)
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	hint_box.add_theme_stylebox_override("panel", sb)
+	add_child(hint_box)
+	hint_label = Label.new()
+	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint_label.add_theme_font_size_override("font_size", 16)
+	hint_label.add_theme_color_override("font_color", RABBIT_WHITE)
+	hint_box.add_child(hint_label)
+
+
+## A short hint (explorer cities: the way, the fold, the exit); hides itself
+## after `seconds` of unpaused play unless another text replaced it. The text
+## is wrapped here (greedy, by the font's widths) to at most HINT_MAX_W, so the
+## box always has its exact size and stays centred.
 func show_hint(text: String, seconds: float) -> void:
-	clock_hint_label.text = text
-	clock_hint.visible = true
-	get_tree().create_timer(seconds).timeout.connect(func():
-		if is_instance_valid(clock_hint_label) and clock_hint_label.text == text:
-			clock_hint.visible = false
-			clock_hint_label.text = CLOCK_HINT_TEXT)
+	var font := hint_label.get_theme_font("font")
+	var fs := 16
+	var inner := HINT_MAX_W - 32.0
+	var lines: Array = []
+	var line := ""
+	for word in text.split(" ", false):
+		var trial := word if line == "" else line + " " + word
+		if line != "" and font != null and font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > inner:
+			lines.append(line)
+			line = word
+		else:
+			line = trial
+	if line != "":
+		lines.append(line)
+	var w := 0.0
+	for l in lines:
+		w = maxf(w, font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x if font != null else 400.0)
+	hint_label.text = "\n".join(lines)
+	hint_label.set_meta("hint", text)
+	hint_box.offset_left = -(w + 34.0) * 0.5
+	hint_box.offset_right = (w + 34.0) * 0.5
+	hint_box.offset_bottom = hint_box.offset_top
+	hint_box.reset_size()
+	_hint_left = seconds
+	hint_box.visible = pause_panel == null or not pause_panel.visible
+
+
+func hide_hint() -> void:
+	_hint_left = 0.0
+	if hint_box != null:
+		hint_box.visible = false
+
+
+func is_hint_visible() -> bool:
+	return hint_box != null and hint_box.visible
+
+
+func hint_text() -> String:
+	return String(hint_label.get_meta("hint", "")) if hint_box != null and _hint_left > 0.0 else ""
+
+
+func _process(delta: float) -> void:
+	var paused_now := pause_panel != null and pause_panel.visible
+	if _hint_left > 0.0:
+		if not paused_now:
+			_hint_left -= delta
+		hint_box.visible = _hint_left > 0.0 and not paused_now
+	if not paused_now:
+		_mm_t += delta
+
 
 
 func is_clock_hint_visible() -> bool:
@@ -1568,6 +1703,34 @@ func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool, maze
 	minimap.queue_redraw()
 
 
+## The static layer of the minimap (background, walls, water) as a texture,
+## one pixel per cell, painted once per maze and theme (code H3); drawn
+## scaled with nearest filtering.
+func minimap_static_texture() -> ImageTexture:
+	if minimap_maze == null:
+		return null
+	var ct = minimap_maze_view.city_theme if minimap_maze_view != null and minimap_maze_view.city_theme != null else null
+	var key := [minimap_maze.get_instance_id(), ct.id if ct != null else "", ct.minimap_wall_color if ct != null else Color()]
+	if _mm_static_tex != null and key == _mm_static_key:
+		return _mm_static_tex
+	var bg_col: Color = ct.minimap_bg_color if ct != null else Color(0.008, 0.012, 0.039, 0.4)
+	var wall_col: Color = ct.minimap_wall_color if ct != null else Color(0.118, 0.227, 0.478)
+	var water_script = ct.minimap_water_script if ct != null else null
+	var water_col: Color = ct.minimap_water_color if ct != null else Color(0, 0, 0, 0)
+	var img := Image.create(minimap_maze.cols, minimap_maze.rows, false, Image.FORMAT_RGBA8)
+	for r in minimap_maze.rows:
+		for c in minimap_maze.cols:
+			var col := bg_col
+			if minimap_maze.grid[r][c] == 1:
+				col = wall_col
+				if water_script != null and water_script.is_water(r, c):
+					col = water_col
+			img.set_pixel(c, r, col)
+	_mm_static_tex = ImageTexture.create_from_image(img)
+	_mm_static_key = key
+	return _mm_static_tex
+
+
 func _draw_minimap() -> void:
 	if minimap_maze == null:
 		return
@@ -1577,23 +1740,12 @@ func _draw_minimap() -> void:
 	# Colors follow the level's CityTheme (Speedrun: turquoise walls, never
 	# blue; cream pickups); the defaults are the original minimap colors.
 	var ct = minimap_maze_view.city_theme if minimap_maze_view != null and minimap_maze_view.city_theme != null else null
-	var bg_col: Color = ct.minimap_bg_color if ct != null else Color(0.008, 0.012, 0.039, 0.4)
-	var wall_col: Color = ct.minimap_wall_color if ct != null else Color(0.118, 0.227, 0.478)
 	var pellet_col: Color = ct.pellet_color if ct != null else Color(1.0, 0.82, 0.4)
 	var power_col: Color = ct.power_color if ct != null else Color(1.0, 0.365, 0.635)
 	var frightened_col: Color = ct.minimap_frightened_color if ct != null else Color(0.35, 0.82, 1.0)
 	var pellet_rim: Color = ct.minimap_pellet_outline if ct != null else Color(0, 0, 0, 0)
-	minimap.draw_rect(Rect2(Vector2.ZERO, size), bg_col)
-	# Amsterdam: canals in their own colour (CityTheme.minimap_water_script).
-	var water_script = ct.minimap_water_script if ct != null else null
-	var water_col: Color = ct.minimap_water_color if ct != null else Color(0, 0, 0, 0)
-	for r in minimap_maze.rows:
-		for c in minimap_maze.cols:
-			if minimap_maze.grid[r][c] == 1:
-				var col := wall_col
-				if water_script != null and water_script.is_water(r, c):
-					col = water_col
-				minimap.draw_rect(Rect2(c * sx, r * sy, sx + 0.6, sy + 0.6), col)
+	# static layer: background, walls, canals (Amsterdam) / quay (Arles)
+	minimap.draw_texture_rect(minimap_static_texture(), Rect2(Vector2.ZERO, size), false)
 	if minimap_maze_view != null:
 		for i in minimap_maze_view.pellet_cells.size():
 			if not minimap_maze_view.pellet_alive[i]:
@@ -1615,22 +1767,18 @@ func _draw_minimap() -> void:
 			_draw_rabbit_ears(Vector2((rc.y + 0.5) * sx, (rc.x + 0.5) * sy))
 	# Review findings GD-K4/UX-K2/Code-W11: the player's real facing
 	# direction is (-sin(yaw), -cos(yaw)) (see player_controller.gd's
-	# _physics_process), but the arrow was rotated by `p.rotated(yaw)` —
-	# the wrong sign, so turning left visibly swung the arrow right (north/
-	# south happened to still look right; east/west were swapped). Fixed to
-	# `p.rotated(-yaw)`. Player and enemy markers were also missing the
-	# +0.5-cell offset the pellets/power-ups above already use, putting
-	# them half a cell off from where they actually are.
+	# _physics_process), so the arrow is rotated by -yaw; player and enemy
+	# markers sit on the cell centre (+0.5) like the pellets.
 	for e in minimap_enemies:
 		var col: Color = frightened_col if minimap_frightened else e.palette_color
 		minimap.draw_circle(Vector2((e.position.x / 2.0 + 0.5) * sx, (e.position.z / 2.0 + 0.5) * sy), 2.4, col)
-	# Explorer exits: a green square with a dark rim (UX K1, all cities).
+	# Explorer exits (UX K-A, QA K3): told by shape, not only by colour - a
+	# ring glyph (target), larger than the player arrow, with a dark rim; a
+	# 0.5 Hz halo ring unless effects are reduced.
 	var exit_col: Color = ct.minimap_exit_color if ct != null else Color(0.22, 1.0, 0.42)
 	if exit_col.a > 0.0:
 		for xc in minimap_exit_cells:
-			var ec := Vector2((xc.y + 0.5) * sx, (xc.x + 0.5) * sy)
-			minimap.draw_rect(Rect2(ec - Vector2(4.0, 4.0), Vector2(8.0, 8.0)), Color(0, 0, 0))
-			minimap.draw_rect(Rect2(ec - Vector2(3.0, 3.0), Vector2(6.0, 6.0)), exit_col)
+			_draw_exit_glyph(Vector2((xc.y + 0.5) * sx, (xc.x + 0.5) * sy), exit_col)
 	# Versus: the opponent's position in their own copy of the maze (E17).
 	if minimap_opponent_cell.x >= 0:
 		var oc := Vector2((minimap_opponent_cell.y + 0.5) * sx, (minimap_opponent_cell.x + 0.5) * sy)
@@ -1638,7 +1786,33 @@ func _draw_minimap() -> void:
 		minimap.draw_circle(oc, 3.2, Color("ff9f1c")) # VersusUI.OPP_COLOR, own orange (QA N2)
 	if minimap_player != null:
 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
-		minimap.draw_colored_polygon(_minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw), ACCENT)
+		var arrow := _minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw)
+		if _explorer_hud:
+			# explorer cities: white arrow, 1.5 px black rim (cyan stays for text and frames)
+			for rim in Geometry2D.offset_polygon(arrow, 1.5, Geometry2D.JOIN_MITER):
+				minimap.draw_colored_polygon(rim, Color(0, 0, 0))
+			minimap.draw_colored_polygon(arrow, MINIMAP_PLAYER_EXPLORER)
+		else:
+			minimap.draw_colored_polygon(arrow, ACCENT)
+
+
+## The exit marker: a dark-rimmed ring (outer radius EXIT_GLYPH_R, ~10 px
+## across) with a dot in the middle, plus a slow halo ring (0.5 Hz).
+const EXIT_GLYPH_R := 5.5
+
+
+func _draw_exit_glyph(p: Vector2, col: Color) -> void:
+	if exit_glyph_pulsing():
+		var ph := fmod(_mm_t * MINIMAP_EXIT_PULSE_HZ, 1.0)
+		minimap.draw_arc(p, EXIT_GLYPH_R + 1.0 + ph * 4.0, 0.0, TAU, 24, Color(col, 0.7 * (1.0 - ph)), 1.4, true)
+	minimap.draw_circle(p, EXIT_GLYPH_R + 1.5, Color(0, 0, 0))
+	minimap.draw_arc(p, EXIT_GLYPH_R - 0.9, 0.0, TAU, 24, col, 2.2, true)
+	minimap.draw_circle(p, 1.6, col)
+
+
+## Whether the minimap's exit ring pulses (not with "Effekte reduzieren").
+func exit_glyph_pulsing() -> bool:
+	return not _reduce_fx
 
 
 ## The minimap's rabbit marker: head plus two ears, ~9 px tall.

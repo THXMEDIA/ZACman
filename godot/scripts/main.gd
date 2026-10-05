@@ -374,14 +374,17 @@ func _apply_theme_environment(theme_id: String) -> void:
 	for i in ct.env_glow_levels.size():
 		env.set_glow_level(i, ct.env_glow_levels[i])
 	# SSR exists only in Forward+; asking for it elsewhere just logs an error.
-	env.ssr_enabled = ct.env_ssr_enabled and RenderingServer.get_rendering_device() != null
+	# Mobile also has a RenderingDevice but neither SSR nor SSAO (code W6), so
+	# the renderer is asked by name.
+	var fplus := is_forward_plus()
+	env.ssr_enabled = ct.env_ssr_enabled and fplus
 	env.ssr_max_steps = ct.env_ssr_max_steps
 	env.ssr_fade_in = ct.env_ssr_fade_in
 	env.ssr_fade_out = ct.env_ssr_fade_out
 	env.ssr_depth_tolerance = ct.env_ssr_depth_tolerance
 	env.volumetric_fog_enabled = ct.env_volumetric_fog_enabled
 	# SSAO exists only in Forward+ (like SSR).
-	env.ssao_enabled = ct.env_ssao_enabled and RenderingServer.get_rendering_device() != null
+	env.ssao_enabled = ct.env_ssao_enabled and fplus
 	env.tonemap_mode = ct.env_tonemap_mode
 	env.tonemap_exposure = ct.env_tonemap_exposure
 	env.tonemap_white = ct.env_tonemap_white
@@ -397,6 +400,9 @@ func _apply_theme_environment(theme_id: String) -> void:
 		env.ambient_light_sky_contribution = ct.env_ambient_sky_contribution
 		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	else:
+		# code H1: drop the HDRI sky too (it holds the panorama and radiance
+		# maps), not only the background mode
+		env.sky = null
 		env.background_mode = Environment.BG_COLOR
 		env.background_energy_multiplier = 1.0
 		env.sky_rotation = Vector3.ZERO
@@ -419,6 +425,12 @@ func _apply_theme_environment(theme_id: String) -> void:
 	_env_base_fog_density = ct.env_fog_density
 	_env_base_ambient = ct.env_ambient_color
 	_env_base_ambient_energy = ct.env_ambient_energy
+
+
+## Whether the running renderer is Forward+ (SSR, SSAO, volumetric fog);
+## Mobile and Compatibility are not (code W6).
+static func is_forward_plus() -> bool:
+	return String(ProjectSettings.get_setting_with_override("rendering/renderer/rendering_method")) == "forward_plus" and RenderingServer.get_rendering_device() != null
 
 
 func _build_player() -> void:
@@ -477,6 +489,8 @@ func _build_hud() -> void:
 ## the caller: begin_game() draws the first, next_level() the following.
 func start_level(level: Dictionary) -> void:
 	hud.set_minimap_exits([])
+	hud.set_rain_option_visible(false) # no rain in the speedrun (QA K4)
+
 	_end_condition(false) # a condition never survives into the next level/attempt
 	current_level = level
 	level_id = level.id
@@ -638,6 +652,7 @@ func start_explorer_level(city_id: String) -> void:
 	if sr != null and sr.has_method("start_intro") and not reduce_fx:
 		sr.start_intro() # Kyoto: the book opens, near to far (GD W1)
 	hud.set_minimap_exits(metro_cells)
+	hud.set_rain_option_visible(city.traffic == "tokyo") # QA K4: only where it rains
 	_exit_hint_shown = false
 
 	hud.set_level(city.label)
@@ -902,6 +917,11 @@ func _check_explorer_obstacles() -> void:
 
 ## Proximity check: stepping close enough to a metro station's sign is the
 ## exit: it starts a speedrun on a random level of the pool (see _enter_metro).
+## The exit hint comes early enough to be read (GD W6): from EXIT_HINT_DIST,
+## at walking speed that is more than 2 s before the trigger.
+const EXIT_HINT_DIST := 12.0
+
+
 func _check_metro_entry() -> void:
 	if metro_stations.is_empty():
 		return
@@ -913,13 +933,14 @@ func _check_metro_entry() -> void:
 		if d < radius:
 			_enter_metro()
 			return
-		if hint != "" and not _exit_hint_shown and d < 4.5:
+		if hint != "" and not _exit_hint_shown and d < EXIT_HINT_DIST:
 			_exit_hint_shown = true
 			hud.show_hint(hint, 3.0)
 
 
 func _enter_metro() -> void:
 	running = false
+	hud.hide_hint() # the banner takes over (no overlap)
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
 	var city := _explorer_city()
@@ -972,11 +993,15 @@ func begin_explorer_game(city_id: String = "manhattan") -> void:
 	# No ghost siren where a city asks for quiet (Kyoto, GD W4).
 	Sfx.set_siren(bool(_explorer_city().get("siren", true)), false)
 	Sfx.play_explorer_music()
-	# A city may explain itself once on start (Kyoto: the fold, and where to
-	# turn it off) — skipped when effects are already reduced.
+	# A city may explain itself once on start. Kyoto's hint explains the fold
+	# (off with reduced effects anyway), so it is skipped then; a hint about
+	# the way (Amsterdam, Arles: intro_hint_always) always comes (QA W1).
 	var intro_hint: String = _explorer_city().get("intro_hint", "")
-	if intro_hint != "" and not reduce_fx:
+	if intro_hint != "" and (not reduce_fx or bool(_explorer_city().get("intro_hint_always", false))):
 		hud.show_hint(intro_hint, 5.0)
+	else:
+		hud.hide_hint()
+
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -1317,9 +1342,11 @@ func go_to_main_menu() -> void:
 	player.input_enabled = false
 	hud.show_start_intro(false)
 	hud.show_clock_hint(false)
+	hud.hide_hint()
 	hud.show_levelclear(false)
 	Sfx.stop_all()
 	playing_explorer = false
+
 	# QA W1: the start screen shows no frozen city behind the panel (and does
 	# not keep rendering it): city life, ghosts and the maze go away; the
 	# next start_level/start_explorer_level rebuilds and shows the maze.
