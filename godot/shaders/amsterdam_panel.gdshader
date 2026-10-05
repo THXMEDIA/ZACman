@@ -47,6 +47,10 @@ void fragment() {
 	bool edge = abs(dot(ln, thin)) < 0.5 && min(bs.x, min(bs.y, bs.z)) > 0.2;
 	vec3 c; vec2 nxy; float r;
 	vec2 off = vec2(h11(seed) * 97.0, h11(seed * 3.0) * 53.0);
+	// Texture reads in these branches use implicit derivatives on purpose
+	// (code W5): solid / edge / tape depend on the instance (flat custom
+	// data) and the box face (constant normal), so all pixels of a 2x2 quad
+	// - which never span two triangles - take the same branch.
 	if (solid) {
 		// the dark room behind a window: unlit cardboard in deep shadow
 		kraft_face(q + off, 0.0, c, nxy, r);
@@ -95,7 +99,10 @@ void fragment() {
 	}
 	float paint = cu.z;
 	if (paint > 0.25 && !solid) {
-		vec3 pc = paint > 0.75 ? exit_paint : white_paint;
+		// the exit green is painted a little darker and glows a little
+		// (exit_emit), so the low warm sun does not bleach it (QA K2)
+		vec3 pc = paint > 0.75 ? exit_paint * 0.72 : white_paint;
+
 		float brush = vn(q * vec2(0.4, 2.2) + seed) * 0.6 + vn(q * vec2(1.8, 7.0)) * 0.4;
 		float m = smoothstep(0.08, 0.2, brush + 0.5);
 		c = mix(c, pc * (0.92 + 0.1 * brush) * (0.95 + 0.1 * dot(c, vec3(0.6))), m * (edge ? 0.55 : 1.0));

@@ -36,6 +36,11 @@ const EXIT := Color("00b894") # exclusive: exit tram and flag
 const FOG := Color("e9c79c") # warm evening haze
 ## Colour left in the blurred room behind the model (prototype "abend": 0.6).
 const SKY_SATURATION := 0.35
+## Brightest the blurred room may get (luminance before the background
+## energy): the café's windows were a glaring patch that competed with the
+## exit (QA K1); above SKY_KNEE the room is compressed softly up to SKY_MAX.
+const SKY_KNEE := 0.45
+const SKY_MAX := 0.7
 const MINIMAP_WATER := Color("4b5559") # slate canals on the minimap (not blue)
 
 ## Lights (golden hour, Kelvin as colour).
@@ -80,20 +85,31 @@ static var _cache := {}
 static var _sky: Sky = null
 
 
+## Whether loading the raw scan file is allowed when the import is missing:
+## only outside exported builds (code W4). An export carries the imported
+## textures only; there the raw path would not exist anyway and only print
+## errors.
+static func raw_fallback_allowed() -> bool:
+	return not OS.has_feature("template")
+
+
 ## A texture from the scan set: the imported resource when the project was
-## imported (editor, export), otherwise the raw file (fresh checkout, tests
-## run before the first import) — same idea as TokyoScenery.load_sign_font.
+## imported (editor, export), otherwise - only outside exported builds - the
+## raw file (fresh checkout, tests run before the first import), same idea as
+## TokyoScenery.load_sign_font. A missing texture warns once (null is cached).
 static func tex(path: String) -> Texture2D:
 	if _cache.has(path):
 		return _cache[path]
 	var t: Texture2D = null
 	if imported(path):
 		t = load(path) as Texture2D
-	if t == null:
+	if t == null and raw_fallback_allowed():
 		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
 		if img != null and not img.is_empty():
 			img.generate_mipmaps()
 			t = ImageTexture.create_from_image(img)
+	if t == null:
+		push_warning("AmsterdamStyle: texture %s missing (not imported)" % path)
 	_cache[path] = t
 	return t
 
@@ -104,9 +120,12 @@ static func tex_image(path: String) -> Image:
 		var t = load(path)
 		if t is Texture2D:
 			img = t.get_image()
-	if img == null or img.is_empty():
+	if (img == null or img.is_empty()) and raw_fallback_allowed():
 		img = Image.load_from_file(ProjectSettings.globalize_path(path))
-	if img != null and img.is_compressed():
+	if img == null or img.is_empty():
+		push_warning("AmsterdamStyle: image %s missing (not imported)" % path)
+		return null
+	if img.is_compressed():
 		img.decompress()
 	return img
 
@@ -158,6 +177,14 @@ static func sky() -> Sky:
 				var k := 1.0 / (1.0 + maxf(lum - 2.5, 0.0) / 2.5)
 				c = Color(c.r * k, c.g * k, c.b * k)
 				lum *= k
+				# QA K1: no glaring patch in the room - a soft knee above
+				# SKY_KNEE that never exceeds SKY_MAX
+				if lum > SKY_KNEE:
+					var span := SKY_MAX - SKY_KNEE
+					var l2 := SKY_KNEE + span * (1.0 - exp(-(lum - SKY_KNEE) / span))
+					c = Color(c.r * l2 / lum, c.g * l2 / lum, c.b * l2 / lum)
+					lum = l2
+
 				# desaturate to 35 % and tint warm (no blue left)
 				var g := Color(lum * 1.08, lum * 0.98, lum * 0.82)
 				c = g.lerp(c, SKY_SATURATION)

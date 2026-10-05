@@ -5,7 +5,8 @@
 #     --path godot --resolution 1280x720 --fixed-fps 60 --script res://qa_amsterdam_shots.gd
 #   rm godot/qa_amsterdam_shots.gd
 # ONLY=a6,a8 rendert nur diese Bilder (a1 und a2 immer). Rendern unter llvmpipe: ~1 min pro Bild.
-#   a1_start.png            Startscreen mit Explorer-Auswahl (vier Städte)
+#   a1_start.png            Startscreen mit Explorer-Auswahl (fünf Städte)
+#   a1b_start_fokus.png     Startscreen, Fokus auf AMSTERDAM: Beschreibungszeile wechselt
 #   a2_spawn.png            erster Blick nach dem Start (Damrak-Kai nach Westen, Westerkerk am Ende)
 #   a3_kai_gracht.png       Kaistraße an der Keizersgracht nach Osten (Kaimauer, Bäume, Brücken)
 #   a4_magere_brug.png      Prinsengracht-Südkai nach Osten auf die Magere Brug
@@ -15,9 +16,12 @@
 #   a8_totale.png           Totale über dem Tisch (eigene QA-Kamera): das Modell auf der Schneidematte
 #   a9_reduziert.png        wie a3 mit „Effekte reduzieren“
 #   a10_kante.png           Kaimauer aus der Nähe (Wellen-Schnittkante)
-#   a11_becher.png          von der Magere Brug die Amstel hinauf: Becher hinter der Modellkante
-#   a12_minimap.png         Spawn mit Minimap (Wasser, Kugeln, Ausgang)
+#   a11_raum.png            von der Magere Brug die Amstel hinauf: der Raum hinter dem Modell (ohne Blendfleck)
+#   a12_minimap.png         Spawn mit Minimap (Wasser, Kugeln, Ausgang-Ring, weißer Pfeil)
 #   a13_suedkai.png         über die Keizersgracht auf die Nordfassaden (Gegenlicht)
+#   a14_westermarkt_becher.png  Westermarkt nach Süden: Straße endet an der Schnittkante, Becher mit Bleistift
+#   a15_tram_tuer.png       Bahnsteig: offene Tram-Tür mit Innenlicht und grünem Bodenfleck
+#   a16_hinweis_reduziert.png   Start mit „Effekte reduzieren“: Ziel-Hinweis oben mittig
 extends SceneTree
 
 var main: Node
@@ -60,6 +64,10 @@ func _plan() -> void:
 	var N := 0.0
 	var only := OS.get_environment("ONLY")
 	_steps.append({"wait": 40, "do": func(): _shot("a1_start.png")})
+	_steps.append({"wait": 2, "do": func(): main.hud.explorer_buttons["amsterdam"].grab_focus()})
+	_steps.append({"wait": 6, "do": func():
+		_shot("a1b_start_fokus.png")
+		main.hud.explorer_buttons["amsterdam"].release_focus()})
 	_steps.append({"wait": 5, "do": func():
 		main.seed_randomness(4242)
 		main.begin_explorer_game("amsterdam")})
@@ -72,7 +80,9 @@ func _plan() -> void:
 		["a7_ausgang.png", 86.0, 82.0, N - 0.12, 0.08, 0.0],
 		["a10_kante.png", 47.0, 42.35, -1.92, -0.5, 0.0],
 		["a13_suedkai.png", 40.0, 42.0, PI, 0.1, 0.0],
-		["a11_becher.png", 76.0, 84.0, N, 0.04, 0.0],
+		["a11_raum.png", 76.0, 84.0, N, 0.04, 0.0],
+		["a14_westermarkt_becher.png", 16.0, 66.0, PI, 0.12, 0.0],
+		["a15_tram_tuer.png", 84.6, 68.6, -0.85, -0.08, 0.0],
 	]
 	for p in poses:
 		if not _wanted(only, p[0]):
@@ -106,7 +116,15 @@ func _plan() -> void:
 			var s: Vector2i = main.maze.start_cell
 			_pose(s.y * 2.0, s.x * 2.0, W, 0.0)})
 		_steps.append({"wait": 24, "do": func(): _shot("a12_minimap.png")})
+	if _wanted(only, "a16_hinweis_reduziert.png"):
+		_steps.append({"wait": 2, "do": func():
+			main.set_reduce_fx(true)
+			main.begin_explorer_game("amsterdam")})
+		_steps.append({"wait": 30, "do": func():
+			_shot("a16_hinweis_reduziert.png")
+			main.set_reduce_fx(false)})
 	_steps.append({"wait": 2, "do": func(): quit()})
+
 
 
 ## ONLY=a6,a8 renders just those (a1 and a2 always).

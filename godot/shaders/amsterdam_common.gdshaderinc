@@ -22,7 +22,24 @@ float vn(vec2 p) {
 }
 
 // Kraft colour, roughness and a tangent-space normal offset at a point of a
-// flat face (p in metres, any 2D parametrisation of the face).
+// flat face (p in metres, any 2D parametrisation of the face), with explicit
+// screen derivatives of p (dpx, dpy): safe after a discard or inside a
+// branch that differs between neighbouring pixels (code W5).
+void kraft_face_grad(vec2 p, vec2 dpx, vec2 dpy, float far, out vec3 c, out vec2 nxy, out float r) {
+	vec2 pa = p / foto_m; vec2 ax = dpx / foto_m; vec2 ay = dpy / foto_m;
+	vec2 pb = p / foto_detail_m + vec2(0.37, 0.11); vec2 bx = dpx / foto_detail_m; vec2 by = dpy / foto_detail_m;
+	vec3 a = textureGrad(foto_alb, pa, ax, ay).rgb;
+	vec3 b = textureGrad(foto_alb, pb, bx, by).rgb;
+	vec3 det = (a / foto_mean) * mix(vec3(1.0), b / foto_mean, 0.35 * far);
+	c = kraft * det;
+	vec3 na = textureGrad(foto_nrm, pa, ax, ay).rgb * 2.0 - 1.0;
+	vec3 nb = textureGrad(foto_nrm, pb, bx, by).rgb * 2.0 - 1.0;
+	nxy = (na.xy * 0.6 + nb.xy * 0.5) * far;
+	r = mix(0.86, textureGrad(foto_rgh, pa, ax, ay).r, 0.5);
+}
+
+// The same with implicit derivatives - only where the caller's branch is
+// uniform per triangle (panel: per instance and face; cut-outs; flutes).
 void kraft_face(vec2 p, float far, out vec3 c, out vec2 nxy, out float r) {
 	vec3 a = texture(foto_alb, p / foto_m).rgb;
 	vec3 b = texture(foto_alb, p / foto_detail_m + vec2(0.37, 0.11)).rgb;

@@ -7,10 +7,18 @@ extends Node3D
 ## stations (Main: setup(pos), update(delta, now), distance check) plus
 ## set_reduce_fx: the 0.5 Hz pulse of the inner light and the flag stops with
 ## "Effekte reduzieren". The exit cell is the platform; the tram stands one
-## cell further east, behind the kerb (the collision edge).
+## cell further east, behind the kerb (the collision edge). Its open double
+## door (1.2 m) faces the platform right where the last pin stands, the inner
+## light shines out of it onto a bright green spot on the platform, and the
+## trigger lies centred in front of the door (UX W-B).
 
 const Style := preload("res://scripts/amsterdam_style.gd")
 const Scenery := preload("res://scripts/amsterdam_scenery.gd")
+const SPOT_SHADER := preload("res://shaders/amsterdam_spot.gdshader")
+## Emission of the green paint (share of #00B894), so the tram stays green
+## in the low sun (QA K2).
+const EXIT_EMIT := 0.32
+
 
 const PULSE_HZ := 0.5
 ## Tram centre relative to the exit cell (local x east), length along z.
@@ -21,15 +29,23 @@ const TRAM_H := 3.2
 ## The pin with the flag: on the tram block, behind the tram, 24 m high.
 const FLAG_POS := Vector3(5.6, 0.0, -4.0)
 const FLAG_TOP := 24.0
+## The open double door in the tram's platform side (local z centre, width).
+const DOOR_Z := 0.0
+const DOOR_W := 1.2
+const DOOR_H := 2.3
 
 var tram: MultiMeshInstance3D
 var glow: MeshInstance3D
 var light: OmniLight3D
 var flag: MeshInstance3D
 var pin_head: MeshInstance3D
+var door_light: MeshInstance3D
+var floor_spot: MeshInstance3D
 var panel_material: ShaderMaterial
 var _glow_mat: StandardMaterial3D
 var _flag_mat: StandardMaterial3D
+var _door_mat: StandardMaterial3D
+var _spot_mat: ShaderMaterial
 var _t := 0.0
 var _reduce_fx := false
 
@@ -53,11 +69,31 @@ static func panels() -> Array:
 	var W := TRAM_W
 	var H := TRAM_H
 	var t := Style.T * 0.5
+	var dz0 := DOOR_Z - DOOR_W * 0.5
+	var dz1 := DOOR_Z + DOOR_W * 0.5
 	for s in [-1.0, 1.0]:
-		K.board(c + Vector3(s * W * 0.5, 0.75, 0), Vector3(t, 1.1, L), 0.6, Basis(), G)
+		if s < 0.0:
+			# platform side: the lower band is cut for the open door
+			var la := dz0 + L * 0.5
+			var lb := L * 0.5 - dz1
+			K.board(c + Vector3(s * W * 0.5, 0.75, -L * 0.5 + la * 0.5), Vector3(t, 1.1, la), 0.6, Basis(), G)
+			K.board(c + Vector3(s * W * 0.5, 0.75, dz1 + lb * 0.5), Vector3(t, 1.1, lb), 0.6, Basis(), G)
+			# door posts (the upper band is the lintel)
+			for z in [dz0 - 0.08, dz1 + 0.08]:
+				K.board(c + Vector3(s * W * 0.5, (0.2 + H - 0.7) * 0.5, z), Vector3(t, H - 0.9, 0.16), 0.6, Basis(), G)
+			# the two door leaves, folded open into the car
+			for side in [-1.0, 1.0]:
+				var hz: float = DOOR_Z + side * DOOR_W * 0.5
+				K.board(c + Vector3(s * W * 0.5 + 0.28, 0.2 + DOOR_H * 0.5, hz - side * 0.1), Vector3(0.06, DOOR_H, 0.6), 0.6, Basis(Vector3.UP, side * 1.15), G)
+			# the step into the car
+			K.board(c + Vector3(s * W * 0.5 - 0.1, 0.12, DOOR_Z), Vector3(0.3, 0.06, DOOR_W), 0.6, Basis(), G)
+		else:
+			K.board(c + Vector3(s * W * 0.5, 0.75, 0), Vector3(t, 1.1, L), 0.6, Basis(), G)
 		K.board(c + Vector3(s * W * 0.5, H - 0.35, 0), Vector3(t, 0.7, L), 0.6, Basis(), G)
 		for k in 6:
 			K.board(c + Vector3(s * W * 0.5, 1.8, -L * 0.5 + 0.2 + k * (L - 0.4) / 5.0), Vector3(t, 1.0, 0.3), 0.6, Basis(), G)
+	# the floor of the car (seen through the open door)
+	K.board(c + Vector3(0, 0.22, 0), Vector3(W - 0.1, 0.06, L - 0.2), 0.6)
 	for s in [-1.0, 1.0]:
 		K.board(c + Vector3(0, 0.85, s * L * 0.5), Vector3(W, 1.3, t), 0.6, Basis(), G)
 		K.board(c + Vector3(0, H - 0.3, s * L * 0.5), Vector3(W, 0.6, t), 0.6, Basis(), G)
@@ -104,13 +140,38 @@ func setup(cell_world_pos: Vector3) -> void:
 	glow.rotation.y = PI * 0.5
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(glow)
+	# the light pouring out of the open door: a bright sheet just inside it
+	_door_mat = _unshaded(Style.EXIT.lerp(Color.WHITE, 0.7))
+	door_light = MeshInstance3D.new()
+	door_light.name = "DoorLight"
+	var dq := QuadMesh.new()
+	dq.size = Vector2(DOOR_W + 0.2, DOOR_H)
+	door_light.mesh = dq
+	door_light.material_override = _door_mat
+	door_light.position = Vector3(TRAM_X - TRAM_W * 0.5 + 0.75, 0.2 + DOOR_H * 0.5, DOOR_Z)
+	door_light.rotation.y = PI * 0.5
+	door_light.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(door_light)
+	# a bright green spot on the platform in front of the door (painted, soft)
+	_spot_mat = ShaderMaterial.new()
+	_spot_mat.shader = SPOT_SHADER
+	_spot_mat.set_shader_parameter("col", Style.EXIT.lerp(Color.WHITE, 0.35))
+	floor_spot = MeshInstance3D.new()
+	floor_spot.name = "FloorSpot"
+	var fq := PlaneMesh.new()
+	fq.size = Vector2(2.6, 2.4)
+	floor_spot.mesh = fq
+	floor_spot.material_override = _spot_mat
+	floor_spot.position = Vector3(TRAM_X - TRAM_W * 0.5 - 1.3, 0.015, DOOR_Z)
+	floor_spot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(floor_spot)
 	light = OmniLight3D.new()
 	light.name = "TramLight"
 	light.light_color = Style.EXIT.lerp(Color.WHITE, 0.25)
 	light.light_energy = 2.2
 	light.omni_range = 8.0
 	light.shadow_enabled = false
-	light.position = Vector3(TRAM_X - 0.6, 1.9, 0)
+	light.position = Vector3(TRAM_X - 0.6, 1.9, DOOR_Z)
 	add_child(light)
 
 	# the flag: a green paper pennant near the top of the pin, never fogged
@@ -170,4 +231,10 @@ func _apply(p: float) -> void:
 	f.a = 1.0
 	_flag_mat.albedo_color = f
 	light.light_energy = 2.2 * p
-	panel_material.set_shader_parameter("exit_emit", 0.12 * p)
+	var dg := Style.EXIT.lerp(Color.WHITE, 0.7) * p
+	dg.a = 1.0
+	_door_mat.albedo_color = dg
+	_spot_mat.set_shader_parameter("strength", 0.85 * p)
+	# QA K2: the paint keeps its green in the evening sun (the panel shader
+	# darkens the exit albedo and adds this much of it as emission)
+	panel_material.set_shader_parameter("exit_emit", EXIT_EMIT * p)

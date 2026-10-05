@@ -38,12 +38,18 @@ bool is_house(float k) { return k > 0.62 && k < 0.88; }
 
 void fragment() {
 	vec2 p = wp.xz;
+	// screen derivatives first, in uniform control flow (code W5): the cell
+	// kind below changes from pixel to pixel, so the scan reads after the
+	// discard and the tape read in its branch take explicit gradients
+	vec2 dpx = dFdx(p);
+	vec2 dpy = dFdy(p);
+	float aa = max(fwidth(p.x), fwidth(p.y));
 	ivec2 ci = ivec2(floor(p / cell + 0.5));
 	float k = kind_at(ci);
 	if (k > 0.88) discard; // canal: the water lies below
 	float far = 1.0 - smoothstep(far_flat * 0.5, far_flat, vdist);
 	vec3 c; vec2 nxy; float r;
-	kraft_face(p, far, c, nxy, r);
+	kraft_face_grad(p, dpx, dpy, far, c, nxy, r);
 	// the plate is a little lighter than the boards of the houses
 	c *= 1.06;
 	// washboard of the flutes inside the plate (running along z)
@@ -51,7 +57,6 @@ void fragment() {
 	c *= 1.0 - 0.025 * ribs * far;
 	nxy.x += cos(p.x * 6.2831853 / pitch) * 0.12 * far;
 	vec2 f = p / cell + 0.5 - vec2(ci); // 0..1 inside the cell
-	float aa = max(fwidth(p.x), fwidth(p.y));
 
 	if (k > 0.12 && k < 0.62) {
 		// bridge deck: planks across the walking direction, joints dark
@@ -100,7 +105,11 @@ void fragment() {
 		float tseg = fract(tl / 9.0);
 		float tape = step(dj, 0.95) * step(abs(tseg - 0.5) * 9.0, 0.95);
 		if (tape > 0.0) {
-			vec3 tc = texture(tape_alb, vec2((jx ? (p.x - joint.x) : (p.y - joint.y)) / 1.9 + 0.5, tl / 4.0)).rgb;
+			// the tape uv is p scaled per axis: its gradients follow from dpx / dpy
+			vec2 tsc = vec2(1.0 / 1.9, 1.0 / 4.0);
+			vec2 gx = jx ? vec2(dpx.x, dpx.y) * tsc : vec2(dpx.y, dpx.x) * tsc;
+			vec2 gy = jx ? vec2(dpy.x, dpy.y) * tsc : vec2(dpy.y, dpy.x) * tsc;
+			vec3 tc = textureGrad(tape_alb, vec2((jx ? (p.x - joint.x) : (p.y - joint.y)) / 1.9 + 0.5, tl / 4.0), gx, gy).rgb;
 			c = mix(c, c * 0.35 + tc * 0.75, 0.85);
 			r = 0.3;
 			SPECULAR = 0.7;

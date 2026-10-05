@@ -17,11 +17,18 @@ extends RefCounted
 ##             walls and the model's outer edge): liners, two wave sheets,
 ##             open cavities 1.2 m deep that take light and shadow
 ##   Water     lacquered card 0.85 m below the street
-##   Desk      cutting mat, wooden desk, pencil / mug / ruler (beyond the edge)
+##   Desk      cutting mat, wooden desk, pencil / ruler (beyond the edge) and
+##             the mug with a pencil in it at the end of the Westermarkt
 ##   Glue      clear glue beads at house feet and tree bases (transparent)
-## plus the evening light: a low warm sun with shadows, the desk lamp and a
-## warm bounce light (the sky / HDRI comes from the theme environment).
-## Variation comes from the level seed only. No animation in the city.
+## plus the evening light: a low warm sun with shadows (the only shadow
+## caster), the desk lamp and a warm bounce light (the sky / HDRI comes from
+## the theme environment). Variation comes from the level seed only. No
+## animation in the city.
+##
+## Build time (QA W2, code W1): the quay flutes depend on the map only and
+## are built once per session (static cache, indexed, arrays sized up front);
+## the kit, the cut-out mesh and the board / glue buffers are cached per level
+## seed. A second build only creates nodes.
 
 const M := preload("res://scripts/amsterdam_maze.gd")
 const Style := preload("res://scripts/amsterdam_style.gd")
@@ -54,11 +61,26 @@ const PLATE_Z0 := -1.0
 const PLATE_Z1 := 97.0
 const MAT_SIZE := Vector2(150.0, 124.0)
 const MAT_CENTER := Vector2(44.0, 46.0)
-## Things beyond the model edge, placed where a canal runs off the plate so
-## the player sees them at the end of the water (scale reveal).
-const MUG_POS := Vector3(77.0, 0.0, -16.0) # north end of the Amstel
-const PENCIL_X := -12.0 # west of the Keizersgracht / Prinsengracht ends
+## Things beyond the model edge (scale reveal). The mug (12 m = 12 cm) with a
+## pencil stuck in it stands a few metres behind the cut edge in the axis of
+## the Westermarkt, whose south end runs out to the edge (GD K1): the street
+## ends on it, the pencil rises over the low houses at the edge.
+const MUG_POS := Vector3(16.0, 0.0, 104.0)
+const MUG_H := 12.0
+const MUG_R := 4.6
+## The pencil in the mug: tip on the mug's floor, leaning out over the rim
+## towards the street and to the west (rad from upright).
+const MUG_PENCIL_TILT := 0.2
+## A steel ruler (30 cm = 30 m) stands in the mug next to the pencil, its
+## broad face to the street: the silhouette that rises far over the roofs.
+const MUG_RULER_LEN := 30.0
+const MUG_RULER_W := 3.0
+const MUG_RULER_TILT := 0.1
+const PENCIL_X := -12.0 # a second pencil lies west of the Keizersgracht / Prinsengracht ends
 const RULER_X := 106.0
+## Houses near the cut edge at the Westermarkt's end stay low (2 floors), so
+## mug and pencil stand out over the roofs (world x/z rect).
+const LOW_HOUSES := Rect2(0.0, 80.0, 42.0, 18.0)
 ## Desk lamp (2700 K spot with shadows) high up behind the model's west side.
 const LAMP_POS := Vector3(-70.0, 150.0, 150.0)
 const LAMP_TARGET := Vector3(40.0, 0.0, 40.0)
@@ -94,12 +116,15 @@ class Kit:
 static var _kinds: Array = []
 
 
+## Cell kind for the model: the notch cut out of the plate ("cut") is off
+## the model, like the cells beyond the map.
 static func kind(r: int, c: int) -> String:
 	if _kinds.is_empty():
 		for rr in M.ROWS:
 			var row := []
 			for cc in M.COLS:
-				row.append(M.cell_kind(rr, cc))
+				var k := M.cell_kind(rr, cc)
+				row.append("outside" if k == "cut" else k)
 			_kinds.append(row)
 	if r < 0 or r >= M.ROWS or c < 0 or c >= M.COLS:
 		return "outside"
@@ -385,6 +410,8 @@ static func house_row(K: Kit, run: Dictionary, look: Dictionary) -> void:
 		var o := a + t * (hw * (float(i) + 0.5))
 		var w := hw - 0.02
 		var floors: int = K.rng.randi_range(look.floors[0], look.floors[1])
+		if LOW_HOUSES.has_point(Vector2(o.x, o.z)):
+			floors = mini(floors, 2)
 		var gk := K.rng.randi_range(0, 3)
 		var lean: float = look.get("lean", 0.0)
 		var le: float = K.rng.randf_range(-0.004, 0.004)
@@ -816,18 +843,113 @@ static func cut_mesh(cuts: Array) -> ArrayMesh:
 	return B.commit()
 
 
-## The corrugated cut edges of the base plate (flute_runs) as one mesh.
-## COLOR.r = light reaching in (1 at the cut plane), COLOR.g = 1 on paper in
-## the cut plane.
+## Indexed triangle buffer with arrays sized up front (the quay flutes: a
+## counting pass first, then every vertex written once; wave samples are
+## shared by neighbouring segments).
+class IBuf:
+	var V := PackedVector3Array()
+	var N := PackedVector3Array()
+	var U := PackedVector2Array()
+	var C := PackedColorArray()
+	var I := PackedInt32Array()
+	var nv := 0
+	var ni := 0
+
+	func _init(vcount: int, icount: int) -> void:
+		V.resize(vcount)
+		N.resize(vcount)
+		U.resize(vcount)
+		C.resize(vcount)
+		I.resize(icount)
+
+	func vert(p: Vector3, n: Vector3, c: Color, uv: Vector2) -> int:
+		V[nv] = p
+		N[nv] = n
+		C[nv] = c
+		U[nv] = uv
+		nv += 1
+		return nv - 1
+
+	## Two triangles over a, b, c, d (around the quad); `flip` turns them so
+	## the front face (clockwise in Godot) looks along the wanted normal.
+	func quad_idx(a: int, b: int, c: int, d: int, flip: bool) -> void:
+		if flip:
+			I[ni] = a; I[ni + 1] = c; I[ni + 2] = b
+			I[ni + 3] = a; I[ni + 4] = d; I[ni + 5] = c
+		else:
+			I[ni] = a; I[ni + 1] = b; I[ni + 2] = c
+			I[ni + 3] = a; I[ni + 4] = c; I[ni + 5] = d
+		ni += 6
+
+	static func flipped(q0: Vector3, q1: Vector3, q2: Vector3, n: Vector3) -> bool:
+		return (q1 - q0).cross(q2 - q0).dot(n) > 0.0
+
+	## A flat quad with its own four corners.
+	func quad(q: Array, n: Vector3, cols: Array, uvs: Array) -> void:
+		var i0 := vert(q[0], n, cols[0], uvs[0])
+		vert(q[1], n, cols[1], uvs[1])
+		vert(q[2], n, cols[2], uvs[2])
+		vert(q[3], n, cols[3], uvs[3])
+		quad_idx(i0, i0 + 1, i0 + 2, i0 + 3, flipped(q[0], q[1], q[2], n))
+
+	func commit() -> ArrayMesh:
+		var arr := []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = V
+		arr[Mesh.ARRAY_NORMAL] = N
+		arr[Mesh.ARRAY_TEX_UV] = U
+		arr[Mesh.ARRAY_COLOR] = C
+		arr[Mesh.ARRAY_INDEX] = I
+		var m := ArrayMesh.new()
+		if nv > 0:
+			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		return m
+
+
+## Flute layers of the quay walls (B flute below, C flute above): [y0, y1, pitch].
+static func _flute_layers() -> Array:
+	var lt := 0.07
+	var y_bot := Style.PLATE_Y
+	return [[y_bot + lt, -0.5 - lt * 0.5, Style.PITCH * 0.72], [-0.5 + lt * 0.5, -lt, Style.PITCH]]
+
+
+static func _flute_segs(L: float, pit: float) -> int:
+	return maxi(2, int(ceil(L / pit * FLUTE_SAMPLES)))
+
+
+static var _flute_cache: ArrayMesh = null
+
+
+## The quay flutes of the map, built once per session (they depend on the
+## map only).
+static func flute_mesh_cached() -> ArrayMesh:
+	if _flute_cache == null:
+		_flute_cache = flute_mesh(flute_runs())
+	return _flute_cache
+
+
+## The corrugated cut edges of the base plate (flute_runs) as one indexed
+## mesh. COLOR.r = light reaching in (1 at the cut plane), COLOR.g = 1 on
+## paper in the cut plane.
 static func flute_mesh(runs_list: Array) -> ArrayMesh:
-	var B := Buf.new()
 	var lt := 0.07
 	var y_bot := Style.PLATE_Y
 	var lit := Color(1.0, 0.0, 0, 1)
 	var paper := Color(1.0, 1.0, 0, 1)
 	var dark := Color(0.12, 0.0, 0, 1)
-	# two flute layers (B flute below, C flute above): [y0, y1, pitch]
-	var layers := [[y_bot + lt, -0.5 - lt * 0.5, Style.PITCH * 0.72], [-0.5 + lt * 0.5, -lt, Style.PITCH]]
+	var layers := _flute_layers()
+	# counting pass: 10 flat quads per run, per layer and sample 4 vertices
+	var vc := 0
+	var ic := 0
+	for run in runs_list:
+		var L: float = run.a.distance_to(run.b)
+		vc += 40
+		ic += 60
+		for layer in layers:
+			var segs := _flute_segs(L, layer[2])
+			vc += 4 * (segs + 1)
+			ic += 12 * segs
+	var B := IBuf.new(vc, ic)
 	for run in runs_list:
 		var n: Vector3 = run.n # out of the plate (into the water / off the model)
 		var a: Vector3 = run.a
@@ -849,7 +971,8 @@ static func flute_mesh(runs_list: Array) -> ArrayMesh:
 		for e in [[0.0, d], [L, -d]]:
 			B.quad([_fp(a, d, inn, e[0], 0.0, y_bot), _fp(a, d, inn, e[0], 0.0, 0.0), _fp(a, d, inn, e[0], KD, 0.0), _fp(a, d, inn, e[0], KD, y_bot)], e[1],
 				[dark, dark, dark, dark], [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
-		# the wave sheets
+		# the wave sheets: per sample a vertex at the cut plane and one at the
+		# back of the cavity (sheet), two in the cut plane (the sheet's paper edge)
 		for layer in layers:
 			var ya: float = layer[0]
 			var yb: float = layer[1]
@@ -857,19 +980,25 @@ static func flute_mesh(runs_list: Array) -> ArrayMesh:
 			var ym := (ya + yb) * 0.5
 			var amp := (yb - ya) * 0.5 - 0.02
 			var th := 0.045
-			var segs := maxi(2, int(ceil(L / pit * FLUTE_SAMPLES)))
+			var segs := _flute_segs(L, pit)
 			var ph := (a.x + a.z) * TAU / pit
+			var k := TAU / pit
+			var s0 := B.nv
+			for i in segs + 1:
+				var u := L * float(i) / segs
+				var w := ym + amp * sin(u * k + ph)
+				var nw := (Vector3.UP - d * (amp * k * cos(u * k + ph))).normalized()
+				B.vert(_fp(a, d, inn, u, 0.0, w), nw, lit, Vector2(u, 0))
+				B.vert(_fp(a, d, inn, u, KD, w), nw, dark, Vector2(u, KD))
+				B.vert(_fp(a, d, inn, u, 0.0, w - th), n, paper, Vector2(u, w))
+				B.vert(_fp(a, d, inn, u, 0.0, w + th), n, paper, Vector2(u, w + 0.1))
+			var f_sheet := IBuf.flipped(B.V[s0], B.V[s0 + 4], B.V[s0 + 5], B.N[s0])
+			var f_edge := IBuf.flipped(B.V[s0 + 2], B.V[s0 + 6], B.V[s0 + 7], n)
 			for i in segs:
-				var u0 := L * float(i) / segs
-				var u1 := L * float(i + 1) / segs
-				var w0 := ym + amp * sin(u0 * TAU / pit + ph)
-				var w1 := ym + amp * sin(u1 * TAU / pit + ph)
-				var nw := (Vector3.UP - d * ((w1 - w0) / (u1 - u0))).normalized()
-				B.quad([_fp(a, d, inn, u0, 0.0, w0), _fp(a, d, inn, u1, 0.0, w1), _fp(a, d, inn, u1, KD, w1), _fp(a, d, inn, u0, KD, w0)], nw,
-					[lit, lit, dark, dark], [Vector2(u0, 0), Vector2(u1, 0), Vector2(u1, KD), Vector2(u0, KD)])
-				# the sheet's paper edge in the cut plane
-				B.quad([_fp(a, d, inn, u0, 0.0, w0 - th), _fp(a, d, inn, u1, 0.0, w1 - th), _fp(a, d, inn, u1, 0.0, w1 + th), _fp(a, d, inn, u0, 0.0, w0 + th)], n,
-					[paper, paper, paper, paper], [Vector2(u0, w0), Vector2(u1, w1), Vector2(u1, w1 + 0.1), Vector2(u0, w0 + 0.1)])
+				var v0 := s0 + i * 4
+				var v1 := v0 + 4
+				B.quad_idx(v0, v1, v1 + 1, v0 + 1, f_sheet)
+				B.quad_idx(v0 + 2, v1 + 2, v1 + 3, v0 + 3, f_edge)
 	return B.commit()
 
 
@@ -918,21 +1047,35 @@ static func props_mesh() -> ArrayMesh:
 	var pbase := Vector3(PENCIL_X, Style.PLATE_Y + pr * 0.87, 30.0)
 	_lathe(B, pbase, Vector3(0.06, 0, 1), [[0.0, 0.0, eras], [0.0, pr * 0.9, eras], [0.8, pr * 0.9, ferr], [0.8, pr * 1.02, ferr], [1.7, pr * 1.02, yel],
 		[1.7, pr, yel], [14.6, pr, wood], [16.8, 0.07, lead], [17.4, 0.0, lead]], 6, yel)
-	# coffee mug (8 m wide, 10 m high) with coffee, behind the north edge
+	# the mug (12 m = 12 cm high), used as a pencil cup, behind the cut edge at
+	# the end of the Westermarkt
 	var cer := Color(Style.MUG, 0.6)
-	var cof := Color(Color(0.12, 0.06, 0.03), 0.6)
 	var mb := Vector3(MUG_POS.x, Style.PLATE_Y, MUG_POS.z)
-	_lathe(B, mb, Vector3.UP, [[0.0, 0.0], [0.0, 3.8], [10.0, 4.0], [10.0, 3.7], [1.0, 3.5], [1.0, 0.0]], 40, cer)
-	_lathe(B, mb + Vector3(0, 8.8, 0), Vector3.UP, [[0.0, 3.62, cof], [0.0, 0.0, cof]], 40, cof)
-	# handle: a bent tube on the west side
-	var hc := mb + Vector3(-4.3, 5.2, 0)
+	var R := MUG_R
+	var H := MUG_H
+	_lathe(B, mb, Vector3.UP, [[0.0, 0.0], [0.0, R - 0.2], [H, R], [H, R - 0.3], [1.0, R - 0.5], [1.0, 0.0]], 40, cer)
+	# handle: a bent tube on the east side (seen in profile from the street)
+	var hc := mb + Vector3(R + 0.2, H * 0.52, 0)
 	var hs := 16
 	for i in hs:
 		var a0 := -PI * 0.5 + PI * float(i) / hs
 		var a1 := -PI * 0.5 + PI * float(i + 1) / hs
-		var c0 := hc + Vector3(-cos(a0) * 2.4, sin(a0) * 2.6, 0)
-		var c1 := hc + Vector3(-cos(a1) * 2.4, sin(a1) * 2.6, 0)
-		_lathe(B, c0, c1 - c0, [[0.0, 0.45], [c0.distance_to(c1), 0.45]], 10, cer)
+		var c0 := hc + Vector3(cos(a0) * 2.6, sin(a0) * 3.0, 0)
+		var c1 := hc + Vector3(cos(a1) * 2.6, sin(a1) * 3.0, 0)
+		_lathe(B, c0, c1 - c0, [[0.0, 0.5], [c0.distance_to(c1), 0.5]], 10, cer)
+	# the pencil in the mug: tip on the mug's floor, leaning out over the rim
+	# towards the street and to the west
+	var pax := Vector3(-sin(MUG_PENCIL_TILT), cos(MUG_PENCIL_TILT), -0.12).normalized()
+	var ptip := mb + Vector3(1.6, 1.0, 1.0)
+	_lathe(B, ptip, pax, [[0.0, 0.0, lead], [0.6, 0.07, lead], [2.8, pr, wood], [15.7, pr, yel], [15.7, pr * 1.02, ferr], [16.6, pr * 1.02, ferr],
+		[16.6, pr * 0.9, eras], [17.4, pr * 0.9, eras], [17.4, 0.0, eras]], 6, yel)
+	# the steel ruler standing in the mug, leaning a little east, face north
+	var steel_r := Color(Color(0.7, 0.7, 0.72), 0.9)
+	var rup := Vector3(sin(MUG_RULER_TILT), cos(MUG_RULER_TILT), 0.05).normalized()
+	var rside := Vector3(cos(MUG_RULER_TILT), -sin(MUG_RULER_TILT), 0.0).normalized()
+	var rfront := rside.cross(rup).normalized() # towards -z (the street)
+	_slab(B, mb + Vector3(-0.6, 1.0, -0.4), rup, rside, rfront, MUG_RULER_W, 0.12, MUG_RULER_LEN, steel_r)
+
 	# steel ruler (60 m = 60 cm), lying on the mat east of the model
 	var y := Style.PLATE_Y + 0.12
 	var x0 := RULER_X - 1.6
@@ -948,6 +1091,28 @@ static func props_mesh() -> ArrayMesh:
 	return B.commit()
 
 
+## A flat box (the standing ruler): bottom centre `base`, `up` along its
+## length L, `side` across its width w, `front` through its thickness t. The
+## broad faces carry the ruler's scale (uv.x = metres along, uv.y across).
+static func _slab(B: Buf, base: Vector3, up: Vector3, side: Vector3, front: Vector3, w: float, t: float, L: float, col: Color) -> void:
+	var cols := [col, col, col, col]
+	var hw := side * w * 0.5
+	var ht := front * t * 0.5
+	var top := up * L
+	for f in [1.0, -1.0]:
+		var o: Vector3 = base + ht * f
+		B.quad([o - hw, o + hw, o + hw + top, o - hw + top], front * f, cols, [Vector2(0, 1), Vector2(0, 0.001), Vector2(L, 0.001), Vector2(L, 1)])
+	for s in [1.0, -1.0]:
+		var e: Vector3 = base + hw * s
+		B.quad([e - ht, e + ht, e + ht + top, e - ht + top], side * s, cols, [Vector2(0, -1), Vector2(0, -1), Vector2(0, -1), Vector2(0, -1)])
+	B.quad([base + top - hw - ht, base + top + hw - ht, base + top + hw + ht, base + top - hw + ht], up, cols, [Vector2(0, -1), Vector2(0, -1), Vector2(0, -1), Vector2(0, -1)])
+
+
+## Top of the things standing in the mug (m): the ruler.
+static func mug_top() -> float:
+	return Style.PLATE_Y + 1.0 + MUG_RULER_LEN * Vector3(sin(MUG_RULER_TILT), cos(MUG_RULER_TILT), 0.05).normalized().y
+
+
 ## Per-cell kinds for the floor shader: r = 0 street, 0.25 bridge, 0.5 white
 ## bridge, 0.75 house/block, 1 water; g = 1 for a north-south bridge deck.
 static func kind_image() -> Image:
@@ -960,6 +1125,8 @@ static func kind_image() -> Image:
 			match k:
 				"street":
 					v = 0.0
+				"outside":
+					v = 1.0 # the notch at the Westermarkt: no plate (discarded like water)
 				"bridge":
 					var b := M.bridge_at(r, c)
 					v = 0.5 if b.id == "magere_brug" else 0.25
@@ -1000,7 +1167,9 @@ static func panel_material() -> ShaderMaterial:
 	return mat
 
 
-## One MultiMesh of unit boxes for a list of panels (also used by the exit).
+## One MultiMesh of unit boxes for a list of panels (also used by the exit),
+## filled in one go through MultiMesh.buffer (12 transform floats - the basis
+## rows with the origin - and 4 custom floats per instance; H6).
 static func panel_multimesh(list: Array) -> MultiMesh:
 	var box := BoxMesh.new()
 	box.size = Vector3.ONE
@@ -1009,29 +1178,66 @@ static func panel_multimesh(list: Array) -> MultiMesh:
 	mm.use_custom_data = true
 	mm.mesh = box
 	mm.instance_count = list.size()
-	for i in list.size():
-		var p: Dictionary = list[i]
-		mm.set_instance_transform(i, p.xf)
-		mm.set_instance_custom_data(i, Color(p.seed, p.b, p.paint, float(p.flags) / 8.0))
+	var buf := PackedFloat32Array()
+	buf.resize(list.size() * 16)
+	var j := 0
+	for p in list:
+		var xf: Transform3D = p.xf
+		var bx := xf.basis.x
+		var by := xf.basis.y
+		var bz := xf.basis.z
+		buf[j] = bx.x; buf[j + 1] = by.x; buf[j + 2] = bz.x; buf[j + 3] = xf.origin.x
+		buf[j + 4] = bx.y; buf[j + 5] = by.y; buf[j + 6] = bz.y; buf[j + 7] = xf.origin.y
+		buf[j + 8] = bx.z; buf[j + 9] = by.z; buf[j + 10] = bz.z; buf[j + 11] = xf.origin.z
+		buf[j + 12] = p.seed; buf[j + 13] = p.b; buf[j + 14] = p.paint; buf[j + 15] = float(p.flags) / 8.0
+		j += 16
+	if list.size() > 0:
+		mm.buffer = buf
 	return mm
+
+
+## Per level seed: {kit, panels (MultiMesh), cuts (ArrayMesh), glue (MultiMesh)}.
+static var _seed_cache := {}
+
+
+static func _cached(seed: int) -> Dictionary:
+	if _seed_cache.has(seed):
+		return _seed_cache[seed]
+	var K := kit(seed)
+	var gmm := MultiMesh.new()
+	gmm.transform_format = MultiMesh.TRANSFORM_3D
+	var sm := SphereMesh.new()
+	sm.radial_segments = 16
+	sm.rings = 8
+	gmm.mesh = sm
+	gmm.instance_count = K.glue.size()
+	var grng := RandomNumberGenerator.new()
+	grng.seed = seed + 7
+	for i in K.glue.size():
+		var gr: float = K.glue[i][1]
+		gmm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, grng.randf() * TAU) * Basis.from_scale(Vector3(gr * 2.6, gr * 0.3, gr * 1.4)), K.glue[i][0]))
+	var c := {"kit": K, "panels": panel_multimesh(K.panels), "cuts": cut_mesh(K.cuts), "glue": gmm}
+	_seed_cache[seed] = c
+	return c
 
 
 static func build(_maze, _city_theme, seed: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "AmsterdamScenery"
 	root.set_script(RootScript)
-	var K := kit(seed)
+	var cache := _cached(seed)
+	var K: Kit = cache.kit
 
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Panels"
-	mmi.multimesh = panel_multimesh(K.panels)
+	mmi.multimesh = cache.panels
 	mmi.material_override = panel_material()
 	root.add_child(mmi)
 	root.panel_count = K.panels.size()
 
 	var cut := MeshInstance3D.new()
 	cut.name = "Cuts"
-	cut.mesh = cut_mesh(K.cuts)
+	cut.mesh = cache.cuts
 	var cm := ShaderMaterial.new()
 	cm.shader = CUT_SHADER
 	_scan_params(cm)
@@ -1043,7 +1249,7 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 
 	var fl := MeshInstance3D.new()
 	fl.name = "Flutes"
-	fl.mesh = flute_mesh(flute_runs())
+	fl.mesh = flute_mesh_cached()
 	var fm := ShaderMaterial.new()
 	fm.shader = FLUTE_SHADER
 	_scan_params(fm)
@@ -1060,6 +1266,8 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	wm.shader = WATER_SHADER
 	wm.set_shader_parameter("lacquer", Style.WATER)
 	wm.set_shader_parameter("tape_nrm", Style.tex(Style.TEX_TAPE_NORMAL))
+	wm.set_shader_parameter("cut_rect", Vector4(M.CUT.c0 * CELL - 1.0, M.CUT.r0 * CELL - 1.0, M.CUT.c1 * CELL + 1.0, M.CUT.r1 * CELL + 1.0))
+
 	water.material_override = wm
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(water)
@@ -1108,19 +1316,7 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 
 	var glue := MultiMeshInstance3D.new()
 	glue.name = "Glue"
-	var sm := SphereMesh.new()
-	sm.radial_segments = 16
-	sm.rings = 8
-	var gmm := MultiMesh.new()
-	gmm.transform_format = MultiMesh.TRANSFORM_3D
-	gmm.mesh = sm
-	gmm.instance_count = K.glue.size()
-	var grng := RandomNumberGenerator.new()
-	grng.seed = seed + 7
-	for i in K.glue.size():
-		var gr: float = K.glue[i][1]
-		gmm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, grng.randf() * TAU) * Basis.from_scale(Vector3(gr * 2.6, gr * 0.3, gr * 1.4)), K.glue[i][0]))
-	glue.multimesh = gmm
+	glue.multimesh = cache.glue
 	var gm := ShaderMaterial.new()
 	gm.shader = GLUE_SHADER
 	glue.material_override = gm
@@ -1143,6 +1339,9 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	root.tree_count = K.trees.size()
 
 	# ---- evening light ----
+	# The sun is the only shadow caster (QA W3, code W2): a hard light source
+	# (angular distance 0 - PCSS would cost a search per pixel), the soft
+	# rim comes from shadow_blur; two splits are enough for a 130 m model.
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.light_color = Style.SUN_COLOR
@@ -1150,9 +1349,12 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
-	sun.shadow_blur = 1.4
+	sun.shadow_blur = 1.6
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_split_1 = 0.22
 	sun.directional_shadow_max_distance = 130.0
-	sun.light_angular_distance = 0.6
+	sun.directional_shadow_fade_start = 0.85
+	sun.light_angular_distance = 0.0
 	root.add_child(sun)
 	sun.transform = Transform3D(Basis.looking_at(Style.SUN_DIR.normalized(), Vector3.UP), Vector3.ZERO)
 	var bounce := DirectionalLight3D.new()
@@ -1171,8 +1373,10 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	lamp.spot_angle = 17.0
 	lamp.spot_attenuation = 0.0
 	lamp.spot_angle_attenuation = 1.6
-	lamp.shadow_enabled = true
-	lamp.shadow_blur = 2.0
+	# no shadows from the lamp: its light comes from high behind the west side
+	# and only warms the model (the sun draws the long shadows)
+	lamp.shadow_enabled = false
+
 	root.add_child(lamp)
 	lamp.transform = Transform3D(Basis.looking_at((LAMP_TARGET - LAMP_POS).normalized(), Vector3.UP), LAMP_POS)
 	root.sun = sun

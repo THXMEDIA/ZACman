@@ -24,7 +24,9 @@ const PANEL_BUDGET := 9000 # board instances in the one MultiMesh
 const FLUTE_VERT_BUDGET := 260000
 const CUT_VERT_BUDGET := 80000
 const LIGHT_BUDGET := 3 # scenery: sun, bounce, desk lamp (+1 omni in the exit)
-const SHADOW_BUDGET := 2
+const SHADOW_BUDGET := 1 # only the sun (QA W3, code W2)
+## Second build of the scenery (caches warm), headless (QA W2, code W1).
+const REBUILD_BUDGET_MS := 50.0
 const EYE := 1.9 # everything below this height in a street would be walked through
 
 var failures := 0
@@ -136,6 +138,43 @@ func _initialize() -> void:
 		if not tr.has(Vector2i(8, 8)) or not on_bridge or not (tr.has(start) or _touches(tr, start)):
 			hi_ok = false
 	_check("trails: every seed: from the start, to the church front and over the Magere Brug", hi_ok)
+	# GD W4a: the way to the exit dense, side branches on every second cell
+	var way: Array = M.route(maze)
+	_check("route: the pin route runs start -> exit", way.size() > 1 and way[0] == start and way[way.size() - 1] == exit_cell)
+	var dense := true
+	var dotted := true
+	var branch_n := 0
+	for sd in [LEVEL_SEED, 1, 2, 3, 99, 4242]:
+		var tr: Array = M.trail_cells(maze, [exit_cell], start, sd)
+		for c in way:
+			if c != exit_cell and not tr.has(c):
+				dense = false
+		for c in tr:
+			if way.has(c):
+				continue
+			branch_n += 1
+			# a branch pin never has a branch pin as its neighbour along the line
+			for d in [Vector2i(1, 0), Vector2i(0, 1)]:
+				if tr.has(c + d) and not way.has(c + d):
+					dotted = false
+	_check("trails: the way to the exit carries a pin on every cell", dense)
+	_check("trails: side branches are dotted (every second cell)", dotted and branch_n > 20, "%d branch pins" % branch_n)
+	# view points (Arles test): every trail end looks at something, and no end
+	# looks across the water at the exit it cannot reach from there (GD W1)
+	for e in M.TRAIL_ENDS + M.MUST_ENDS:
+		var vp: Array = M.VIEW_POINTS.get(e, [])
+		_check("view: trail end %s has a view point" % e, vp.size() == 2, str(vp))
+		if vp.size() != 2:
+			continue
+		var hit := _ray_kind(maze, e, vp[0])
+		_check("view: trail end %s looks at %s" % [e, vp[1]], hit == vp[1], hit)
+		var across := _across_water(maze, e, vp[0])
+		_check("view: from trail end %s the tram stop is not in sight across the water" % e, across != "street" or not _amstel_oost(maze, e, vp[0]), across)
+	_check("view: no trail end on the Prinsengracht quay looking at the tram (35,35), none past the exit (28,43)", not (Vector2i(35, 35) in M.TRAIL_ENDS) and not (Vector2i(28, 43) in M.TRAIL_ENDS))
+	# GD K1: the Westermarkt runs out to the model edge and ends on the mug
+	_check("scale reveal: the Westermarkt runs south to the cut edge of the model", _ray_kind(maze, Vector2i(42, 8), Vector2i(1, 0)) == "cut" and maze.grid[47][8] == 0 and maze.grid[48][8] == 1)
+	_check("scale reveal: the mug stands in the street's axis, a few metres beyond the edge", absf(Scenery.MUG_POS.x - 8 * 2.0) < 1.0 and Scenery.MUG_POS.z - Scenery.MUG_R > Scenery.PLATE_Z1 + 1.0 and Scenery.MUG_POS.z - Scenery.MUG_R < Scenery.PLATE_Z1 + 6.0)
+	_check("scale reveal: the cut cells carry no plate (cut edge = collision edge)", not M.is_plate(48, 8) and Scenery.kind(48, 8) == "outside")
 
 	# ---- the model as data ----
 	var K = Scenery.kit(LEVEL_SEED)
@@ -252,7 +291,22 @@ func _initialize() -> void:
 				if M.cell_kind(r + d.x, c + d.y) == "water":
 					edges += 1
 	_check("quays: corrugated cut edge on every plate/water boundary", is_equal_approx(fl_len, edges * 2.0), "%.0f m vs %d edges" % [fl_len, edges])
-	_check("beyond the edge: pencil, mug and ruler lie off the model (scale reveal)", Scenery.PENCIL_X < Scenery.PLATE_X0 - 5.0 and Scenery.MUG_POS.z < Scenery.PLATE_Z0 - 5.0 and Scenery.RULER_X > Scenery.PLATE_X1 + 5.0)
+	_check("beyond the edge: pencil, mug and ruler lie off the model (scale reveal)", Scenery.PENCIL_X < Scenery.PLATE_X0 - 5.0 and Scenery.MUG_POS.z > Scenery.PLATE_Z1 + 3.0 and Scenery.RULER_X > Scenery.PLATE_X1 + 5.0)
+	# the roofs around the street's end (the low houses reach a house width
+	# further than this)
+	var view_rect := Rect2(6.0, 86.0, 24.0, 12.0)
+	var roof := 0.0
+	for p in K.panels:
+		var o: Vector3 = p.xf.origin
+		if view_rect.has_point(Vector2(o.x, o.z)):
+			roof = maxf(roof, (p.xf * Vector3(0, 0.5, 0)).y)
+	for ct in K.cuts:
+		var o2: Vector3 = ct.xf.origin
+		if view_rect.has_point(Vector2(o2.x, o2.z)):
+			roof = maxf(roof, o2.y + Scenery.poly_top(ct.poly))
+	var pencil_top := Style.PLATE_Y + 1.0 + 17.4 * cos(Scenery.MUG_PENCIL_TILT)
+	_check("scale reveal: the mug with pencil and ruler rises clearly over the roofs at the edge", view_rect.end.x + 6.0 < Scenery.LOW_HOUSES.end.x and Scenery.mug_top() > roof + 10.0
+		and pencil_top > Style.PLATE_Y + Scenery.MUG_H + 3.0 and Style.PLATE_Y + Scenery.MUG_H > roof - 1.0, "ruler %.1f m, pencil %.1f m, mug %.1f m, roofs %.1f m" % [Scenery.mug_top(), pencil_top, Style.PLATE_Y + Scenery.MUG_H, roof])
 
 	# ---- view / budget / comfort ----
 	var mv = load("res://scripts/maze_view.gd").new()
@@ -277,6 +331,28 @@ func _initialize() -> void:
 	_collect_lights(mv, lights)
 	var shadowed := lights.filter(func(l): return l.shadow_enabled)
 	_check("budget: %d lights (sun, bounce, desk lamp), %d with shadows" % [LIGHT_BUDGET, SHADOW_BUDGET], lights.size() == LIGHT_BUDGET and shadowed.size() <= SHADOW_BUDGET, "%d / %d" % [lights.size(), shadowed.size()])
+	_check("shadows: the sun alone, hard source (angular distance 0, soft rim by blur), two splits", sr.sun.shadow_enabled and is_zero_approx(sr.sun.light_angular_distance) and sr.sun.shadow_blur > 1.0
+		and sr.sun.directional_shadow_mode == DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS and sr.lamp.shadow_enabled == false)
+	# QA W2 / code W1: the second build only creates nodes
+	var t0 := Time.get_ticks_usec()
+	var sr2: Node3D = Scenery.build(maze, CityThemes.get_theme("amsterdam"), LEVEL_SEED)
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	_check("build time: the second build reuses the flute mesh, boards and cut-outs (same instances)", sr2.get_node("Flutes").mesh == sr.get_node("Flutes").mesh
+		and sr2.get_node("Panels").multimesh == sr.get_node("Panels").multimesh and sr2.get_node("Cuts").mesh == sr.get_node("Cuts").mesh)
+	_check("build time: second build < %.0f ms headless" % REBUILD_BUDGET_MS, ms < REBUILD_BUDGET_MS, "%.1f ms" % ms)
+	_check("build time: quay flutes indexed (shared wave samples)", sr.get_node("Flutes").mesh.surface_get_array_index_len(0) > sr.get_node("Flutes").mesh.surface_get_array_len(0))
+	var mm: MultiMesh = sr.get_node("Panels").multimesh
+	var pi: int = K.panels.size() / 2
+	var bf: PackedFloat32Array = mm.buffer.slice(pi * 16, pi * 16 + 16)
+	var pxf: Transform3D = K.panels[pi].xf
+	var want := [pxf.basis.x.x, pxf.basis.y.x, pxf.basis.z.x, pxf.origin.x, pxf.basis.x.y, pxf.basis.y.y, pxf.basis.z.y, pxf.origin.y,
+		pxf.basis.x.z, pxf.basis.y.z, pxf.basis.z.z, pxf.origin.z, K.panels[pi].seed, K.panels[pi].b, K.panels[pi].paint, float(K.panels[pi].flags) / 8.0]
+	var buf_ok: bool = mm.buffer.size() == K.panels.size() * 16
+	for i in 16:
+		buf_ok = buf_ok and absf(bf[i] - want[i]) < 0.0001
+	_check("boards: the MultiMesh is filled in one go (buffer: basis rows, origin, custom data)", buf_ok)
+
+	sr2.free()
 	_check("light: low warm evening sun (about 10-20 degrees)", sr.sun != null and -Style.SUN_DIR.normalized().y > sin(deg_to_rad(10.0)) and -Style.SUN_DIR.normalized().y < sin(deg_to_rad(20.0)) and Style.SUN_COLOR.r > Style.SUN_COLOR.b * 1.5)
 	var texts := []
 	_collect_texts(mv, texts)
@@ -358,6 +434,18 @@ func _initialize() -> void:
 	_check("exit: tram and stop stand behind the kerb (nothing on the platform)", behind)
 	_check("exit: the flag flies over the roofs, unfogged", ex.FLAG_TOP > 20.0 and ex._flag_mat.disable_fog)
 	_check("exit: the inner light is the brightest thing (unshaded)", ex._glow_mat.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED and ex.light.shadow_enabled == false)
+	# UX W-B: an open double door where the last pin stands, light, green spot
+	var last_pin := Vector2i(exit_cell.x, exit_cell.y - 1)
+	_check("exit: the last pin stands in front of the exit, in the door's axis", trail.has(last_pin) or M.trail_cells(maze, [exit_cell], start, 1).has(last_pin))
+	_check("exit: open double door (~1.2 m) in the platform side, centred on the trigger", is_equal_approx(ex.DOOR_W, 1.2) and absf(ex.DOOR_Z) < 0.05 and ex.door_light != null and ex.door_light.position.x < ex.TRAM_X)
+	var gap := true
+	for p in ex.panels():
+		var o3: Vector3 = p.xf.origin
+		if absf(o3.x - (ex.TRAM_X - ex.TRAM_W * 0.5)) < 0.15 and o3.y > 0.3 and o3.y < 2.2 and absf(o3.z - ex.DOOR_Z) < ex.DOOR_W * 0.5 - 0.05:
+			gap = false
+	_check("exit: nothing closes the door opening", gap)
+	_check("exit: a bright green spot on the platform in front of the door", ex.floor_spot != null and ex.floor_spot.position.x < ex.TRAM_X - ex.TRAM_W * 0.5 and absf(ex.floor_spot.position.z - ex.DOOR_Z) < 0.1)
+	_check("exit: the green paint glows a little in the sun (QA K2), #00B894 unchanged", ex.EXIT_EMIT > 0.2 and Style.EXIT.to_html(false) == "00b894")
 	ex.update(0.1, 0.0)
 	var g0: Color = ex._glow_mat.albedo_color
 	ex.update(0.6, 0.0)
@@ -378,6 +466,25 @@ func _initialize() -> void:
 			tex_ok = false
 			missing += tp + "(load) "
 	_check("textures: every scan exists with its import file and loads", tex_ok, missing)
+	if DirAccess.dir_exists_absolute("res://.godot/imported"):
+		var imp_ok := true
+		for tp in Style.TEXTURES:
+			if not Style.imported(tp):
+				imp_ok = false
+		_check("textures: after the import every scan is imported (code W4)", imp_ok)
+	_check("textures: raw files only outside exported builds", Style.raw_fallback_allowed() == not OS.has_feature("template"))
+	# QA K1: the room behind the model has no glaring patch
+	var pano: Image = Style.sky().sky_material.panorama.get_image()
+	var lmax := 0.0
+	if pano != null:
+		if pano.is_compressed():
+			pano.decompress()
+		for y in range(0, pano.get_height(), 2):
+			for x in range(0, pano.get_width(), 2):
+				var pc := pano.get_pixel(x, y)
+				lmax = maxf(lmax, (pc.r + pc.g + pc.b) / 3.0)
+	_check("sky: the brightest spot of the room is clamped (no glare competing with the exit)", pano != null and lmax <= Style.SKY_MAX + 0.02, "%.2f" % lmax)
+
 	var lic_path := ProjectSettings.globalize_path("res://").path_join("../docs/art/lizenzen.md")
 	var lic := FileAccess.get_file_as_string(lic_path)
 	var lic_ok := lic != ""
@@ -582,3 +689,33 @@ func _oklab(c: Color) -> Vector3:
 	return Vector3(0.2104542553 * L + 0.7936177850 * Mm - 0.0040720468 * S,
 		1.9779984951 * L - 2.4285922050 * Mm + 0.4505937099 * S,
 		0.0259040371 * L + 0.7827717662 * Mm - 0.8086757660 * S)
+
+
+## First closed cell from `from` in direction `d` (M.cell_kind).
+func _ray_kind(maze, from: Vector2i, d: Vector2i) -> String:
+	var c: Vector2i = from
+	while c.x >= 0 and c.y >= 0 and c.x < maze.rows and c.y < maze.cols and maze.grid[c.x][c.y] == 0:
+		c += d
+	return M.cell_kind(c.x, c.y)
+
+
+## Looking from `from` in direction `d` over water: the kind of the first
+## cell beyond the water ("" if the ray does not cross water).
+func _across_water(maze, from: Vector2i, d: Vector2i) -> String:
+	var c: Vector2i = from
+	while c.x >= 0 and c.y >= 0 and c.x < maze.rows and c.y < maze.cols and maze.grid[c.x][c.y] == 0:
+		c += d
+	if M.cell_kind(c.x, c.y) != "water":
+		return ""
+	while M.cell_kind(c.x, c.y) == "water":
+		c += d
+	return M.cell_kind(c.x, c.y)
+
+
+func _amstel_oost(_maze, from: Vector2i, d: Vector2i) -> bool:
+	var c: Vector2i = from
+	for i in 60:
+		c += d
+		if M.street_at(c.x, c.y).get("id", "") == "amstel_oost" or M.cell_kind(c.x, c.y) == "tram":
+			return true
+	return false

@@ -7,6 +7,9 @@ render_mode diffuse_burley, specular_schlick_ggx;
 
 uniform vec3 lacquer : source_color = vec3(0.102, 0.071, 0.043);
 uniform sampler2D tape_nrm : hint_normal, filter_linear_mipmap, repeat_enable;
+// the notch cut out of the plate at the Westermarkt's end (world x0, z0, x1, z1):
+// no water there, the cutting mat lies below
+uniform vec4 cut_rect = vec4(0.0);
 
 varying vec3 wp;
 
@@ -22,6 +25,8 @@ void vertex() {
 
 void fragment() {
 	vec2 p = wp.xz;
+	if (p.x > cut_rect.x && p.x < cut_rect.z && p.y > cut_rect.y && p.y < cut_rect.w) discard;
+
 	// brush strokes of the lacquer along the canal + the foil's slight waviness
 	float a = vn(p * vec2(0.18, 0.9)) - 0.5;
 	float b = vn(p * vec2(0.9, 0.2) + 7.3) - 0.5;
