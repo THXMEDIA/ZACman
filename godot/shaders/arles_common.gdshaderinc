@@ -37,6 +37,15 @@ float stroke_lod(float dist, float pix) {
 	return clamp(max(l * lod_on, calm * 0.45), 0.0, 1.0);
 }
 
+// Brightness amplitude of the strokes close to the camera (UX W-F): within
+// NEAR_AMP_M the light/dark swing of the strokes is capped a little (to 80 %),
+// with "Effekte reduzieren" (calm) by half; 1 = full swing further away.
+const float NEAR_AMP_M = 6.0;
+float near_amp(float dist) {
+	float k = smoothstep(NEAR_AMP_M * 0.5, NEAR_AMP_M, dist);
+	return mix(mix(0.8, 0.5, calm), 1.0, k);
+}
+
 vec3 pool_one(float idx, vec3 p, vec3 n) {
 	if (idx < 0.5) return vec3(0.0);
 	vec4 l = texelFetch(lamp_tex, ivec2(int(idx + 0.5) - 1, 0), 0);
@@ -68,7 +77,9 @@ float cell_angle(vec2 uv, float len, float base, int mode, vec2 ctr) {
 
 // Colour of one impasto stroke field; ridge (relief across the stroke) and
 // the stroke-normal direction for the normal.
-vec3 impasto(vec2 uv, vec3 ca, vec3 cb, vec3 cc, float accent, float a, float len, float wid, float lod, out vec2 dv, out float ridge) {
+// `amp` scales the stroke-to-stroke brightness swing around the local mean
+// (near_amp: calmer close to the camera).
+vec3 impasto(vec2 uv, vec3 ca, vec3 cb, vec3 cc, float accent, float a, float len, float wid, float lod, float amp, out vec2 dv, out float ridge) {
 	vec2 d = vec2(cos(a), sin(a)); vec2 pd = vec2(-d.y, d.x);
 	float s = dot(uv, d); float t = dot(uv, pd);
 	float row = floor(t / wid);
@@ -84,7 +95,9 @@ vec3 impasto(vec2 uv, vec3 ca, vec3 cb, vec3 cc, float accent, float a, float le
 	c *= mix(0.80, 1.10, h2);
 	c = mix(c * 0.55, c, body);
 	vec3 mean = (mix(ca, cb, 0.5) * (1.0 - accent) + cc * accent) * 0.92;
-	dv = pd; ridge = (ft - 0.5) * 2.0 * (1.0 - lod);
+	c = mix(mean, c, amp);
+	dv = pd; ridge = (ft - 0.5) * 2.0 * (1.0 - lod) * amp;
+
 	// far away: large soft dabs of low frequency, no flat mean, no flicker
 	vec3 far = mean * (0.72 + 0.56 * vnoise(vec2(s / (len * 5.0), t / (wid * 16.0))));
 	return mix(c, far, lod);

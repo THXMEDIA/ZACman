@@ -128,8 +128,17 @@ func setup(cell_world_pos: Vector3) -> void:
 
 func set_reduce_fx(on: bool) -> void:
 	_reduce_fx = on
+	# the house is painted with the brush like the city: calmer as well (code H2)
+	if house != null and house.material_override is ShaderMaterial:
+		house.material_override.set_shader_parameter("calm", 1.0 if on else 0.0)
 	if on:
 		_apply(0.0)
+
+
+## Whether the house's brush is calm ("Effekte reduzieren").
+func house_calm() -> bool:
+	return house != null and house.material_override is ShaderMaterial and float(house.material_override.get_shader_parameter("calm")) == 1.0
+
 
 
 func pulse_enabled() -> bool:

@@ -28,11 +28,14 @@ void fragment() {
 	float xm = (fract(u) - 0.5) * bw;
 	float y = wpos.y; float r1 = 0.95;
 	float s1 = 4.1; float s2 = 10.3;
+	// derivatives before the discard (code W5: fwidth in uniform control flow)
+	vec2 uv = vec2(th * rad, y);
+	float dist = length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT));
+	float lod = stroke_lod(dist, length(fwidth(uv / 0.09)));
 	bool open_ = false;
 	if (abs(xm) < r1 && y > 0.6 && (y < s1 || xm * xm + (y - s1) * (y - s1) < r1 * r1)) open_ = true;
 	if (abs(xm) < r1 && y > 7.1 && (y < s2 || xm * xm + (y - s2) * (y - s2) < r1 * r1)) open_ = true;
 	if (open_) discard;
-	vec2 uv = vec2(th * rad, y);
 	float a = cell_angle(uv, 0.6, 0.0, 0, vec2(0.0));
 	float sp = (y < 6.6) ? s1 : s2;
 	float rr = length(vec2(xm, y - sp));
@@ -42,9 +45,9 @@ void fragment() {
 	if (pil && !vous) a = 1.5708;
 	bool ent = (y > 5.85 && y < 6.75) || y > 12.1;
 	if (ent) a = 0.0;
-	float lod = stroke_lod(length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT)), length(fwidth(uv / 0.09)));
 	vec2 dv; float ridge;
-	vec3 c = impasto(uv, col_a, col_b, col_c, 0.14, a, 0.6, 0.09, lod, dv, ridge);
+	vec3 c = impasto(uv, col_a, col_b, col_c, 0.14, a, 0.6, 0.09, lod, near_amp(dist), dv, ridge);
+
 	if (vous) c *= 0.82;
 	if (pil) c *= 1.08;
 	if (ent) c *= (fract(y * 3.0) < 0.25) ? 0.6 : 1.05;

@@ -32,15 +32,19 @@ void fragment() {
 	vec2 uv = wpos.xz * vec2(1.0, 0.35);
 	float lod = stroke_lod(length(wpos - cam), length(fwidth(uv / 0.10)));
 	vec2 dv; float ridge;
-	vec3 c = impasto(uv, deep, mid, hi, 0.08, (vnoise(wpos.xz * 0.05) - 0.5) * 0.4, 0.9, 0.10, lod * 0.8, dv, ridge);
+	vec3 c = impasto(uv, deep, mid, hi, 0.08, (vnoise(wpos.xz * 0.05) - 0.5) * 0.4, 0.9, 0.10, lod * 0.8, near_amp(length(wpos - cam)), dv, ridge);
 	c *= 0.75;
 	vec3 add = vec3(0.0);
 	for (int i = 0; i < nrefl; i++) {
 		vec3 d = refl[i].xyz - wpos;
 		float azd = atan(d.x, d.z); float eld = atan(d.y, length(d.xz));
 		float da = azr - azd; da = da - 6.2831853 * floor((da + 3.14159265) / 6.2831853);
-		da += (vnoise(vec2(wpos.z * 0.9 + float(i) * 3.1, wpos.x * 2.5 + t)) - 0.5) * 0.016;
 		float de = elr - eld;
+		// code H4: far off this lamp's column (azimuth, beyond the wide
+		// gaussian plus the tremble) or outside its length: skip before the
+		// noise and the exponentials
+		if (abs(da) > 0.2 || de > 0.42 || de < -0.05) continue;
+		da += (vnoise(vec2(wpos.z * 0.9 + float(i) * 3.1, wpos.x * 2.5 + t)) - 0.5) * 0.016;
 		float col = exp(-pow(da / 0.016, 2.0));
 		float wide = exp(-pow(da / 0.045, 2.0)) * 0.30;
 		float len_ = smoothstep(0.42, 0.0, de) * smoothstep(-0.05, 0.0, de);

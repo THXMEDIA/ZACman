@@ -17,7 +17,10 @@
 #   r9_ausgang.png          Place Lamartine: Gelbes Haus, grüne Tür, grüner Stern
 #   r10_totale.png          Totale von der Rhône (eigene QA-Kamera, Spielkamera unberührt)
 #   r11_reduziert.png       wie r3 mit „Effekte reduzieren“
-#   r12_minimap.png         Spawn mit Minimap (Kai, Kugeln, Ausgang)
+#   r12_minimap.png         Spawn mit Minimap (Kai, Kugeln, Ausgang-Ring, weißer Pfeil)
+#   r13_cafe_route.png      der Weg an der Caféterrasse entlang nach Westen (Säulen voraus)
+#   r14_kugeln.png          Kugeln aus der Nähe (Objekt statt Licht, dunkle Kontur)
+#   r15_abstecher.png       Rond-point: Abstecher gepunktet, Arena
 extends SceneTree
 
 const SHIFT := Vector3(1.0, 0.0, 1.0)
@@ -77,6 +80,9 @@ func _plan() -> void:
 		["r7_theatre.png", Vector3(62.5, 1.7, 70.6), Vector3(71.0, 6.8, 71.0)],
 		["r8_kai.png", Vector3(3.2, 1.7, 56.0), Vector3(-10.0, 0.6, 24.0)],
 		["r9_ausgang.png", Vector3(15.5, 1.7, 15.0), Vector3(15.0, 6.5, 0.0)],
+		["r13_cafe_route.png", Vector3(30.0, 1.7, 35.6), Vector3(14.0, 2.4, 33.0)],
+		["r14_kugeln.png", Vector3(27.0, 1.7, 49.0), Vector3(27.0, 0.3, 40.0)],
+		["r15_abstecher.png", Vector3(51.0, 1.7, 62.5), Vector3(51.0, 1.0, 30.0)],
 	]
 	for v in views:
 		if not _wanted(only, v[0]):

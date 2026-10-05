@@ -81,10 +81,19 @@ const PARAPET_R1 := 34
 ## landmarks and the parapet are the scenery; this is only physics.
 const WALL_H := 3.0
 
+## The way runs over the north side of the Place du Forum (GD W3): up the
+## Rue de l'Hôtel de Ville to the café terrace, along its front (row 17: the
+## tables stand on rows 15-16, the line keeps 0.5 m clear of them), west past
+## the Roman columns in the north-west corner (col 8), then down to the Rue
+## du Forum. Row 20 east of the square is the branch to the arena.
 const TRAIL_LINES := [
 	{"row": 35, "from": 9, "to": 32},
-	{"col": 13, "from": 20, "to": 35},
-	{"row": 20, "from": 3, "to": 25},
+	{"col": 13, "from": 17, "to": 35},
+	{"row": 17, "from": 8, "to": 13},
+	{"col": 8, "from": 17, "to": 20},
+
+	{"row": 20, "from": 3, "to": 8},
+	{"row": 20, "from": 13, "to": 25},
 	{"col": 3, "from": 4, "to": 33},
 	{"row": 4, "from": 3, "to": 25},
 	{"col": 7, "from": 1, "to": 4},
@@ -215,8 +224,10 @@ static func trail_network() -> Dictionary:
 
 ## Wayfinding pellets: BFS from the exit over the street centre lines, then
 ## the walked-back paths from the start, the must ends and TRAIL_COUNT seeded
-## trail ends — unbroken vermilion lines that all end at the green door.
-## Deterministic per seed.
+## trail ends — vermilion lines that all end at the green door. The way from
+## the start to the exit is dense; branches that are not on it (the arena
+## ring, the lane to the baths, the seeded ones) carry a pellet only on every
+## second cell, counted from the branch end (GD W4a). Deterministic per seed.
 static func trail_cells(maze, metro: Array, start_cell: Vector2i, seed: int) -> Array:
 	var came_from := route_tree(maze, metro)
 	var ends: Array = TRAIL_ENDS.duplicate()
@@ -227,25 +238,45 @@ static func trail_cells(maze, metro: Array, start_cell: Vector2i, seed: int) -> 
 		var tmp = ends[i]
 		ends[i] = ends[j]
 		ends[j] = tmp
-	var seeds: Array = MUST_ENDS + ends.slice(0, TRAIL_COUNT)
-	if trail_network().has(start_cell):
-		seeds.push_front(start_cell)
-	var on_trail := {}
+	var extra: Array = []
+	for l in MUST_LINES:
+		for i in range(l.from, l.to + 1):
+			extra.append(Vector2i(l.row, i) if l.has("row") else Vector2i(i, l.col))
+	return dotted_trails(maze, came_from, start_cell, MUST_ENDS + ends.slice(0, TRAIL_COUNT), trail_network().has(start_cell), extra)
+
+
+## The main way (start -> exit) dense, every branch walked back from its end
+## with a pellet on every second cell (parity of the end cell) until it meets
+## the main way or an earlier branch; `extra` must cells (rest of the ring)
+## with the first end's parity. Same as AmsterdamMaze.dotted_trails.
+static func dotted_trails(maze, came_from: Dictionary, start_cell: Vector2i, branch_ends: Array, start_on_net: bool, extra: Array = []) -> Array:
 	var out: Array = []
-	for s in seeds:
-		var cur: Vector2i = s
+	var claimed := {}
+	if start_on_net:
+		var cur: Vector2i = start_cell
 		var guard := 0
 		while came_from.has(cur) and guard < maze.rows * maze.cols:
-			if not on_trail.has(cur):
-				on_trail[cur] = true
+			claimed[cur] = true
+			out.append(cur)
+			cur = came_from[cur]
+			guard += 1
+	var par := -1
+	for e in branch_ends:
+		var cur: Vector2i = e
+		var p: int = (e.x + e.y) % 2
+		if par < 0:
+			par = p
+		var guard := 0
+		while came_from.has(cur) and not claimed.has(cur) and guard < maze.rows * maze.cols:
+			claimed[cur] = true
+			if (cur.x + cur.y) % 2 == p:
 				out.append(cur)
 			cur = came_from[cur]
 			guard += 1
-	for l in MUST_LINES:
-		for i in range(l.from, l.to + 1):
-			var cell := Vector2i(l.row, i) if l.has("row") else Vector2i(i, l.col)
-			if came_from.has(cell) and not on_trail.has(cell):
-				on_trail[cell] = true
+	for cell in extra:
+		if came_from.has(cell) and not claimed.has(cell):
+			claimed[cell] = true
+			if (cell.x + cell.y) % 2 == maxi(par, 0):
 				out.append(cell)
 	return out
 

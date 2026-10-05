@@ -567,7 +567,8 @@ static func arles() -> Resource:
 	# Minimap: dark streets, pale blocks, the quay parapet as water, the
 	# pellets with a contour, the exit mint green with a dark rim.
 	t.minimap_bg_color = Color(ArlesStyle.GUTTER, 0.94)
-	t.minimap_wall_color = ArlesStyle.FACADE_C[0]
+	t.minimap_wall_color = ArlesStyle.minimap_block()
+
 	t.minimap_water_script = ArlesMazeScript
 	t.minimap_water_color = ArlesStyle.WATER[1]
 	t.minimap_exit_color = ArlesStyle.EXIT

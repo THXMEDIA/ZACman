@@ -55,7 +55,15 @@ const REFL_RIM := Color("d4a03a") # gold
 ## ochre is the weakest pair; the dark plinth row is never ochre).
 const FACADE_A := [Color("4b4a86"), Color("b88a3c"), Color("5a6fa8"), Color("8e6b5a"), Color("3f5f7a"), Color("c2a06a")]
 const FACADE_B := [Color("3c3b72"), Color("9c7030"), Color("45598e"), Color("73554a"), Color("2f4a62"), Color("a3844e")]
-const FACADE_C := [Color("8a86c4"), Color("e0b45a"), Color("9fb6e0"), Color("c79a7a"), Color("7fa8c0"), Color("e6c890")]
+## Minimap blocks: the pale lilac facade colour at 55 % brightness (HSV
+## value), so the blocks do not outshine the pellets and the exit (UX N-D).
+static func minimap_block() -> Color:
+	var c: Color = FACADE_C[0]
+	return Color.from_hsv(c.h, c.s, 0.55)
+
+
+const FACADE_C := [
+Color("8a86c4"), Color("e0b45a"), Color("9fb6e0"), Color("c79a7a"), Color("7fa8c0"), Color("e6c890")]
 const FACADE_PICK := [0, 1, 2, 3, 4, 5, 0, 2, 3, 4] # per lot: ochre (1, 5) 2 in 10
 const ROOF_A := [Color("7a3f3a"), Color("5a4e8e"), Color("8e5a3a"), Color("4a4a7a")]
 const ROOF_B := [Color("6e4a3c"), Color("4a3e76"), Color("74482e"), Color("3a3a66")]

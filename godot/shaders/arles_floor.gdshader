@@ -40,9 +40,10 @@ void fragment() {
 	if (wpos.x > plaza.x && wpos.x < plaza.z && wpos.z > plaza.y && wpos.z < plaza.w) mode = 1;
 	vec2 uv = wpos.xz;
 	float ang = cell_angle(uv, 1.1, a, mode, plaza_ctr);
-	float lod = stroke_lod(length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT)), length(fwidth(uv / 0.2)));
+	float dist = length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT));
+	float lod = stroke_lod(dist, length(fwidth(uv / 0.2)));
 	vec2 dv; float ridge;
-	vec3 c = impasto(uv, pave_a, pave_b, pave_c, 0.07, ang, 1.1, 0.2, max(lod, max(calm_floor, calm * 0.62)), dv, ridge);
+	vec3 c = impasto(uv, pave_a, pave_b, pave_c, 0.07, ang, 1.1, 0.2, max(lod, max(calm_floor, calm * 0.62)), near_amp(dist), dv, ridge);
 	float dmin = 9.0;
 	if (ow < 0.5) dmin = min(dmin, f.x * 2.0);
 	if (oe < 0.5) dmin = min(dmin, (1.0 - f.x) * 2.0);

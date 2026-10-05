@@ -772,9 +772,11 @@ static func _lamartine(B: Buf) -> void:
 
 
 static func _trees(B: Buf, rng: RandomNumberGenerator) -> void:
-	# plane trees (blue crowns: green belongs to the exit)
+	# plane trees (blue crowns: green belongs to the exit); the north-west one
+	# stands a little south, off the way along the café terrace (GD W3)
 	var i := 0
-	for p in [Vector3(19.5, 0, 35.0), Vector3(19.5, 0, 48.5), Vector3(35.5, 0, 48.5), Vector3(35.5, 0, 36.5),
+	for p in [Vector3(19.5, 0, 37.6), Vector3(19.5, 0, 48.5),
+ Vector3(35.5, 0, 48.5), Vector3(35.5, 0, 36.5),
 			Vector3(20.0, 0, 13.0), Vector3(30.0, 0, 13.0), Vector3(9.0, 0, 13.0)]:
 		B.group = "tree%d" % i
 		B.cyl(p + Vector3(0, 3.2, 0), 0.2, 0.3, 6.4, "trunk", 8)

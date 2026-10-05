@@ -51,11 +51,15 @@ void fragment() {
 	}
 	float dist = length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT));
 	float lod = stroke_lod(dist, length(fwidth(uv / wid)));
+	float amp = near_amp(dist);
+	// derivatives in uniform control flow (code W5): the window grid's
+	// fwidth is taken here, before the roof / wall branch
+	float s = abs(wn.x) > 0.5 ? wpos.z : wpos.x;
+	float wl = smoothstep(0.10, 0.40, fwidth(s) * 0.5); // window grid too fine for the pixels: average
 	vec2 dv; float ridge;
-	vec3 c = impasto(uv, ca, cb, cc, acc, a, len, wid, lod, dv, ridge);
+	vec3 c = impasto(uv, ca, cb, cc, acc, a, len, wid, lod, amp, dv, ridge);
 	vec3 emitc = vec3(0.0);
 	if (!roof) {
-		float s = abs(wn.x) > 0.5 ? wpos.z : wpos.x;
 		float y = wpos.y;
 		float colid = floor(s / 2.0); float fx = fract(s / 2.0) - 0.5;
 		float flo = floor((y - 0.4) / 3.0); float fy = y - (flo * 3.0 + 0.4);
@@ -63,7 +67,6 @@ void fragment() {
 		float h2 = hash21(vec2(flo + 5.0, colid) + seed * 7.3);
 		float h3 = hash21(vec2(colid * 1.7, flo + 3.0) + seed * 3.1);
 		vec3 c_wall = c;
-		float wl = smoothstep(0.10, 0.40, fwidth(s) * 0.5); // window grid too fine for the pixels: average
 		if (y < 0.55) c *= 0.5;                                    // plinth = collision edge
 		if (y > eave - 0.38 && y < eave) c = mix(c * 0.42, c * 1.2, step(eave - 0.09, y)); // cornice
 		vec3 wc = c; float win = 0.0; float we = 0.0;
@@ -72,7 +75,7 @@ void fragment() {
 			if (abs(fx) < 0.19 && iny > 0.5) {
 				if (h2 < lit) {
 					vec2 d2; float r2;
-					wc = impasto(uv, win_a, win_b, win_c, 0.25, 1.5708 + (h3 - 0.5) * 0.5, 0.42, 0.13, max(lod, 0.25), d2, r2);
+					wc = impasto(uv, win_a, win_b, win_c, 0.25, 1.5708 + (h3 - 0.5) * 0.5, 0.42, 0.13, max(lod, 0.25), amp, d2, r2);
 					we = win_emit;
 					if (abs(fx) < 0.016 || abs(fy - 1.95) < 0.028) { wc *= 0.3; we *= 0.25; }
 				} else if (h3 < 0.62) {
@@ -89,7 +92,8 @@ void fragment() {
 				wc = door_col * (0.8 + 0.4 * step(0.5, fract(fx * 9.0))); win = 1.0;
 			} else if (h1 < 0.34 && abs(fx) < 0.40 && fy > 0.55 && fy < 2.6) {
 				vec2 d2; float r2;
-				wc = impasto(uv, win_a, win_b, win_c, 0.25, 1.5708, 0.42, 0.13, max(lod, 0.25), d2, r2);
+				wc = impasto(uv, win_a, win_b, win_c, 0.25, 1.5708, 0.42, 0.13, max(lod, 0.25), amp, d2, r2);
+
 				we = win_emit * 0.75; win = 1.0;
 			}
 		}

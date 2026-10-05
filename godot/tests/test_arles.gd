@@ -91,7 +91,12 @@ func _initialize() -> void:
 	_check("route: start -> exit along the trails", route.size() > 1 and route[0] == start and route[route.size() - 1] == exit_cell)
 	var steps := route.size() - 1
 	var shortest := _shortest(maze, start, exit_cell).size()
-	_check("route: about 67 cells (134 m, ~30 s), barely longer than the shortest way", steps >= 62 and steps <= 72 and steps - shortest <= 4, "%d steps, shortest %d" % [steps, shortest])
+	# GD W3: the way takes the north side of the Place du Forum, past the café
+	# terrace and the Roman columns - a deliberate detour of a few cells
+	_check("route: about 73 cells (146 m, ~33 s), at most 10 cells longer than the shortest way (café detour)", steps >= 66 and steps <= 80 and steps - shortest <= 10, "%d steps, shortest %d" % [steps, shortest])
+	var along_terrace := route.filter(func(c): return c.x == 17 and c.y >= 9 and c.y <= 13)
+	_check("route: along the front of the café terrace (row 17, the tables on rows 15-16)", along_terrace.size() >= 4 and M.landmark_block_at(14, 13).get("id", "") == "cafe", "%d cells" % along_terrace.size())
+	_check("route: past the Roman columns in the north-west corner", route.has(Vector2i(17, 8)) and M.landmark_block_at(14, 8).get("id", "") == "colonnes_forum")
 	var streets_seen: Array = []
 	for cell in route:
 		var s := M.street_at(cell.x, cell.y)
@@ -134,17 +139,40 @@ func _initialize() -> void:
 		if c != exit_cell and not t1.has(c):
 			route_on = false
 	_check("trails: the whole way to the exit carries pellets", route_on)
-	var ring_ok := true
+	# GD W4a: branches off the way carry a pellet on every second cell
+	var ring: Array = []
 	for c in range(25, 43):
-		if not t1.has(Vector2i(13, c)) or not t1.has(Vector2i(31, c)):
+		ring.append(Vector2i(13, c))
+		ring.append(Vector2i(31, c))
+	for r in range(14, 31):
+		ring.append(Vector2i(r, 42))
+		ring.append(Vector2i(r, 25))
+	var ring_ok := true
+	for c in ring:
+		var near := t1.has(c)
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if ring.has(c + d) and t1.has(c + d):
+				near = true
+		if not near:
 			ring_ok = false
-	for r in range(13, 32):
-		if not t1.has(Vector2i(r, 42)):
-			ring_ok = false
-	_check("trails: the arena ring is complete (must branch)", ring_ok)
-	_check("trails: the lane to the baths (must branch)", t1.has(Vector2i(9, 15)) and t1.has(Vector2i(9, 4)))
+	_check("trails: the arena ring is complete, dotted (must branch)", ring_ok)
+	_check("trails: the lane to the baths, dotted, its end marked (must branch)", t1.has(Vector2i(9, 15)) and not t1.has(Vector2i(9, 14)) and t1.has(Vector2i(9, 13)))
+	var pairs_max := 0
+	var branch_n := 0
+	for sd in [LEVEL_SEED, 1, 7, 99, 4242]:
+		var ts: Array = M.trail_cells(maze, M.metro_cells(), start, sd)
+		var pairs := 0
+		for c in ts:
+			if route.has(c):
+				continue
+			branch_n += 1
+			for d in [Vector2i(1, 0), Vector2i(0, 1)]:
+				if ts.has(c + d) and not route.has(c + d):
+					pairs += 1 # only where two dotted branches meet
+		pairs_max = maxi(pairs_max, pairs)
+	_check("trails: side branches are dotted (every second cell), the way to the exit dense", pairs_max <= 4 and branch_n > 150, "%d branch pellets, at most %d side by side" % [branch_n, pairs_max])
 	var other_seed: Array = M.trail_cells(maze, M.metro_cells(), start, 7)
-	_check("trails: the seed picks the other branches", other_seed.size() > 100 and t1.size() > 150, "%d / %d" % [t1.size(), other_seed.size()])
+	_check("trails: the seed picks the other branches", other_seed.size() > 100 and t1.size() > 110 and other_seed != t1, "%d / %d" % [t1.size(), other_seed.size()])
 
 	# ---- view / budget ----
 	var mv = load("res://scripts/maze_view.gd").new()
@@ -152,7 +180,7 @@ func _initialize() -> void:
 	mv.build(maze, start, "arles", M.metro_cells(), M.metro_cells(), -1, "", LEVEL_SEED)
 	var sr = mv.scenery_root
 	_check("view: the painted city is built", sr != null and sr.get_node_or_null("City/Houses") != null and sr.get_node_or_null("City/Objects") != null)
-	_check("view: pellets follow the trails", mv.pellet_cells.size() > 150 and not (exit_cell in mv.pellet_cells))
+	_check("view: pellets follow the trails", mv.pellet_cells.size() > 110 and not (exit_cell in mv.pellet_cells))
 	_check("view: no power pellets, no rabbit (calm explorer)", mv.power_cells.size() == 0 and mv.rabbit_node == null)
 	_check("view: the wall boxes are physics only (not drawn)", mv.normal_wall_mmi != null and mv.normal_wall_mmi.visible == false)
 	var geo := []
@@ -284,6 +312,23 @@ func _initialize() -> void:
 	_check("comfort: 'Effekte reduzieren' stops sky and Rhône, calms the brush", sr.fx_reduced() and _f(sr.sky_material.get_shader_parameter("moving"), 1.0) == 0.0 and _f(sr.water_material.get_shader_parameter("shimmer"), 1.0) == 0.0 and calm_ok and _f(floor_mat.get_shader_parameter("calm"), 0.0) == 1.0 and sr.animated_nodes().is_empty())
 	sr.set_reduce_fx(false)
 	_check("comfort: and back", _f(sr.sky_material.get_shader_parameter("moving"), 1.0) == 1.0)
+	# UX W-F: strokes close to the camera swing less (a little always, half
+	# with reduced effects); every brush shader passes it to the impasto
+	var amp_ok := common.contains("float near_amp(float dist)") and common.contains("mix(mix(0.8, 0.5, calm), 1.0, k)") and common.contains("c = mix(mean, c, amp);")
+	for sp in ["arles_facade", "arles_arcade", "arles_floor", "arles_obj", "arles_water"]:
+		var code := FileAccess.get_file_as_string("res://shaders/%s.gdshader" % sp)
+		var calls := code.count("impasto(")
+		amp_ok = amp_ok and calls > 0 and code.count("amp") >= 1 and (code.count("near_amp(") + code.count(", amp,") >= calls)
+	_check("comfort: strokes near the camera (< 6 m) calmer, by half with 'Effekte reduzieren'", amp_ok)
+	# code W5: derivatives in uniform control flow
+	var fac := FileAccess.get_file_as_string("res://shaders/arles_facade.gdshader")
+	var arc := FileAccess.get_file_as_string("res://shaders/arles_arcade.gdshader")
+	_check("shaders: fwidth before the roof branch (facade) and before the discard (arcade)", fac.find("fwidth(s)") < fac.find("if (!roof)") and fac.find("fwidth(s)") > 0
+		and arc.find("fwidth(") < arc.find("if (open_) discard") and arc.find("fwidth(") > 0)
+	var wat := FileAccess.get_file_as_string("res://shaders/arles_water.gdshader")
+	_check("Rhône: a lamp's column is skipped before noise and exponentials when far off (code H4)", wat.find("continue;") > 0 and wat.find("continue;") < wat.find("vnoise(vec2(wpos.z"))
+	var orb := FileAccess.get_file_as_string("res://shaders/arles_orb.gdshader")
+	_check("pellets: object, not light - core at most #FF7A50, half the glow, strong contour (UX W-E)", orb.contains("vec3(1.0, 0.48, 0.31)") and orb.contains("glow_share = 0.5") and orb.contains("smoothstep(0.30, 0.42, ndv)"))
 
 	# ---- theme / registry ----
 	var th = CityThemes.get_theme("arles")
@@ -295,6 +340,8 @@ func _initialize() -> void:
 	_check("registry: label ARLES, exit script, no traffic, quiet, own texts", city.label == "ARLES" and city.metro_script.ends_with("arles_exit.gd") and city.traffic == "" and city.siren == false and city.exit_text != "" and city.exit_title != "" and city.exit_hint != "" and city.intro_hint != "" and city.metro_radius > 0.9 and city.seed == LEVEL_SEED)
 	var all_text: String = city.label + city.exit_text + city.exit_title + city.exit_hint + city.intro_hint + th.display_name
 	_check("registry: 'Van Gogh' never as a title or name", not all_text.to_lower().contains("gogh"))
+	_check("registry: banner 'HINTER DER TÜR: SPEEDRUN' / 'Hinein – los zum Speedrun!', short way hint (UX N-C, W-D)", city.exit_title == "HINTER DER TÜR: SPEEDRUN" and city.exit_text == "Hinein – los zum Speedrun!" and city.intro_hint == "Folge den Kugeln zur grünen Tür" and city.get("intro_hint_always", false))
+	_check("minimap: blocks at ~55 % brightness (UX N-D)", absf(th.minimap_wall_color.v - 0.55) < 0.02)
 	_check("minimap: exit marker mint green, pellets with a dark ring, the quay as water", th.minimap_exit_color == Style.EXIT and th.minimap_pellet_outline.a > 0.0 and th.minimap_water_script != null and M.is_water(10, 0) and not M.is_water(10, 1))
 	var bg: Color = th.minimap_bg_color
 	_check("minimap: pellets, blocks and exit stand out from the dark streets (>= 3:1)", _contrast(th.pellet_color, bg) >= 3.0 and _contrast(th.minimap_wall_color, bg) >= 3.0 and _contrast(Style.EXIT, bg) >= 3.0, "pellets %.1f, blocks %.1f, exit %.1f" % [_contrast(th.pellet_color, bg), _contrast(th.minimap_wall_color, bg), _contrast(Style.EXIT, bg)])
@@ -347,13 +394,31 @@ func _initialize() -> void:
 	var p1 = ex.door_material.get_shader_parameter("pulse")
 	ex.update(0.7, 0.0)
 	_check("exit: 'Effekte reduzieren' stops the pulse", p1 == ex.door_material.get_shader_parameter("pulse") and not ex.pulse_enabled())
+	_check("exit: the house's brush calms down with it (code H2)", ex.house_calm())
+	ex.set_reduce_fx(false)
+	_check("exit: ... and back", not ex.house_calm())
 
 	# ---- fonts / licences: no foreign material in this city ----
 	_check("assets: no textures or fonts of its own (all procedural)", not DirAccess.dir_exists_absolute("res://textures/arles"))
 
+	# code W3: freeing the city right after the build leaves nothing behind
+	var quick: Node3D = Scenery.build(maze, th, LEVEL_SEED)
+	root.add_child(quick)
+	quick.free()
+	_check("sky: freeing the city right after the build is safe (one-shot, no await)", not RenderingServer.frame_post_draw.get_connections().any(func(c): return not is_instance_valid(c.callable.get_object())))
+	# code W3: a finished bake is kept for the session; the next start reads it
+	var fake := Image.create(64, 32, false, Image.FORMAT_RGBA8)
+	fake.fill(Color(0.1, 0.1, 0.3))
+	sr.store_bake(fake)
+	var baked = sr.sky_material.get_shader_parameter("baked")
+	var again: Node3D = Scenery.build(maze, th, LEVEL_SEED)
+	_check("sky: a second start reuses the baked texture (no new bake)", again.sky_state == "cached" and again.bake_viewport == null and again.sky_material.get_shader_parameter("baked") == baked and baked == sr.get_script().baked_sky)
+	again.free()
+	sr.get_script().baked_sky = null
 	mv.queue_free()
 	ex.queue_free()
 	if failures == 0:
+
 		print("ALL %d ARLES CHECKS PASSED" % checks)
 	else:
 		print("%d/%d ARLES CHECKS FAILED" % [failures, checks])
@@ -486,3 +551,4 @@ func _oklab(c: Color) -> Vector3:
 	return Vector3(0.2104542553 * L + 0.7936177850 * Mm - 0.0040720468 * S,
 		1.9779984951 * L - 2.4285922050 * Mm + 0.4505937099 * S,
 		0.0259040371 * L + 0.7827717662 * Mm - 0.8086757660 * S)
+

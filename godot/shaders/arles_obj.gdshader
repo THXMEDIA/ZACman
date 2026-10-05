@@ -36,12 +36,13 @@ void fragment() {
 	else if (an.x > an.z) { uv = wpos.zy; tu = vec3(0, 0, 1); tv = vec3(0, 1, 0); }
 	else { uv = wpos.xy; tu = vec3(1, 0, 0); tv = vec3(0, 1, 0); }
 	float a = cell_angle(uv, P.x, P.z, int(Q.y + 0.5), R.xy);
-	float lod = stroke_lod(length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT)), length(fwidth(uv / P.y)));
+	float dist = length(wpos - (CAMERA_POSITION_WORLD + MAP_SHIFT));
+	float lod = stroke_lod(dist, length(fwidth(uv / P.y)));
 	vec3 ca = mat_a[m]; vec3 cb = mat_b[m];
 	if (Q.w > 0.0 && mod(floor(wpos.y / Q.w), 2.0) > 0.5) { ca = mat_e[m]; cb = mat_e[m] * 0.82; }
 	if (R.z > 0.5 && FRONT_FACING) { ca = mat_e[m]; cb = mat_e[m] * 0.8; }
 	vec2 dv; float ridge;
-	vec3 c = impasto(uv, ca, cb, mat_c[m], P.w, a, P.x, P.y, lod, dv, ridge);
+	vec3 c = impasto(uv, ca, cb, mat_c[m], P.w, a, P.x, P.y, lod, near_amp(dist), dv, ridge);
 	vec3 wtan = normalize(tu * dv.x + tv * dv.y);
 	vec3 n = normalize(nn + wtan * ridge * Q.z * (1.0 - calm * 0.5));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);

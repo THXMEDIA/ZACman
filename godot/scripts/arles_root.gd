@@ -1,14 +1,21 @@
 extends Node3D
 ## Root node of the painted Arles night city (arles_scenery.gd builds it).
-## Bakes the swirl sky once when the level starts (technical condition): a
-## SubViewport renders arles_sky_bake.gdshader (line integral convolution,
-## seamless all around) into a 2048 x 1024 texture a single time; it is read
-## back with mipmaps and the viewport is freed. At run time the sky shader only
-## reads that texture (flow map, three samples). Main forwards "Effekte
-## reduzieren" here: the sky stands, the Rhône stops trembling, the brush gets
-## calmer (the exit pulse stops in arles_exit.gd).
+## Bakes the swirl sky once (technical condition): a SubViewport renders
+## arles_sky_bake.gdshader (line integral convolution, seamless all around)
+## into a 2048 x 1024 texture a single time; it is read back with mipmaps, the
+## viewport is freed, and the finished texture is kept for the session (code
+## W3): every later Arles start reads the cached texture and bakes nothing. At
+## run time the sky shader only reads that texture (flow map, three samples).
+## The read-back waits for RenderingServer.frame_post_draw as a one-shot
+## connection (no await: freeing the city right after the build leaves no
+## coroutine behind). Main forwards "Effekte reduzieren" here: the sky stands,
+## the Rhône stops trembling, the brush gets calmer (the exit pulse stops in
+## arles_exit.gd).
 
 const Style := preload("res://scripts/arles_style.gd")
+
+## The baked sky of this session (null until the first bake was read back).
+static var baked_sky: ImageTexture = null
 
 var city: Node3D = null
 var house_box_count := 0
@@ -23,14 +30,20 @@ var sky_material: ShaderMaterial = null
 var bake_material: ShaderMaterial = null
 var bake_viewport: SubViewport = null
 ## "viewport" while the bake texture is the live viewport, "image" once it has
-## been read back into a mipmapped ImageTexture.
+## been read back into a mipmapped ImageTexture, "cached" when this start took
+## the texture of an earlier bake.
 var sky_state := ""
 var _reduce_fx := false
+var _bake_tries := 0
 
 
 func setup_sky(sky_mat: ShaderMaterial, bake_mat: ShaderMaterial) -> void:
 	sky_material = sky_mat
 	bake_material = bake_mat
+	if baked_sky != null:
+		sky_material.set_shader_parameter("baked", baked_sky)
+		sky_state = "cached"
+		return
 	bake_viewport = SubViewport.new()
 	bake_viewport.name = "SkyBake"
 	bake_viewport.size = Style.SKY_BAKE_SIZE
@@ -48,22 +61,34 @@ func setup_sky(sky_mat: ShaderMaterial, bake_mat: ShaderMaterial) -> void:
 
 func _ready() -> void:
 	if bake_viewport != null and sky_material != null:
-		_finish_bake()
+		_wait_for_bake()
 
 
-func _finish_bake() -> void:
+func _wait_for_bake() -> void:
 	# headless (tests): nothing is drawn, keep the viewport texture
 	if DisplayServer.get_name() == "headless":
 		return
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
-	if not is_instance_valid(bake_viewport):
+	RenderingServer.frame_post_draw.connect(_finish_bake, CONNECT_ONE_SHOT)
+
+
+func _finish_bake() -> void:
+	if not is_inside_tree() or not is_instance_valid(bake_viewport):
 		return
 	var img := bake_viewport.get_texture().get_image()
 	if img == null or img.is_empty():
+		# not drawn yet: wait for the next frame (a few at most)
+		_bake_tries += 1
+		if _bake_tries < 4:
+			RenderingServer.frame_post_draw.connect(_finish_bake, CONNECT_ONE_SHOT)
 		return
+	store_bake(img)
+
+
+## Keeps a finished bake (mipmapped) for the session and frees the viewport.
+func store_bake(img: Image) -> void:
 	img.generate_mipmaps()
-	sky_material.set_shader_parameter("baked", ImageTexture.create_from_image(img))
+	baked_sky = ImageTexture.create_from_image(img)
+	sky_material.set_shader_parameter("baked", baked_sky)
 	sky_state = "image"
 	var save := OS.get_environment("ARLES_SKY_SAVE") # QA: keep the baked strokes as a picture
 	if save != "":
@@ -71,7 +96,8 @@ func _finish_bake() -> void:
 		small.clear_mipmaps()
 		small.resize(1024, 512)
 		small.save_png(save)
-	bake_viewport.queue_free()
+	if is_instance_valid(bake_viewport):
+		bake_viewport.queue_free()
 	bake_viewport = null
 
 
