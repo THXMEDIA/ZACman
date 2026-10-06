@@ -1,0 +1,94 @@
+extends RefCounted
+## ExplorerCities — what Main needs to run each Explorer city (the calm,
+## untimed levels whose pellets lead to the subway, the exit into a
+## speedrun). The look lives in the city's CityTheme (city_themes.gd), the
+## street grid in its maze script; this registry ties them together for
+## Main.begin_explorer_game(city_id):
+##   theme         CityTheme id (city_themes.gd)
+##   label         HUD level chip
+##   maze_script   script with generate() -> MazeGen.Maze
+##   seed          level seed of the city's scenery and pellet trails
+##                 (0 = the city has no seeded scenery)
+##   metro         "random": metro_count random open room cells (Manhattan)
+##                 "maze": maze_script.metro_cells() (Tokyo: the station exit)
+##   metro_script  the subway sign node (setup(pos) / update(delta, now))
+##   traffic       "manhattan" = Manhattan's word traffic and pedestrians,
+##                 "tokyo" = rain, wire cars, passers-by and the scramble
+##                 crossing (tokyo_life.gd), "amsterdam" = card passers-by and
+##                 bicycles (amsterdam_life.gd), "kyoto" = slow passers-by
+##                 (kyoto_life.gd), "" = none
+##   exit_text     level-clear banner subtitle when the player takes the exit
+##   exit_title    banner title (explorer cities have no "level clear")
+##   metro_radius  how close to the exit node triggers it (m)
+##   siren         ghost-siren drone on (default true; Kyoto, Amsterdam, Arles: quiet)
+##   intro_hint    optional hint shown once at the start (not with reduce_fx,
+##                 unless intro_hint_always)
+##   intro_hint_always  the intro hint is about the way, not an effect: it
+##                 comes with "Effekte reduzieren" too (Amsterdam, Arles; QA W1)
+##   exit_hint     optional hint shown once within 12 m of the exit
+##   desc          one line for the start screen (shown on hover / focus)
+
+const EXPLORER_IDS := ["manhattan", "tokyo", "kyoto", "amsterdam", "arles"]
+
+
+static func get_city(id: String) -> Dictionary:
+	match id:
+		"manhattan":
+			return {
+				"id": "manhattan", "theme": "manhattan", "label": "MANHATTAN",
+				"maze_script": "res://scripts/manhattan_maze.gd", "seed": 0,
+				"metro": "random", "metro_count": 4, "metro_script": "res://scripts/metro_station.gd",
+				"traffic": "manhattan", "exit_text": "SUBWAY — los zum Speedrun!",
+				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 0.75,
+				"desc": "Manhattan – Wort-Stadt bei Nacht, Verkehr aus Wörtern",
+			}
+		"tokyo":
+			return {
+				"id": "tokyo", "theme": "tokyo", "label": "TOKYO",
+				"maze_script": "res://scripts/tokyo_maze.gd", "seed": 7310,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/tokyo_metro_station.gd",
+				"traffic": "tokyo", "exit_text": "U-BAHN — los zum Speedrun!",
+				"exit_title": "NÄCHSTER HALT: SPEEDRUN", "metro_radius": 1.3,
+				"desc": "Tokyo – Neon im Regen, Verkehr und Menschen",
+			}
+		"kyoto":
+			return {
+				"id": "kyoto", "theme": "kyoto", "label": "KYOTO",
+				"maze_script": "res://scripts/kyoto_maze.gd", "seed": 1765,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/kyoto_exit.gd",
+				"traffic": "kyoto", "exit_text": "Umblättern – los zum Speedrun!",
+				"exit_title": "NÄCHSTE SEITE: SPEEDRUN", "metro_radius": 1.2,
+				"siren": false,
+				"intro_hint": "Die Stadt klappt beim Laufen auf. Ruhiger: Esc → Effekte reduzieren",
+				"exit_hint": "Grüne Tür: umblättern in den Speedrun",
+				"desc": "Kyoto – Pop-up-Bilderbuch, Häuser klappen auf",
+			}
+		"amsterdam":
+			return {
+				"id": "amsterdam", "theme": "amsterdam", "label": "AMSTERDAM",
+				"maze_script": "res://scripts/amsterdam_maze.gd", "seed": 2121,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/amsterdam_exit.gd",
+				"traffic": "amsterdam", "exit_text": "Einsteigen – los zum Speedrun!",
+				"exit_title": "NÄCHSTE HALTESTELLE: SPEEDRUN", "metro_radius": 1.3,
+				"siren": false,
+				"intro_hint": "Folge den blauen Nadeln zur grünen Tram", "intro_hint_always": true,
+				"exit_hint": "Grüne Tram: einsteigen in den Speedrun",
+				"desc": "Amsterdam – Pappmodell 1:100 im Abendlicht, ruhig",
+			}
+		"arles":
+			return {
+				"id": "arles", "theme": "arles", "label": "ARLES",
+				"maze_script": "res://scripts/arles_maze.gd", "seed": 1888,
+				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/arles_exit.gd",
+				"traffic": "", "exit_text": "Hinein – los zum Speedrun!",
+				"exit_title": "HINTER DER TÜR: SPEEDRUN", "metro_radius": 1.3,
+				"siren": false,
+				"intro_hint": "Folge den Kugeln zur grünen Tür", "intro_hint_always": true,
+				"exit_hint": "Grüne Tür: hinein in den Speedrun",
+				"desc": "Arles – gemalte Sternennacht, bewegter Himmel",
+			}
+	return {}
+
+
+static func has_city(id: String) -> bool:
+	return not get_city(id).is_empty()

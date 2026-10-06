@@ -4,12 +4,17 @@ extends CharacterBody3D
 ## gravity, no floor snap, matches the web prototype's fixed-height feel).
 
 const CELL := 2.0
-const EYE_H := 0.95
+## Default eye height (m); every city sets its own via CityTheme.eye_height
+## (Main applies it with set_eye_height). Was 0.95 everywhere: too low (Abnahme 06.10.).
+const EYE_H := 1.25
 const PLAYER_RADIUS := 0.34
-const PLAYER_SPEED := 4.4
+## +15 %, then +5 % (Abnahme 06.10.: 4.4 -> 5.06 -> 5.31); Levels.PLAYER_SPEED must stay equal.
+const PLAYER_SPEED := 5.31
 const MOUSE_SENSITIVITY := 0.0022
 
 var camera: Camera3D
+## Current eye height of the camera (m), set per city by set_eye_height().
+var eye_h := EYE_H
 var yaw := 0.0
 var pitch := 0.0
 var input_enabled := true
@@ -26,6 +31,9 @@ var movement_locked := false
 ## UX-K1: the player's mouse sensitivity, a factor on MOUSE_SENSITIVITY
 ## (Settings "mouse_sens", 0.3-3.0).
 var mouse_sensitivity_scale := 1.0
+## The small lamp the player carries; Main sets its color per city theme
+## (CityTheme.player_light_*).
+var light: OmniLight3D
 
 
 func _ready() -> void:
@@ -54,13 +62,13 @@ func _ready() -> void:
 	add_child(cs)
 
 	camera = Camera3D.new()
-	camera.position = Vector3(0, EYE_H, 0)
+	camera.position = Vector3(0, eye_h, 0)
 	camera.fov = 72.0
 	camera.near = 0.05
 	camera.far = 100.0
 	add_child(camera)
 
-	var light := OmniLight3D.new()
+	light = OmniLight3D.new()
 	light.light_color = Color(0.56, 0.83, 1.0)
 	light.omni_range = 7.0
 	light.light_energy = 1.1
@@ -75,8 +83,16 @@ func set_noclip(active: bool) -> void:
 	collision_mask = 0 if active else 2
 
 
+## Sets the eye height: the body (and with it the camera) sits at y = h. Only
+## the height changes, never yaw/pitch (red line E8e).
+func set_eye_height(h: float) -> void:
+	eye_h = h
+	if camera != null:
+		camera.position = Vector3(0, eye_h, 0)
+
+
 func warp_to(cell: Vector2i, facing_yaw: float) -> void:
-	global_position = Vector3(cell.y * CELL, EYE_H, cell.x * CELL)
+	global_position = Vector3(cell.y * CELL, eye_h, cell.x * CELL)
 	yaw = facing_yaw
 	rotation.y = yaw
 	pitch = 0.0

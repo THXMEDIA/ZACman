@@ -76,8 +76,8 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL best_for should stay 200.0, got %s" % sr.best_for("klassik-1"))
 
-	# Third run beats the klassik-1 target (115.0) and is a new best -> unlocks bonus.
-	var r3: Dictionary = sr.record_level_time("klassik-1", 100.0)
+	# Third run beats the klassik-1 target (95.0) and is a new best -> unlocks bonus.
+	var r3: Dictionary = sr.record_level_time("klassik-1", 85.0)
 	checks += 1
 	if not r3.is_new_best or not r3.beat_target or not r3.newly_unlocked_bonus:
 		failures += 1
@@ -88,7 +88,7 @@ func _initialize() -> void:
 		print("FAIL bonus should be unlocked after beating target")
 
 	# Unlocking again on a later beat-target run must not re-report "newly" unlocked.
-	var r4: Dictionary = sr.record_level_time("klassik-2", 150.0) # under the klassik-2 target (170.0)
+	var r4: Dictionary = sr.record_level_time("klassik-2", 130.0) # under the klassik-2 target (140.0)
 	checks += 1
 	if r4.newly_unlocked_bonus:
 		failures += 1
@@ -101,13 +101,13 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL bonus_unlocked should persist to a fresh Speedrun instance")
 	checks += 1
-	if sr2.best_for("klassik-1") != 100.0:
+	if sr2.best_for("klassik-1") != 85.0:
 		failures += 1
-		print("FAIL best_for should persist as 100.0, got %s" % sr2.best_for("klassik-1"))
+		print("FAIL best_for should persist as 85.0, got %s" % sr2.best_for("klassik-1"))
 	checks += 1
-	if sr2.best_for("klassik-2") != 150.0:
+	if sr2.best_for("klassik-2") != 130.0:
 		failures += 1
-		print("FAIL best_for(klassik-2) should persist as 150.0, got %s" % sr2.best_for("klassik-2"))
+		print("FAIL best_for(klassik-2) should persist as 130.0, got %s" % sr2.best_for("klassik-2"))
 
 	sr.free()
 	sr2.free()

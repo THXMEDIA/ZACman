@@ -2,8 +2,9 @@ extends "res://scripts/conditions/condition_base.gd"
 ## Fear & Loathing (bad) — exactly ONE steering manipulation per pickup,
 ## drawn with the rabbit's random generator (spec 2.4), announced with its
 ## symbol on the title card:
-##   SWAP   A/D swapped (strafe input mirrored)
-##   DRIFT  25 % sideways pull, only while a movement input is held
+##   SWAP   A/D AND W/S swapped (the whole movement vector mirrored; E10)
+##   DRIFT  40 % sideways pull, only while a movement input is held (E10;
+##          was 25 %, which the bot measurement found barely noticeable)
 ##   DELAY  150 ms delay on WASD (fixed ring buffer)
 ## Look "Kippbild": "gekippt" (flip) = the manipulation is acting on the
 ## current input right now (a movement input is held), smoothed over 0.4 s.
@@ -18,7 +19,7 @@ const SWAP := "swap"
 const DRIFT := "drift"
 const DELAY := "delay"
 const MANIPULATIONS := [SWAP, DRIFT, DELAY]
-const DRIFT_SHARE := 0.25
+const DRIFT_SHARE := 0.4
 const DELAY_S := 0.15
 const LOOK_FLIP_SECONDS := 0.4
 
@@ -53,7 +54,7 @@ func set_manipulation(kind: String) -> void:
 func subtitle() -> String:
 	match manipulation:
 		SWAP:
-			return "A/D vertauscht"
+			return "Steuerung gespiegelt"
 		DRIFT:
 			return "Drift zur Seite"
 		DELAY:
@@ -75,8 +76,8 @@ func modify_input(v: Vector2, _delta: float) -> Vector2:
 	var out := v
 	match manipulation:
 		SWAP:
-			out = Vector2(-v.x, v.y)
-			_acting = absf(v.x) > 0.001
+			out = -v
+			_acting = has_input
 		DRIFT:
 			if has_input:
 				var dir := v.normalized()

@@ -16,7 +16,7 @@ godot/             Godot-4.3-Projekt — aktiver Entwicklungsstand, Steam-Ziel
   scripts/          Spiellogik (GDScript)
   shaders/          pacman_wall/pacman_floor/crt_overlay — Speedrun-Look „Lagune“; kond_wall/kond_floor — Konditions-Looks; mario_vista (nicht im Speedrun)
   scenes/           Main.tscn (Rest wird zur Laufzeit aus Code gebaut)
-  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Twitch, Chat-Abstimmung, Bot-Simulation)
+  tests/            Headless-Tests (Labyrinth, Speedrun, Bretter, Spielstand-Sicherheit, Manhattan, Tokyo, Kyoto, Amsterdam, Arles, Twitch, Chat-Abstimmung, Bot-Simulation)
 tools/qa/          QA-Skripte: Screenshots (qa_*_shots.gd), Messung der Kaninchen-Wette (qa_rabbit_balance.gd)
 web/               Browser-Prototyp (ein einziges HTML-File, Three.js via CDN)
 core/              JS-Referenzimplementierung der Labyrinth-Generierung (für web/)
@@ -105,12 +105,12 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   (nie ein zweiter Wandsatz). Der alte Matrix-Regen-Shader und der
   Psychedelik-Effekt sind entfernt.
 - **Startbildschirm und Menüs** (`hud.gd`, Spezifikation 1.2 und 3): von
-  oben nach unten Titel, **Komfort-Block** („Effekte reduzieren“,
-  Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
+  oben nach unten Titel, **Komfort-Block** („Effekte reduzieren“ und
+  „Regen reduzieren“ in einer Zeile, Sichtfeld 60–100°, Standard 72°, Mausempfindlichkeit 0,3–3,0×; ohne
   Scrollen sichtbar bei 1152×720; derselbe Block in der Pause), Kurzinfo
   und Bestpunktzahl, die Optionen Chaos-Modus und Twitch-Chat, dann
-  **SPEEDRUN**, **BESTENLISTE**, **EXPLORER-LEVEL** (Manhattan, von Anfang an
-  spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
+  **SPEEDRUN**, **BESTENLISTE**, die Explorer-Auswahl **MANHATTAN | TOKYO | KYOTO | AMSTERDAM | ARLES**
+  (von Anfang an spielbar) und **BEENDEN**. Erklärtexte sind mindestens 14 px groß. Das
   Spiel-HUD (Chips, Minimap, Energie) erscheint nur im laufenden Spiel; alle
   Chips sind mindestens 170 px breit. Pause: WEITER / NEUSTART / HAUPTMENÜ
   (im Speedrun mit Rückfrage „Lauf abbrechen?“; ein abgebrochener Lauf
@@ -164,6 +164,60 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   Overpass-Daten sind aus dieser Sandbox nicht erreichbar — für eine
   datengetriebene Variante siehe `tools/osm_to_chunks.py` im
   ReclaimTheStreets-Projekt, lokal ausführbar.
+- **Explorer-Stadt Tokyo** (Spezifikation `docs/design/tokyo-explorer.md`,
+  Look „Natriumregen“, Meilensteine M1 und M2): eine gröbere Gitter-Annäherung an die
+  Umgebung einer großen Scramble-Kreuzung vor einem Bahnhof
+  (`tokyo_maze.gd`, 47 × 47 Zellen, offenes 7 × 7-Kreuzungsfeld, Gassen,
+  U-Bahn-Ausgang 地下鉄 in der Bahnhofsfassade). Die Stadt besteht nur aus
+  Licht und Linien: schwarze Masse, Neonröhren-Konturen aus dem
+  Linien-Builder (`neon_lines.gd`, eine Mesh-Instanz pro Farbe), Sockellinie
+  auf 2,3 m genau an der Kollisionskante, Bordstein, Ladenfronten, zwei
+  Screens, Natriumlaternen, nasser glänzender Boden, Glow
+  (`tokyo_scenery.gd`, Palette `tokyo_style.gd`). Schilder nur mit
+  Allgemeinwörtern im gebündelten Noto-Sans-CJK-Subset (OFL,
+  `docs/art/lizenzen.md`); keine Marken, Rundturm als Achteck verfremdet.
+  Dekoration und Kugelspuren kommen aus dem Level-Seed der Stadt.
+  Explorer-Städte sind allgemein (`explorer_cities.gd`,
+  `Main.begin_explorer_game(city_id)`); der Theme-Wechsel setzt Glow, SSR,
+  Volumetrik, Tonemapping, Spielerlampe und Sichtweite immer aus dem Theme,
+  der Speedrun leuchtet nach Tokyo also nicht nach.
+  **M2 – die Stadt lebt** (`tokyo_life.gd`, sechs MultiMeshes, Animation in
+  den Shadern, keine Allokationen pro Frame, deterministisch mit dem
+  Level-Seed): nasser Boden mit vorgebackener Pfützenmaske, Roughness-Maske
+  für SSR, bis zu 8 Lichtpfützen mit gestreckten Reflexstreifen und
+  Ladenfront-Glow (`tokyo_floor.gdshader`, `tokyo_wet.gd`); ohne SSR
+  (Compatibility-Renderer) zusätzlich eine Bildschirm-Spiegelung am Horizont
+  (`tokyo_floor_reflect.gdshader`). Regen aus 8.000 Tropfen, die im
+  Vertex-Shader um die Kamera fallen, im Gegenlicht aufhellen und über den
+  Kugelspuren lichter sind. Drahtautos im Linksverkehr mit weißen
+  Scheinwerfern, roten Rücklichtern und Lichtstreifen auf dem Asphalt (sie
+  halten an der Ampel und vor dem Spieler, Hindernis wie in Manhattan);
+  28 Passanten mit Schirmen (Gang im Vertex-Shader). Scramble-Zyklus 80 s:
+  60 s Verkehr, 20 s „All Walk“ mit einer Welle von 112 Personen gerade und
+  diagonal, angekündigt von einem synthetischen Fußgängerton. Halos und
+  Lichtkegel (Laternen, Scheinwerfer, U-Bahn mit 0,5 Hz) als MultiMesh.
+  Komfort: „Regen reduzieren“ (35 % der Tropfen, gedämpft); „Effekte
+  reduzieren“ dämpft den Regen ebenfalls. Alle Kugeln (auch Manhattan und
+  Speedrun) sind jetzt eine MultiMesh. Draw-Call-Bilanz in
+  `docs/design/tokyo-explorer.md` 4.3.
+- **Explorer-Städte Kyoto und Amsterdam** (Spezifikationen
+  `docs/design/kyoto-explorer.md`, `docs/design/amsterdam-explorer.md`):
+  Kyoto als Pop-up-Bilderbuch im Holzschnitt-Blau; **Amsterdam** als
+  Architekturmodell aus Wellpappe im Maßstab 1:100 zur goldenen Stunde
+  (`amsterdam_maze.gd`, `amsterdam_scenery.gd`, `amsterdam_exit.gd`):
+  Grachtengürtel mit Kaimauern aus echter Wellen-Geometrie, Giebelhäuser mit
+  ausgeschnittenen Fenstern, Westerkerk-Turm, Magere Brug, Tanzende Häuser am
+  Damrak; Stecknadeln als Kugeln, grüne Papp-Tram als Ausgang; Tisch,
+  Schneidematte, Bleistift und Becher jenseits der Modellkante. CC0-Fotoscans
+  in `godot/textures/amsterdam/` (`docs/art/lizenzen.md`).
+- **Explorer-Stadt Arles** (Spezifikation `docs/design/arles-explorer.md`):
+  Sternennacht über echten Orten von Arles, stilisiert und frei angeordnet
+  (`arles_maze.gd`, `arles_scenery.gd`, `arles_exit.gd`, Shader `arles_*`):
+  gebackener, ringsum nahtloser Wirbelhimmel, Impasto-Striche mit Strich-LOD,
+  Caféterrasse am Forum (ohne Namen), Arena, Saint-Trophime, Théâtre antique,
+  Rhône-Kai mit gespiegelten Laternen; Kugeln Zinnober, Ausgang ist die grüne
+  Tür des Gelben Hauses unter einem grünen Stern. Alles prozedural, kein
+  Fremdmaterial.
 - **Twitch-Chat (opt-in)**: anonymer, credential-freier IRC-Chat-Listener
   (`godot/scripts/twitch_chat.gd`) für einen frei wählbaren Kanal, per
   Checkbox auf dem Startbildschirm standardmäßig **aus** (damit ernsthafte
@@ -275,11 +329,13 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
   sind keine hartkodierten `if/else`-Zweige mehr in `maze_view.gd`, sondern
   zwei Instanzen einer `CityTheme`-Resource (Wand-Wort & -Palette, optionaler
   Wahrzeichen-Provider wie `manhattan_maze.gd`, Boden-/Decken-Material,
-  Umgebungsfarben/-Fog, Power-up-An/Aus). Eine neue, stilistisch komplett
-  andere Stadt (Paris im Aquarell-Look, Tokio/Shibuya als Neonröhren-
-  Cyberpunk-Regenszene, Rio im Pop-Art-Stil, ...) wird dadurch reiner Content:
-  eine neue `CityTheme` in `city_themes.gd` registrieren, `maze_view.gd`/
-  `main.gd` müssen dafür nicht angefasst werden. Architektur-Hintergrund und
+  Umgebungsfarben/-Fog, Post-Processing, Power-up-An/Aus, optional eigener
+  Szenerie-Builder und eigene Kugelspuren). Eine neue, stilistisch komplett
+  andere Stadt (Paris im Aquarell-Look, Rio im Pop-Art-Stil, ...) wird dadurch
+  reiner Content: eine `CityTheme` in `city_themes.gd` und ein Eintrag in
+  `explorer_cities.gd` (Gitter-Skript, Level-Seed, U-Bahn); `maze_view.gd`/
+  `main.gd` müssen dafür nicht angefasst werden. Tokyo ist die erste Stadt
+  auf diesem Weg. Architektur-Hintergrund und
   Prioritäten dazu stehen im Claude-Projekt-Dokument "Explorer-Level-
   Erweiterung, Leaderboard & Konditionen".
 - **Weißes Kaninchen und Konditionen** (Spezifikation
@@ -298,7 +354,7 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     spielt einen voll deterministischen Lauf.
   - **Konditionen** sind zeitlich begrenzte Effekte, die nur das Kaninchen
     auslöst. Registry in `conditions.gd` mit `is_good`, `duration_s` (gut
-    10 s, schlecht 8 s) und `weight`; Grundverhältnis gut:schlecht 60:40,
+    10 s, Matrix 15 s, schlecht 8 s – E10) und `weight`; Grundverhältnis gut:schlecht 60:40,
     innerhalb gleich verteilt (`Conditions.pick_condition(rng, p_good)`).
     Pool: **Matrix** (gut; Wände ohne Kollision, Look „Durchlässiger Code“,
     in den letzten 3 s blenden die Wände blinkend ein, am Ende steht der
@@ -317,8 +373,8 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
     Levelstart gecacht, Shader-Parameter und Umgebung nur bei Änderung
     (`Main.env_blend_count`/`look_param_count` für Tests).
   - **Fear & Loathing**: pro Aufnahme genau eine Manipulation, gezogen mit
-    dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: A/D getauscht,
-    Drift (25 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
+    dem Kaninchen-Zufall und mit Symbol auf der Titelkarte: Steuerung gespiegelt (A/D und W/S),
+    Drift (40 % Seitenzug, nur solange eine Bewegungseingabe anliegt) oder
     150 ms Verzögerung auf WASD (fester Ringpuffer; beim Loslassen steht man
     sofort). „Gekippt“ ist der Look, solange die Manipulation auf die
     aktuelle Eingabe wirkt. **Rote Linie**: Maus, Blickrichtung und Kamera
@@ -449,6 +505,16 @@ keine Szene unter `res://tests/`/`res://tools/`), also nie in Tests;
 - **Verlauf**: Ältere Umsetzungsrunden und Review-Runden stehen in der
   Git-Historie und unter `docs/review/berichte/`; dieser README beschreibt
   nur den Ist-Stand.
+
+## Versus (Multiplayer, E17)
+
+Startscreen → **VERSUS**: Ein Spieler hostet (Port 47823/UDP, freigeben),
+der andere tritt per IP-Adresse bei. Beide rennen dieselben drei Level, jeder
+in seiner eigenen Labyrinth-Kopie; schnellere Zeit gewinnt die Runde, zwei
+Runden das Match. Mit Twitch-Chat auf beiden Seiten entscheiden die Chats
+über die Kaninchen (`!gut` hilft dem eigenen Spieler, `!schlecht` schadet dem
+Gegner). Spezifikation: [`docs/design/multiplayer.md`](docs/design/multiplayer.md).
+Test mit zwei Spielinstanzen: `tools/qa/versus_e2e.sh` (bzw. `npm run test:versus`).
 
 ## Steam-Veröffentlichung
 

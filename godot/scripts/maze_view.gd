@@ -4,6 +4,10 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
+## Pickup radii (m, horizontal). Pellets 0.8 (was 0.42), power/fruit/rabbit 0.9 (was 0.5).
+## Levels.PICKUP_R is the same number (reference route times).
+const PICKUP_PELLET_R := 0.8
+const PICKUP_BIG_R := 0.9
 const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal" (Speedrun) theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
 ## The voxel-cloud sky sits well above the wall tops rather than hugging
 ## them: both the sky ceiling and the clouds under it float at
@@ -25,7 +29,11 @@ var theme := "normal" # theme id — see city_themes.gd's registry ("normal" | "
 var city_theme # CityTheme — the resolved visual/gameplay bundle for `theme` (see city_theme.gd)
 var pellet_cells: Array = [] # Array[Vector2i]
 var pellet_alive: Array = [] # Array[bool], parallel to pellet_cells
-var pellet_meshes: Array = [] # Array[MeshInstance3D], parallel to pellet_cells
+## All pellets of a level are ONE MultiMesh (one draw call, docs/design/
+## tokyo-explorer.md M2): instance i is pellet_cells[i]; an eaten pellet's
+## instance is collapsed to a zero-size transform (no node per pellet).
+var pellet_mmi: MultiMeshInstance3D = null
+var pellet_multimesh: MultiMesh = null
 var power_cells: Array = [] # Array[Vector2i]
 var power_nodes: Array = [] # Array[MeshInstance3D]
 var power_alive: Array = [] # Array[bool]
@@ -68,6 +76,11 @@ var level_look: Dictionary = {}
 ## G = junction (open cell with >= 3 open neighbors). Shader themes only.
 var maze_tex: ImageTexture
 var floor_mesh: MeshInstance3D
+## The theme's own static scenery (CityTheme.scenery_builder_script, Tokyo's
+## neon contours); null for every other theme.
+var scenery_root: Node3D = null
+## The level seed the scenery and the pellet trails were built with (Tokyo).
+var scenery_seed := 0
 var screen_overlay: CanvasLayer = null # CRT overlay (CityTheme.screen_overlay_shader_path), else null
 
 ## ---- Look switching (rabbit conditions, spec 1.2) ----
@@ -84,7 +97,7 @@ var cond_wall_material: ShaderMaterial = null
 var cond_floor_material: ShaderMaterial = null
 
 var wall_material: Material # the CURRENT wall material: StandardMaterial3D, the theme's wall shader or a condition look's (see _make_materials / set_look)
-var pellet_material: StandardMaterial3D
+var pellet_material: Material # StandardMaterial3D, or the theme's pellet shader
 var power_material: StandardMaterial3D
 var fruit_material: StandardMaterial3D
 
@@ -102,12 +115,18 @@ var fruit_material: StandardMaterial3D
 ##
 ## `look_id` names the level's color variant (Levels.POOL[].look, e.g.
 ## "lagune"/"riff"); "" or an unknown id uses CityTheme.default_level_look.
-func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "") -> void:
+##
+## `level_seed` drives everything decorative of a theme with its own scenery
+## (Tokyo: floor bands, background silhouettes, which trails carry pellets) —
+## the same seed always builds the same city (tests/test_tokyo.gd).
+func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserved_cells: Array = [], metro_cells: Array = [], rabbit_seed: int = -1, look_id: String = "", level_seed: int = 0) -> void:
+	visible = true # Main hides the maze behind the start screen (QA W1)
 	for child in get_children():
 		child.queue_free()
 	pellet_cells.clear()
 	pellet_alive.clear()
-	pellet_meshes.clear()
+	pellet_mmi = null
+	pellet_multimesh = null
 	power_cells.clear()
 	power_nodes.clear()
 	power_alive.clear()
@@ -122,6 +141,8 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	word_mode_active = false
 	sky_cloud_nodes.clear()
 	screen_overlay = null
+	scenery_root = null
+	scenery_seed = level_seed
 	_looks.clear()
 	current_look = LOOK_BASE
 
@@ -136,6 +157,9 @@ func build(new_maze, start_cell: Vector2i, maze_theme: String = "normal", reserv
 	_make_materials()
 	_build_walls()
 	_build_floor_ceiling()
+	if city_theme.scenery_builder_script != null:
+		scenery_root = city_theme.scenery_builder_script.build(maze, city_theme, level_seed)
+		add_child(scenery_root)
 	_build_sky_clouds()
 	_build_tunnel_vistas()
 	_build_pellets(start_cell, reserved_cells, metro_cells, rabbit_seed)
@@ -170,11 +194,18 @@ func _make_materials() -> void:
 		sm.metallic = 0.15
 		wall_material = sm
 
-	pellet_material = StandardMaterial3D.new()
-	pellet_material.albedo_color = city_theme.pellet_color
-	pellet_material.emission_enabled = true
-	pellet_material.emission = city_theme.pellet_emission
-	pellet_material.emission_energy_multiplier = city_theme.pellet_energy
+	if city_theme.pellet_shader_path != "":
+		var pm := ShaderMaterial.new()
+		pm.shader = load(city_theme.pellet_shader_path)
+		pm.set_shader_parameter("col", city_theme.pellet_color)
+		pellet_material = pm
+	else:
+		var sm2 := StandardMaterial3D.new()
+		sm2.albedo_color = city_theme.pellet_color
+		sm2.emission_enabled = true
+		sm2.emission = city_theme.pellet_emission
+		sm2.emission_energy_multiplier = city_theme.pellet_energy
+		pellet_material = sm2
 
 	power_material = StandardMaterial3D.new()
 	power_material.albedo_color = city_theme.power_color
@@ -318,6 +349,8 @@ func _build_walls() -> void:
 	normal_wall_mmi.multimesh = mm
 	# On the instance, not the mesh, so set_look() can swap it in place.
 	normal_wall_mmi.material_override = wall_material
+	# Amsterdam: the boxes are only physics, the scenery shows the houses.
+	normal_wall_mmi.visible = city_theme.walls_visible
 	add_child(normal_wall_mmi)
 
 	# The word-built-world skin (permanently word-built themes only, e.g.
@@ -461,6 +494,8 @@ func _build_floor_ceiling() -> void:
 		fsm.set_shader_parameter("maze_size", Vector2(maze.cols, maze.rows))
 		fsm.set_shader_parameter("floor_albedo", city_theme.floor_color)
 		_apply_level_look(fsm)
+		if city_theme.floor_setup_script != null:
+			city_theme.floor_setup_script.setup_floor(fsm, maze, scenery_seed)
 		floor_mesh.material_override = fsm
 	floor_mesh.position = Vector3((maze.cols - 1) * CELL * 0.5, 0.0, (maze.rows - 1) * CELL * 0.5)
 	add_child(floor_mesh)
@@ -568,7 +603,7 @@ func set_word_mode(active: bool) -> void:
 	word_mode_active = active and word_wall_root != null
 	if word_wall_root != null:
 		word_wall_root.visible = word_mode_active
-	normal_wall_mmi.visible = not word_mode_active
+	normal_wall_mmi.visible = not word_mode_active and city_theme.walls_visible
 
 
 ## ---- Look API (rabbit conditions switch looks at runtime) ----
@@ -820,7 +855,14 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		if not power_set.has(cell):
 			pellet_candidates.append(cell)
 
-	if city_theme.pellets_follow_metro_trails and metro_cells.size() > 0:
+	if city_theme.pellets_follow_metro_trails and metro_cells.size() > 0 and city_theme.pellet_trail_provider_script != null:
+		# The theme lays its own trails (Tokyo: along the street center lines,
+		# every cell, not only the odd/odd room cells).
+		pellet_cells = []
+		for cell in city_theme.pellet_trail_provider_script.trail_cells(maze, metro_cells, start_cell, scenery_seed):
+			if cell != start_cell and not reserved_set.has(cell) and not power_set.has(cell) and MazeGen.is_open(maze, cell.x, cell.y):
+				pellet_cells.append(cell)
+	elif city_theme.pellets_follow_metro_trails and metro_cells.size() > 0:
 		pellet_cells = _metro_trail_cells(pellet_candidates, metro_cells, start_cell)
 	else:
 		pellet_cells = pellet_candidates
@@ -834,13 +876,18 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 			pellet_cells.erase(rabbit_cell)
 
 	var sphere: Mesh = _pickup_mesh(city_theme.pellet_shape, city_theme.pellet_size, pellet_material)
-	for cell in pellet_cells:
-		var mesh := MeshInstance3D.new()
-		mesh.mesh = sphere
-		mesh.position = Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
-		add_child(mesh)
-		pellet_meshes.append(mesh)
+	pellet_multimesh = MultiMesh.new()
+	pellet_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	pellet_multimesh.mesh = sphere
+	pellet_multimesh.instance_count = pellet_cells.size()
+	for i in pellet_cells.size():
+		var cell: Vector2i = pellet_cells[i]
+		pellet_multimesh.set_instance_transform(i, Transform3D(Basis(), Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)))
 		pellet_alive.append(true)
+	pellet_mmi = MultiMeshInstance3D.new()
+	pellet_mmi.name = "Kugeln"
+	pellet_mmi.multimesh = pellet_multimesh
+	add_child(pellet_mmi)
 
 	var power_sphere: Mesh = _pickup_mesh(city_theme.power_shape, city_theme.power_size, power_material)
 	for cell in power_cells:
@@ -863,7 +910,32 @@ func _build_pellets(start_cell: Vector2i, reserved_cells: Array = [], metro_cell
 		_build_rabbit_mesh(rabbit_cell)
 
 
+## Collapses pellet i's instance (zero scale): gone from the screen without
+## touching the other instances or the draw call.
+func _hide_pellet(i: int) -> void:
+	var p := pellet_position(i)
+	pellet_multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), p))
+
+
+## World position of pellet i (its cell center at the theme's pellet height).
+func pellet_position(i: int) -> Vector3:
+	var cell: Vector2i = pellet_cells[i]
+	return Vector3(cell.y * CELL, city_theme.pellet_height, cell.x * CELL)
+
+
+## Whether pellet i is still drawn (not eaten; an eaten one is collapsed).
+func pellet_visible(i: int) -> bool:
+	return pellet_multimesh != null and pellet_alive[i]
+
+
+## The one mesh every pellet instance uses (sphere or cube of the theme).
+func pellet_mesh() -> Mesh:
+	return pellet_multimesh.mesh if pellet_multimesh != null else null
+
+
 func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
+	if shape == "pin":
+		return _pin_mesh(size, city_theme.pellet_height, mat)
 	if shape == "cube":
 		var b := BoxMesh.new()
 		b.size = Vector3.ONE * size * 2.0
@@ -874,6 +946,48 @@ func _pickup_mesh(shape: String, size: float, mat: Material) -> Mesh:
 	sp.height = size * 2.0
 	sp.material = mat
 	return sp
+
+
+## A glass-head pin (Amsterdam): a sphere head of radius `size` at the
+## instance origin on a thin needle that runs down to the floor (`height`
+## below), slightly slanted as if pressed into the base plate by hand. One
+## mesh, one draw call; the pellet shader colours the needle by its UV2.x = 1.
+func _pin_mesh(size: float, height: float, mat: Material) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sp := SphereMesh.new()
+	sp.radius = size
+	sp.height = size * 2.0
+	sp.radial_segments = 20
+	sp.rings = 10
+	var arr := sp.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	for i in idx:
+		st.set_uv2(Vector2(0.0, 0.0))
+		st.set_normal(norms[i])
+		st.add_vertex(verts[i])
+	# needle: 8-sided, from inside the head down to (and a little into) the floor
+	var r := maxf(0.012, size * 0.13)
+	var tilt := Basis(Vector3(1, 0, 0.6).normalized(), 0.07)
+	var top := Vector3(0, -size * 0.5, 0)
+	var bot := Vector3(0, -height - 0.05, 0)
+	var n := 8
+	for k in n:
+		var a0 := TAU * float(k) / n
+		var a1 := TAU * float(k + 1) / n
+		var d0 := Vector3(cos(a0), 0, sin(a0))
+		var d1 := Vector3(cos(a1), 0, sin(a1))
+		var q := [top + d0 * r, top + d1 * r, bot + d1 * r * 0.6, bot + d0 * r * 0.6]
+		var qn := [d0, d1, d1, d0]
+		for j in [0, 2, 1, 0, 3, 2]:
+			st.set_uv2(Vector2(1.0, 0.0))
+			st.set_normal(tilt * qn[j])
+			st.add_vertex(tilt * q[j])
+	var m := st.commit()
+	m.surface_set_material(0, mat)
+	return m
 
 
 ## Full-screen overlay (the Speedrun look's CRT lines + vignette) on a
@@ -938,9 +1052,9 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			continue
 		var cell: Vector2i = pellet_cells[i]
 		var d := Vector2(cell.y * CELL - pos.x, cell.x * CELL - pos.z).length()
-		if d < 0.42:
+		if d < PICKUP_PELLET_R:
 			pellet_alive[i] = false
-			pellet_meshes[i].visible = false
+			_hide_pellet(i)
 			result.pellet = true
 
 	for i in power_cells.size():
@@ -948,21 +1062,21 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			continue
 		var node: MeshInstance3D = power_nodes[i]
 		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
-		if d < 0.5:
+		if d < PICKUP_BIG_R:
 			power_alive[i] = false
 			node.visible = false
 			result.power = true
 
 	if rabbit_alive and rabbit_node != null:
 		var dr := Vector2(rabbit_node.position.x - pos.x, rabbit_node.position.z - pos.z).length()
-		if dr < 0.5:
+		if dr < PICKUP_BIG_R:
 			rabbit_alive = false
 			rabbit_node.visible = false
 			result.rabbit = true
 
 	if fruit_alive and fruit_node != null:
 		var d := Vector2(fruit_node.position.x - pos.x, fruit_node.position.z - pos.z).length()
-		if d < 0.5:
+		if d < PICKUP_BIG_R:
 			fruit_alive = false
 			fruit_node.visible = false
 			result.fruit = true
@@ -1004,4 +1118,5 @@ func set_object_style(outline: bool, ignore_fog: bool) -> void:
 		if m == null:
 			continue
 		m.next_pass = ol
-		m.disable_fog = ignore_fog
+		if m is BaseMaterial3D: # a theme's pellet shader has its own fog setting
+			m.disable_fog = ignore_fog

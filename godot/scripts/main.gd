@@ -59,7 +59,7 @@ const GHOST_SPEED_CAP := 3.96
 
 ## Manhattan has no ghosts (see manhattan_maze.gd's header) — it's a calm
 ## explore level. Traffic and pedestrians are its only obstacles: harmless,
-## just something to walk around (Main._check_manhattan_obstacles). Both
+## just something to walk around (Main._check_explorer_obstacles). Both
 ## are real moving traffic now — more lanes and more variety of each
 ## (TAXI/CAR/BIKE/VERYLONGLIMOUSINE, MAN/WOMAN/KID/DAD+KID) than the
 ## original handful of stationary pedestrians + 5 cars.
@@ -103,11 +103,16 @@ const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
 const SettingsScript := preload("res://scripts/settings.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
 const ChatVoteScript := preload("res://scripts/chat_vote.gd")
+const ExplorerCitiesScript := preload("res://scripts/explorer_cities.gd")
+const VersusControllerScript := preload("res://scripts/versus_controller.gd")
 
 ## Ghost colors come from the level look (MazeView.ghost_palette(), see
 ## city_themes.gd GHOST_* — no green, no cyan, never the level's gradient).
 
 var hud
+## Versus races (E17): lobby, network session, chat duel, round flow. Its
+## `active` is true while a match runs; otherwise the game is single-player.
+var versus
 var player: CharacterBody3D
 var maze_view: Node3D
 var enemy_root: Node3D
@@ -158,7 +163,14 @@ var level_board := ""
 ## The condition the rabbit gave in this level ("" = rabbit left alone);
 ## stored with the leaderboard entry (GD: Bestenliste-Metadatum).
 var level_condition_id := ""
-var playing_manhattan := false
+## true while an Explorer city runs (Manhattan, Tokyo — explorer_cities.gd);
+## explorer_city_id says which one.
+var playing_explorer := false
+## Kept for the tests and tools written against Manhattan: true while the
+## Explorer city Manhattan runs.
+var playing_manhattan: bool:
+	get:
+		return playing_explorer and explorer_city_id == "manhattan"
 ## Number of finished games (end_game), for tests (double death, Code).
 signal game_over
 var games_ended := 0
@@ -231,6 +243,8 @@ var rabbit_week_override := Vector2i(0, 0)
 
 ## "Effekte reduzieren" (spec 1.2), persisted via Settings.
 var reduce_fx := false
+## "Regen reduzieren" (comfort block, Tokyo M2): fewer, dimmer rain drops.
+var reduce_rain := false
 ## Chaos mode (spec 2.5, start screen switch, persisted via Settings): real
 ## randomness for every rabbit, own board "chaos".
 var chaos_mode := false
@@ -242,15 +256,22 @@ var mouse_sens := 1.0
 ## Debug overlay (FPS, player position, cell): toggled with F3, debug builds only.
 var debug_mode := false
 
-## Which registered CityTheme (see city_themes.gd's EXPLORER_IDS) the
-## current/last Explorer run was played on. Only "manhattan" resolves to
-## real content today (see start_explorer_level).
+## Which Explorer city (explorer_cities.gd: "manhattan", "tokyo") the
+## current/last Explorer run was played on (see start_explorer_level).
 var explorer_city_id := "manhattan"
+var _exit_hint_shown := false # explorer: "exit_hint" shown once per run
 
 var enemies: Array = [] # Array[Enemy]
 var taxis: Array = [] # Array[Taxi] — Manhattan only
 var pedestrians: Array = [] # Array[Pedestrian] — Manhattan only (Pedestrian, ManWalkingDog or KidGroup)
 var metro_stations: Array = [] # Array[MetroStation] — Manhattan only
+## Tokyo: rain, traffic, passers-by and the scramble crossing (tokyo_life.gd);
+## null in every other level.
+var tokyo_life: Node3D = null
+## Amsterdam: card passers-by and bicycles (amsterdam_life.gd); harmless soft push.
+var amsterdam_life: Node3D = null
+## Kyoto: the slow passers-by (kyoto_life.gd); null in every other level.
+var kyoto_life: Node3D = null
 var obstacle_root: Node3D
 var world_env: WorldEnvironment
 
@@ -261,6 +282,7 @@ func _ready() -> void:
 	high_score = _load_highscore()
 	var settings := SettingsScript.load_settings()
 	reduce_fx = settings.reduce_fx
+	reduce_rain = settings.reduce_rain
 	chaos_mode = settings.chaos
 	fov = settings.fov
 	mouse_sens = settings.mouse_sens
@@ -279,10 +301,15 @@ func _ready() -> void:
 	hud.set_start_highscore(high_score)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.set_reduce_fx(reduce_fx)
+	hud.set_reduce_rain(reduce_rain)
 	hud.set_chaos_mode(chaos_mode)
 	hud.set_comfort(fov, mouse_sens)
 	hud.set_game_hud_visible(false)
 	hud.show_only(hud.start_panel)
+	versus = VersusControllerScript.new()
+	versus.name = "Versus"
+	add_child(versus)
+	versus.setup(self)
 
 
 ## N6: makes every random choice of Main reproducible (tests, tools): level
@@ -337,8 +364,65 @@ func _apply_theme_environment(theme_id: String) -> void:
 	env.background_color = ct.env_bg_color
 	env.fog_light_color = ct.env_fog_color
 	env.fog_density = ct.env_fog_density
+	env.fog_sky_affect = ct.env_fog_sky_affect
 	env.ambient_light_color = ct.env_ambient_color
 	env.ambient_light_energy = ct.env_ambient_energy
+	# Post-processing is set from the theme on EVERY switch (also back to the
+	# speedrun), so Tokyo's glow, SSR or volumetric fog can never stay on in
+	# the next level (docs/design/tokyo-explorer.md, technical condition).
+	env.glow_enabled = ct.env_glow_enabled
+	env.glow_intensity = ct.env_glow_intensity
+	env.glow_strength = ct.env_glow_strength
+	env.glow_bloom = ct.env_glow_bloom
+	env.glow_hdr_threshold = ct.env_glow_hdr_threshold
+	for i in ct.env_glow_levels.size():
+		env.set_glow_level(i, ct.env_glow_levels[i])
+	# SSR exists only in Forward+; asking for it elsewhere just logs an error.
+	# Mobile also has a RenderingDevice but neither SSR nor SSAO (code W6), so
+	# the renderer is asked by name.
+	var fplus := is_forward_plus()
+	env.ssr_enabled = ct.env_ssr_enabled and fplus
+	env.ssr_max_steps = ct.env_ssr_max_steps
+	env.ssr_fade_in = ct.env_ssr_fade_in
+	env.ssr_fade_out = ct.env_ssr_fade_out
+	env.ssr_depth_tolerance = ct.env_ssr_depth_tolerance
+	env.volumetric_fog_enabled = ct.env_volumetric_fog_enabled
+	# SSAO exists only in Forward+ (like SSR).
+	env.ssao_enabled = ct.env_ssao_enabled and fplus
+	env.tonemap_mode = ct.env_tonemap_mode
+	env.tonemap_exposure = ct.env_tonemap_exposure
+	env.tonemap_white = ct.env_tonemap_white
+	# A lit model city (Amsterdam) shows an HDRI room behind the model and
+	# takes ambient light and reflections from it; every other theme gets the
+	# plain colour background back (set on EVERY switch, like the glow).
+	if ct.env_sky_script != null:
+		env.sky = ct.env_sky_script.sky()
+		env.background_mode = Environment.BG_SKY
+		env.background_energy_multiplier = ct.env_bg_energy
+		env.sky_rotation = Vector3(0.0, deg_to_rad(ct.env_sky_rotation_deg), 0.0)
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		env.ambient_light_sky_contribution = ct.env_ambient_sky_contribution
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	else:
+		# code H1: drop the HDRI sky too (it holds the panorama and radiance
+		# maps), not only the background mode
+		env.sky = null
+		env.background_mode = Environment.BG_COLOR
+		env.background_energy_multiplier = 1.0
+		env.sky_rotation = Vector3.ZERO
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_sky_contribution = 1.0
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_BG
+	env.adjustment_enabled = ct.env_adjustment_enabled
+	env.adjustment_contrast = ct.env_adjustment_contrast
+	env.adjustment_saturation = ct.env_adjustment_saturation
+	if player != null and player.camera != null:
+		player.camera.far = ct.camera_far
+		player.set_eye_height(ct.eye_height)
+		if player.light != null:
+			player.light.light_color = ct.player_light_color
+			player.light.light_energy = ct.player_light_energy
+			player.light.omni_range = ct.player_light_range
 	# W2: the base a condition look blends from, cached once here (at the
 	# level start) instead of building the theme again every frame.
 	_env_base_bg = ct.env_bg_color
@@ -346,6 +430,12 @@ func _apply_theme_environment(theme_id: String) -> void:
 	_env_base_fog_density = ct.env_fog_density
 	_env_base_ambient = ct.env_ambient_color
 	_env_base_ambient_energy = ct.env_ambient_energy
+
+
+## Whether the running renderer is Forward+ (SSR, SSAO, volumetric fog);
+## Mobile and Compatibility are not (code W6).
+static func is_forward_plus() -> bool:
+	return String(ProjectSettings.get_setting_with_override("rendering/renderer/rendering_method")) == "forward_plus" and RenderingServer.get_rendering_device() != null
 
 
 func _build_player() -> void:
@@ -385,10 +475,11 @@ func _build_hud() -> void:
 	hud.start_pressed.connect(_on_start_pressed)
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
-	hud.manhattan_pressed.connect(_on_manhattan_pressed)
+	hud.explorer_pressed.connect(_on_explorer_pressed)
 	hud.menu_pressed.connect(go_to_main_menu)
 	hud.quit_pressed.connect(_on_quit_pressed)
 	hud.reduce_fx_toggled.connect(_on_reduce_fx_toggled)
+	hud.reduce_rain_toggled.connect(set_reduce_rain)
 	hud.fov_changed.connect(set_fov)
 	hud.mouse_sens_changed.connect(set_mouse_sens)
 	hud.chaos_toggled.connect(set_chaos_mode)
@@ -402,6 +493,9 @@ func _build_hud() -> void:
 ## Starts one level of the pool (a Levels.POOL entry). Which one is decided by
 ## the caller: begin_game() draws the first, next_level() the following.
 func start_level(level: Dictionary) -> void:
+	hud.set_minimap_exits([])
+	hud.set_rain_option_visible(false) # no rain in the speedrun (QA K4)
+
 	_end_condition(false) # a condition never survives into the next level/attempt
 	current_level = level
 	level_id = level.id
@@ -409,7 +503,10 @@ func start_level(level: Dictionary) -> void:
 	start_cell = LevelsScript.start_cell(MazeGen, maze)
 	level_chat_assisted = false
 	level_condition_id = ""
-	level_board = LevelsScript.BOARD_CHAOS if chaos_mode else LevelsScript.BOARD_WEEK # N2: frozen for this level
+	# N2: frozen for this level. A Versus round never counts on "chaos" (its
+	# rabbit comes from the match, QA 04.10. W7).
+	var in_versus: bool = versus != null and versus.active
+	level_board = LevelsScript.BOARD_CHAOS if chaos_mode and not in_versus else LevelsScript.BOARD_WEEK
 	rabbit_rng = _make_rabbit_rng(level_id)
 
 	# The rabbit's position follows the level seed (deterministic per level).
@@ -435,7 +532,7 @@ func start_level(level: Dictionary) -> void:
 	for e in enemies:
 		e.queue_free()
 	enemies.clear()
-	_clear_manhattan_obstacles() # normal levels never have any; defensive
+	_clear_explorer_obstacles() # normal levels never have any; defensive
 	var house_cells := []
 	for r in range(maze.house.r0 + 1, maze.house.r1):
 		for c in range(maze.house.c0 + 1, maze.house.c1):
@@ -472,7 +569,7 @@ func begin_game(forced_level_id: String = "") -> void:
 	Sfx.stop_all()
 	score = 0
 	lives = 3
-	playing_manhattan = false
+	playing_explorer = false
 	level_index = 0
 	played_ids.clear()
 	_chat_cooldown_until.clear()
@@ -499,17 +596,26 @@ func begin_game(forced_level_id: String = "") -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
-## ---------------- Manhattan bonus level ----------------
-## An untimed hub level: no clock, no score, no high score, no completion.
-## The pellets are only signposts that lead to the SUBWAY signs, and a SUBWAY
-## sign is the exit into a speedrun (see _enter_metro). Reuses MazeView and the
-## pause against a hand-built real-Midtown-grid Maze instead of a
-## MazeGen.generate_maze() result.
-func start_manhattan_level() -> void:
+## ---------------- Explorer cities (Manhattan, Tokyo) ----------------
+## Untimed hub levels: no clock, no score, no high score, no completion, no
+## ghosts, no rabbit. The pellets are only signposts that lead to the subway,
+## and the subway is the exit into a speedrun (see _enter_metro). Reuses
+## MazeView and the pause against the city's hand-built grid (its maze
+## script) instead of a MazeGen.generate_maze() result. What differs per
+## city (theme, grid, metro placement, traffic, level seed) comes from
+## explorer_cities.gd — this code has no city names in it.
+func start_explorer_level(city_id: String) -> void:
+	var city := ExplorerCitiesScript.get_city(city_id)
+	if city.is_empty():
+		push_warning("start_explorer_level: unknown city '%s' — Manhattan instead" % city_id)
+		city_id = "manhattan"
+		city = ExplorerCitiesScript.get_city(city_id)
+	explorer_city_id = city_id
 	_end_condition(false)
-	var mm = load("res://scripts/manhattan_maze.gd").new()
+	var mm = load(city.maze_script).new()
 	maze = mm.generate()
-	mm.free()
+	if mm is Node:
+		mm.free()
 
 	start_cell = maze.start_cell
 	current_level = {}
@@ -518,12 +624,16 @@ func start_manhattan_level() -> void:
 	# Metro-station cells are picked before the maze view builds its
 	# pellets and handed in as reserved cells, so a metro sign can never
 	# end up parked on top of a pellet the player could never then reach.
-	# Pedestrians now walk the streets like traffic (see _spawn_manhattan_
+	# Pedestrians walk the streets like traffic (see _spawn_manhattan_
 	# obstacles), so they no longer need a reserved home cell of their own.
-	var metro_cells := _pick_manhattan_metro_cells()
+	var metro_cells: Array
+	if city.metro == "maze":
+		metro_cells = load(city.maze_script).metro_cells()
+	else:
+		metro_cells = _pick_random_metro_cells(int(city.metro_count))
 	var reserved_cells: Array = metro_cells
-	maze_view.build(maze, start_cell, "manhattan", reserved_cells, metro_cells)
-	_apply_theme_environment("manhattan")
+	maze_view.build(maze, start_cell, city.theme, reserved_cells, metro_cells, -1, "", int(city.seed))
+	_apply_theme_environment(city.theme)
 	fruit_spawned = false
 	frightened_until = 0.0
 	combo_count = 0
@@ -534,15 +644,40 @@ func start_manhattan_level() -> void:
 
 	for e in enemies:
 		e.queue_free()
-	enemies.clear() # Manhattan has no ghosts — see this function's header comment
+	enemies.clear() # Explorer cities have no ghosts — see this function's header comment
 
-	_spawn_manhattan_obstacles()
-	_spawn_metro_stations(metro_cells)
+	_clear_explorer_obstacles()
+	if city.traffic == "manhattan":
+		_spawn_manhattan_obstacles()
+	elif city.traffic == "tokyo":
+		_spawn_tokyo_life(int(city.seed))
+	elif city.traffic == "amsterdam":
+		_spawn_amsterdam_life(int(city.seed))
+	elif city.traffic == "kyoto":
+		_spawn_kyoto_life(int(city.seed))
+	_spawn_metro_stations(metro_cells, city.metro_script)
+	_apply_scenery_comfort()
+	var sr = maze_view.scenery_root
+	if sr != null and sr.has_method("start_intro") and not reduce_fx:
+		sr.start_intro() # Kyoto: the book opens, near to far (GD W1)
+	hud.set_minimap_exits(metro_cells)
+	hud.set_rain_option_visible(city.traffic == "tokyo") # QA K4: only where it rains
+	_exit_hint_shown = false
 
-	hud.set_level("MANHATTAN")
+	hud.set_level(city.label)
 	hud.set_game_hud_visible(true)
 	hud.set_explorer_hud(true) # no timer / score / lives / best time here
 	hud.set_minimap_visible(true)
+
+
+## Manhattan, kept as a name for the tests and tools written against it.
+func start_manhattan_level() -> void:
+	start_explorer_level("manhattan")
+
+
+## The registry entry of the running (or last) Explorer city.
+func _explorer_city() -> Dictionary:
+	return ExplorerCitiesScript.get_city(explorer_city_id)
 
 
 ## ---------------- start facing / noclip-end safety ----------------
@@ -599,7 +734,20 @@ func _facing_yaw_for_start(cell: Vector2i) -> float:
 	return best_yaw
 
 
-func _clear_manhattan_obstacles() -> void:
+## Kyoto: "Effekte reduzieren" stops the pop-up folding (everything stands).
+## Amsterdam: it stops the exit pulse (the exit node has set_reduce_fx too).
+func _apply_scenery_comfort() -> void:
+	var sr = maze_view.scenery_root if maze_view != null else null
+	if sr != null and is_instance_valid(sr) and sr.has_method("set_reduce_fx"):
+		sr.set_reduce_fx(reduce_fx)
+	for m in metro_stations:
+		if is_instance_valid(m) and m.has_method("set_reduce_fx"):
+			m.set_reduce_fx(reduce_fx)
+	if kyoto_life != null:
+		kyoto_life.set_comfort(reduce_fx)
+
+
+func _clear_explorer_obstacles() -> void:
 	for t in taxis:
 		t.queue_free()
 	taxis.clear()
@@ -609,17 +757,65 @@ func _clear_manhattan_obstacles() -> void:
 	for m in metro_stations:
 		m.queue_free()
 	metro_stations.clear()
+	if tokyo_life != null:
+		tokyo_life.queue_free()
+		tokyo_life = null
+	if amsterdam_life != null:
+		amsterdam_life.queue_free()
+		amsterdam_life = null
+	if kyoto_life != null:
+		kyoto_life.queue_free()
+		kyoto_life = null
+
+
+
+## Amsterdam: card passers-by and bicycles as one node of two MultiMeshes
+## (amsterdam_life.gd), seeded with the city's level seed.
+func _spawn_amsterdam_life(level_seed: int) -> void:
+	amsterdam_life = Node3D.new()
+	amsterdam_life.set_script(load("res://scripts/amsterdam_life.gd"))
+	obstacle_root.add_child(amsterdam_life)
+	amsterdam_life.setup(maze_view, level_seed)
+	amsterdam_life.set_comfort(reduce_fx)
+
+
+
+## Tokyo (M2): rain, cars, passers-by and the scramble crossing as one node
+## of six MultiMeshes (tokyo_life.gd), seeded with the city's level seed.
+func _spawn_tokyo_life(level_seed: int) -> void:
+	tokyo_life = Node3D.new()
+	tokyo_life.set_script(load("res://scripts/tokyo_life.gd"))
+	obstacle_root.add_child(tokyo_life)
+	tokyo_life.setup(maze_view, level_seed)
+	tokyo_life.set_comfort(reduce_rain, reduce_fx)
+	tokyo_life.walk_started.connect(_on_tokyo_walk_started)
+
+
+## Kyoto: slow paper passers-by in the lanes (one MultiMesh, kyoto_life.gd).
+func _spawn_kyoto_life(level_seed: int) -> void:
+	kyoto_life = Node3D.new()
+	kyoto_life.set_script(load("res://scripts/kyoto_life.gd"))
+	obstacle_root.add_child(kyoto_life)
+	kyoto_life.setup(maze_view, level_seed)
+	kyoto_life.set_comfort(reduce_fx)
+
+
+## The scramble's "All Walk" begins: the synthetic crossing tone.
+func _on_tokyo_walk_started() -> void:
+	if running and not paused:
+		Sfx.crossing_signal()
 
 
 ## Metro-station cells, picked ahead of pellet placement (see maze_view.gd's
 ## `build`/`_build_pellets` reserved_cells parameter) so a metro sign can
 ## never end up parked on a pellet the player could never then reach.
-func _pick_manhattan_metro_cells() -> Array:
+## `count` random open room cells (Manhattan: MANHATTAN_METRO_COUNT).
+func _pick_random_metro_cells(count: int = MANHATTAN_METRO_COUNT) -> Array:
 	var open_cells: Array = MazeGen.cells_in_room(maze, false)
 	_shuffle(open_cells)
 	var picked := []
 	for cell in open_cells:
-		if picked.size() >= MANHATTAN_METRO_COUNT:
+		if picked.size() >= count:
 			break
 		if cell == start_cell:
 			continue
@@ -669,7 +865,7 @@ func _pick_weighted_vehicle(pool: Array) -> Dictionary:
 ## standing still, each assigned its own row or column lane. Both are built
 ## fresh per Manhattan run, same as enemies are per level.
 func _spawn_manhattan_obstacles() -> void:
-	_clear_manhattan_obstacles()
+	_clear_explorer_obstacles()
 
 	var row_choices := []
 	var r := 1
@@ -730,46 +926,84 @@ func _spawn_manhattan_obstacles() -> void:
 		pedestrians.append(ped)
 
 
-## Glowing "SUBWAY" signs at the reserved metro cells; entering one ends
-## and scores the Manhattan run (see _check_metro_entry).
-func _spawn_metro_stations(metro_cells: Array) -> void:
+## The subway signs at the reserved metro cells (Manhattan: glowing
+## "SUBWAY", Tokyo: the green 地下鉄 exit); entering one ends the Explorer
+## run and starts a speedrun (see _check_metro_entry).
+func _spawn_metro_stations(metro_cells: Array, script_path: String = "res://scripts/metro_station.gd") -> void:
 	for cell in metro_cells:
 		var station := Node3D.new()
-		station.set_script(load("res://scripts/metro_station.gd"))
+		station.set_script(load(script_path))
 		obstacle_root.add_child(station)
 		station.setup(Vector3(cell.y * CELL, 0.9, cell.x * CELL))
 		metro_stations.append(station)
 
 
-func _check_manhattan_obstacles() -> void:
+func _check_explorer_obstacles() -> void:
 	for t in taxis:
 		_push_player_away_from(t.position, MANHATTAN_OBSTACLE_RADIUS)
 	for p in pedestrians:
 		_push_player_away_from(p.position, MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	if tokyo_life != null:
+		# Tokyo: the same push as Manhattan — cars as a capsule along their
+		# axis (obstacle), passers-by with the small, harmless radius.
+		for i in tokyo_life.car_count():
+			_push_player_away_from(tokyo_life.car_closest_point(i, player.global_position), tokyo_life.CAR_RADIUS)
+		for i in tokyo_life.walker_count():
+			if tokyo_life.walker_visible(i):
+				_push_player_away_from(tokyo_life.walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	# Arles: the same soft, harmless push for the strolling passers-by
+	var arles_sr = maze_view.scenery_root if maze_view != null else null
+	if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("life_walker_count"):
+		for i in arles_sr.life_walker_count():
+			_push_player_away_from(arles_sr.life_walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	if amsterdam_life != null:
+		# Amsterdam: passers-by and bicycles only nudge (soft push, never a block)
+		var apv: Vector2 = amsterdam_life.push_for(player.global_position)
+		player.global_position.x += apv.x
+		player.global_position.z += apv.y
+	if kyoto_life != null:
+		# Kyoto: the same soft push, a hair wider than the figure's card body.
+		for i in kyoto_life.walker_count():
+			_push_player_away_from(kyoto_life.walker_position(i), kyoto_life.WALKER_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
 ## exit: it starts a speedrun on a random level of the pool (see _enter_metro).
+## The exit hint comes early enough to be read (GD W6): from EXIT_HINT_DIST,
+## at walking speed that is more than 2 s before the trigger.
+const EXIT_HINT_DIST := 12.0
+
+
 func _check_metro_entry() -> void:
+	if metro_stations.is_empty():
+		return
+	var city := _explorer_city()
+	var radius := float(city.get("metro_radius", MANHATTAN_METRO_RADIUS))
+	var hint: String = city.get("exit_hint", "")
 	for m in metro_stations:
 		var d := Vector2(player.global_position.x - m.position.x, player.global_position.z - m.position.z).length()
-		if d < MANHATTAN_METRO_RADIUS:
+		if d < radius:
 			_enter_metro()
 			return
+		if hint != "" and not _exit_hint_shown and d < EXIT_HINT_DIST:
+			_exit_hint_shown = true
+			hud.show_hint(hint, 3.0)
 
 
 func _enter_metro() -> void:
 	running = false
+	hud.hide_hint() # the banner takes over (no overlap)
 	Sfx.set_siren(false, false)
 	Sfx.level_clear()
-	hud.show_levelclear(true, "SUBWAY — los zum Speedrun!")
+	var city := _explorer_city()
+	hud.show_levelclear(true, city.get("exit_text", "SUBWAY — los zum Speedrun!"), city.get("exit_title", "NÄCHSTER HALT: SPEEDRUN"))
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var token := _run_token
 	await get_tree().create_timer(1.4).timeout
 	if token != _run_token:
 		return
 	hud.show_levelclear(false)
-	playing_manhattan = false
+	playing_explorer = false
 	begin_game()
 
 
@@ -791,39 +1025,47 @@ func _push_player_away_from(obstacle_pos: Vector3, radius: float) -> void:
 		player.global_position.z += push.y
 
 
-## Starts (or restarts) the Explorer level. Explorer levels have no rabbit
-## and no conditions. `city_id` is generic for a future second Explorer city (see
-## city_themes.gd's EXPLORER_IDS); only Manhattan exists today.
-func begin_manhattan_game(city_id: String = "manhattan") -> void:
+## Starts (or restarts) an Explorer city (explorer_cities.gd: "manhattan",
+## "tokyo"). Explorer levels have no rabbit and no conditions.
+func begin_explorer_game(city_id: String = "manhattan") -> void:
 	Sfx.stop_all()
 	_run_token += 1
 	score = 0
 	lives = 3
-	playing_manhattan = true
 	start_hold = false
 	player.movement_locked = false
 	hud.show_start_intro(false)
 	hud.show_clock_hint(false)
 	hud.hide_all_panels()
+	playing_explorer = true
 	start_explorer_level(city_id)
 	running = true
 	paused = false
 	player.input_enabled = true
-	Sfx.set_siren(true, false)
+	# No ghost siren where a city asks for quiet (Kyoto, GD W4).
+	Sfx.set_siren(bool(_explorer_city().get("siren", true)), false)
 	Sfx.play_explorer_music()
+	# A city may explain itself once on start. Kyoto's hint explains the fold
+	# (off with reduced effects anyway), so it is skipped then; a hint about
+	# the way (Amsterdam, Arles: intro_hint_always) always comes (QA W1).
+	var intro_hint: String = _explorer_city().get("intro_hint", "")
+	if intro_hint != "" and (not reduce_fx or bool(_explorer_city().get("intro_hint_always", false))):
+		hud.show_hint(intro_hint, 5.0)
+	else:
+		hud.hide_hint()
+
 	if not OS.has_feature("web"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
-## Dispatches to the right Explorer-level builder for `city_id`. Only
-## Manhattan exists today.
-func start_explorer_level(city_id: String) -> void:
-	explorer_city_id = city_id
-	start_manhattan_level()
+## Manhattan (or `city_id`), kept as a name for the tests and tools written
+## against it.
+func begin_manhattan_game(city_id: String = "manhattan") -> void:
+	begin_explorer_game(city_id)
 
 
-func _on_manhattan_pressed() -> void:
-	begin_manhattan_game()
+func _on_explorer_pressed(city_id: String) -> void:
+	begin_explorer_game(city_id)
 
 
 func _on_reduce_fx_toggled(on: bool) -> void:
@@ -833,6 +1075,7 @@ func _on_reduce_fx_toggled(on: bool) -> void:
 ## "Effekte reduzieren": stored right away and applied to a running look.
 func set_reduce_fx(on: bool) -> void:
 	reduce_fx = on
+	_apply_scenery_comfort()
 	_save_settings()
 	hud.set_reduce_fx(on)
 	if maze_view != null and maze_view.normal_wall_mmi != null:
@@ -840,6 +1083,20 @@ func set_reduce_fx(on: bool) -> void:
 	_vis_flip = -1.0 # re-evaluate the Kippbild frame next frame
 	if not on:
 		hud.set_flip_frame(0.0)
+	if tokyo_life != null:
+		tokyo_life.set_comfort(reduce_rain, reduce_fx)
+	if amsterdam_life != null:
+		amsterdam_life.set_comfort(on)
+
+
+## "Regen reduzieren" (comfort block): stored right away, applied to a
+## running Tokyo level (fewer and dimmer drops).
+func set_reduce_rain(on: bool) -> void:
+	reduce_rain = on
+	_save_settings()
+	hud.set_reduce_rain(on)
+	if tokyo_life != null:
+		tokyo_life.set_comfort(reduce_rain, reduce_fx)
 
 
 ## Chaos mode (start screen switch): stored right away; takes effect with the
@@ -852,12 +1109,15 @@ func set_chaos_mode(on: bool) -> void:
 
 
 func _save_settings() -> void:
-	SettingsScript.save_settings({"reduce_fx": reduce_fx, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
+	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
 
 
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
 
 func _begin_start_hold() -> void:
+	if versus != null and versus.active:
+		versus.begin_hold() # E17: common 3-2-1 instead of intro and first step
+		return
 	if skip_start_intro:
 		start_hold = false
 		player.movement_locked = false
@@ -889,6 +1149,9 @@ func skip_intro() -> void:
 ## locked until the very frame the clock starts, so the player stands exactly
 ## on the start position when the time begins (intro and waiting cost no time).
 func _update_start_hold() -> void:
+	if versus != null and versus.active:
+		versus.update_hold()
+		return
 	level_start_real = real_now
 	if real_now < intro_until_real:
 		return
@@ -911,8 +1174,13 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 			hud.set_twitch_status("Bitte einen Twitch-Kanalnamen eingeben.")
 			Twitch.enabled = false
 			return
-		hud.set_twitch_status("Verbinde mit #%s ..." % channel.strip_edges().to_lower())
 		Twitch.connect_to_channel(channel)
+		if Twitch.channel == "":
+			# only a–z, 0–9 and _ (Twitch logins; Versus code review K2)
+			hud.set_twitch_status("Ungültiger Kanalname – nur Buchstaben, Ziffern und _.")
+			Twitch.enabled = false
+			return
+		hud.set_twitch_status("Verbinde mit #%s ..." % Twitch.channel)
 	else:
 		Twitch.disconnect_chat()
 		chat_vote.clear()
@@ -921,6 +1189,8 @@ func _on_twitch_toggled(is_enabled: bool, channel: String) -> void:
 
 func _on_twitch_connection_changed(is_connected: bool) -> void:
 	_update_chat_hud(true)
+	if versus != null:
+		versus.on_twitch_changed()
 	if is_connected:
 		hud.set_twitch_status("Verbunden mit #%s — !power, !fruit, !gut und !schlecht sind aktiv." % Twitch.channel)
 	elif Twitch.enabled:
@@ -935,11 +1205,15 @@ func _on_twitch_connection_changed(is_connected: bool) -> void:
 ## A helping command that takes effect moves the level's time to the "chat"
 ## board (_mark_chat_assisted), so it can never touch woche/chaos records.
 func _on_twitch_command(user: String, command: String, _args: String) -> void:
+	# Versus (E17): the chats act only through the duel (Twitch.channel_command,
+	# VersusController) — no !power / !fruit, no solo vote.
+	if versus != null and versus.active:
+		return
 	if command == "gut" or command == "schlecht":
 		chat_vote.vote(user, command == "gut", real_now)
 		_update_chat_hud(true)
 		return
-	if not (running and not paused) or playing_manhattan or start_hold:
+	if not (running and not paused) or playing_explorer or start_hold:
 		return
 	if now < float(_chat_cooldown_until.get(command, -1.0)):
 		return
@@ -975,6 +1249,8 @@ func _mark_chat_assisted() -> void:
 ## The mode of the current level's records. Always "solo" until multiplayer
 ## exists (pvp / coop are reserved); chat help is a board, not a mode.
 func run_mode() -> String:
+	if versus != null and versus.active:
+		return LevelsScript.MODES[1] # "pvp" (E17)
 	return "solo"
 
 
@@ -1050,6 +1326,14 @@ func lose_life() -> void:
 
 
 func end_game() -> void:
+	if versus != null and versus.active:
+		# E17: the last life lost in a Versus round loses the round, no game
+		# over screen and no high score.
+		stop_run_for_versus()
+		games_ended += 1
+		versus.on_out_of_lives()
+		game_over.emit()
+		return
 	running = false
 	paused = false
 	_run_token += 1
@@ -1066,22 +1350,21 @@ func end_game() -> void:
 	if score > high_score and not run_chat_assisted:
 		high_score = score
 		_save_highscore(high_score)
-	var level_display = "MANHATTAN" if playing_manhattan else level_index + 1
+	var level_display = _explorer_city().get("label", "EXPLORER") if playing_explorer else level_index + 1
 	hud.set_game_hud_visible(false)
 	hud.show_gameover(score, level_display, high_score, chat_blocked)
 	hud.set_bonus_unlocked(Speedrun.is_bonus_unlocked())
 	hud.set_start_highscore(high_score)
-	playing_manhattan = false
+	playing_explorer = false
 	_apply_theme_environment("normal")
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	games_ended += 1
 	game_over.emit()
 
 
-## UX-K2: back to the start screen from the pause or the game over. A run
-## that is still going is abandoned without a game over: no high score, no
-## board entry.
-func go_to_main_menu() -> void:
+## Versus (code review W7): ends this player's running round in one place —
+## the same steps as the start of go_to_main_menu, without leaving the match.
+func stop_run_for_versus() -> void:
 	running = false
 	paused = false
 	_run_token += 1
@@ -1092,8 +1375,41 @@ func go_to_main_menu() -> void:
 	hud.show_start_intro(false)
 	hud.show_clock_hint(false)
 	hud.show_levelclear(false)
+	hud.hide_all_panels()
 	Sfx.stop_all()
-	playing_manhattan = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+
+## UX-K2: back to the start screen from the pause or the game over. A run
+## that is still going is abandoned without a game over: no high score, no
+## board entry.
+func go_to_main_menu() -> void:
+	if versus != null and versus.active:
+		versus.leave() # leaves the match, then comes back here inactive
+		return
+	running = false
+	paused = false
+	_run_token += 1
+	_end_condition(false)
+	start_hold = false
+	player.movement_locked = false
+	player.input_enabled = false
+	hud.show_start_intro(false)
+	hud.show_clock_hint(false)
+	hud.hide_hint()
+	hud.show_levelclear(false)
+	Sfx.stop_all()
+	playing_explorer = false
+
+	# QA W1: the start screen shows no frozen city behind the panel (and does
+	# not keep rendering it): city life, ghosts and the maze go away; the
+	# next start_level/start_explorer_level rebuilds and shows the maze.
+	_clear_explorer_obstacles()
+	for e in enemies:
+		e.queue_free()
+	enemies.clear()
+	maze_view.visible = false
+	hud.set_minimap_exits([])
 	_apply_theme_environment("normal")
 	hud.set_game_hud_visible(false)
 	hud.set_start_highscore(high_score)
@@ -1119,7 +1435,8 @@ func level_complete_sequence() -> void:
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
 	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week)
-	Leaderboard.submit_time(cleared_id, board, elapsed, Leaderboard.DEFAULT_PLAYER_NAME, mode, week, level_condition_id)
+	var player_name: String = versus.player_name() if versus != null and versus.active else Leaderboard.DEFAULT_PLAYER_NAME
+	Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
 	if board != LevelsScript.BOARD_WEEK:
@@ -1134,6 +1451,9 @@ func level_complete_sequence() -> void:
 		subtitle += "  ·  unter Zielzeit " + Speedrun.format_time(result.target)
 	_refresh_board_hud()
 
+	if versus != null and versus.active:
+		versus.on_level_cleared(elapsed) # E17: the round result decides what follows
+		return
 	hud.show_levelclear(true, subtitle)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var token := _run_token
@@ -1159,9 +1479,11 @@ func _on_resume_pressed() -> void:
 
 
 func _on_restart_pressed() -> void:
+	if versus != null and versus.active:
+		return # E17: a Versus round can not be restarted alone (the race is shared)
 	hud.hide_all_panels()
-	if playing_manhattan:
-		begin_manhattan_game()
+	if playing_explorer:
+		begin_explorer_game(explorer_city_id)
 	else:
 		begin_game()
 
@@ -1170,24 +1492,31 @@ func toggle_pause() -> void:
 	if not running:
 		return
 	paused = not paused
+	var in_versus: bool = versus != null and versus.active
+	hud.set_versus_pause(in_versus)
 	if paused:
+		if in_versus:
+			versus.on_paused(true) # countdown digit off while the menu is up (QA W4)
 		# QA 03.10. W1: the start intro must never cover the pause menu. Pausing
 		# during the intro ends it (the clock is held anyway until the first step).
-		if start_hold:
+		if start_hold and not in_versus:
 			intro_until_real = real_now
 			hud.show_start_intro(false)
 			hud.show_clock_hint(false)
-		hud.set_pause_note(not playing_manhattan)
+		if not in_versus:
+			hud.set_pause_note(not playing_explorer)
 		hud.set_reduce_fx(reduce_fx)
 		hud.set_comfort(fov, mouse_sens)
-		hud.set_menu_confirm(not playing_manhattan) # UX-K2: abandoning a speedrun asks once
+		hud.set_menu_confirm(not playing_explorer) # UX-K2: abandoning a speedrun asks once
 		hud.show_only(hud.pause_panel)
 		Sfx.set_siren(false, false)
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 		player.input_enabled = false
 	else:
 		hud.hide_all_panels()
-		if start_hold:
+		if in_versus:
+			versus.on_paused(false)
+		elif start_hold:
 			hud.show_clock_hint(true)
 		Sfx.set_siren(true, now < frightened_until)
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -1223,6 +1552,8 @@ func _process(delta: float) -> void:
 		# The speedrun clock keeps running in the pause (see `real_now`); it
 		# stands at 0 while the start hold lasts (level_start_real follows).
 		hud.set_timer(real_now - level_start_real)
+	if versus != null and versus.active:
+		versus.tick()
 	_update_chat_hud()
 	if not (running and not paused) or start_hold:
 		if running and maze != null:
@@ -1248,13 +1579,23 @@ func _process(delta: float) -> void:
 		if not running:
 			return # the last life is gone: game over exactly once, nothing else this frame
 
-	if playing_manhattan:
+	if playing_explorer:
 		for t in taxis:
 			t.update(delta)
 		for p in pedestrians:
 			p.update(delta, now)
 		for m in metro_stations:
 			m.update(delta, now)
+		if tokyo_life != null:
+			tokyo_life.update(delta, player.global_position, player.camera.global_position)
+		# Arles: the strolling passers-by walk on (they stand with reduced effects)
+		var arles_sr = maze_view.scenery_root if maze_view != null else null
+		if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("update_life"):
+			arles_sr.update_life(delta, player.global_position)
+		if amsterdam_life != null:
+			amsterdam_life.update(delta)
+		if kyoto_life != null:
+			kyoto_life.update(delta, player.global_position, player.camera.global_position)
 
 	# Pickups are checked before the obstacle push so a taxi/pedestrian that
 	# happens to be passing over the player's exact cell this frame can
@@ -1262,8 +1603,8 @@ func _process(delta: float) -> void:
 	# obstacles just slide the player back out afterward, same as always.
 	_check_pickups()
 
-	if playing_manhattan:
-		_check_manhattan_obstacles()
+	if playing_explorer:
+		_check_explorer_obstacles()
 		_check_metro_entry()
 
 	_update_condition(delta)
@@ -1310,9 +1651,9 @@ func _add_score(points: int) -> void:
 func _check_pickups() -> void:
 	var result: Dictionary = maze_view.consume_at(player.global_position, now)
 
-	# Manhattan: the pellets are signposts to the SUBWAY signs, nothing more —
+	# Explorer cities: the pellets are signposts to the subway, nothing more —
 	# no score, no fruit, no completion.
-	if playing_manhattan:
+	if playing_explorer:
 		if result.pellet or result.power:
 			Sfx.munch()
 		return
@@ -1345,11 +1686,11 @@ func _check_pickups() -> void:
 		maze_view.spawn_fruit(now)
 
 	# Manhattan is an untimed hub with no completion condition at all (see
-	# start_manhattan_level's header comment) — only a metro station ends a
+	# start_explorer_level's header comment) — only a metro station ends a
 	# visit there (_check_metro_entry/_enter_metro). Collecting every pellet
 	# must never trigger level_complete_sequence(), which assumes a normal
 	# Levels.POOL level (current_level/level_id would be empty/invalid).
-	if not playing_manhattan and maze_view.remaining_pickups() <= 0 and running:
+	if not playing_explorer and maze_view.remaining_pickups() <= 0 and running:
 		level_complete_sequence()
 
 
@@ -1478,7 +1819,16 @@ func _on_rabbit_picked() -> void:
 	var rng: RandomNumberGenerator = rabbit_rng
 	var chat_line := ""
 	var chat_shifted := _chat_shifts_rabbit()
-	if chat_shifted:
+	if versus != null and versus.active:
+		# E17: share from the chat duel, draw from the match's round generator
+		# (the same for both players).
+		var draw: Dictionary = versus.rabbit_draw()
+		p = draw.p
+		rng = draw.rng
+		chat_shifted = draw.shifted
+		if chat_shifted:
+			_mark_chat_assisted()
+	elif chat_shifted:
 		rng = _new_chaos_rng()
 		_mark_chat_assisted()
 	var id: String = ConditionsScript.pick_condition(rng, p)
@@ -1491,7 +1841,11 @@ func _on_rabbit_picked() -> void:
 	if forced_fl_manipulation != "" and c.has_method("set_manipulation"):
 		c.set_manipulation(forced_fl_manipulation)
 	level_condition_id = c.id
-	if chat_shifted:
+	if versus != null and versus.active:
+		versus.rabbit_picked(c.id, c.is_good, p)
+	if versus != null and versus.active:
+		chat_line = versus.chat_line(p, c)
+	elif chat_shifted:
 		chat_line = "Chat %d %% → %s" % [ChatVoteScript.percent(p), c.display_name.to_upper()]
 	start_condition(c, chat_line)
 
@@ -1505,7 +1859,10 @@ func _update_chat_hud(force: bool = false) -> void:
 	if not force and real_now < _chat_hud_next_update:
 		return
 	_chat_hud_next_update = real_now + 0.25
-	var show_it: bool = Twitch.enabled and Twitch.is_connected_to_chat() and running and not playing_manhattan and level_id != ""
+	if versus != null and versus.active:
+		versus.update_chat_hud()
+		return
+	var show_it: bool = Twitch.enabled and Twitch.is_connected_to_chat() and running and not playing_explorer and level_id != ""
 	hud.set_chat_share_visible(show_it)
 	if show_it:
 		var source := "Chaos" if level_board == LevelsScript.BOARD_CHAOS else "Woche"
@@ -1657,7 +2014,7 @@ func _end_condition(play_sound: bool) -> void:
 	Sfx.stop_condition_layer()
 	if maze_view.normal_wall_mmi != null and maze_view.current_look != maze_view.LOOK_BASE:
 		maze_view.set_look(maze_view.LOOK_BASE)
-	if not playing_manhattan:
+	if not playing_explorer:
 		_apply_theme_environment("normal")
 	if maze_view.pellet_material != null:
 		_set_object_style(false, false)

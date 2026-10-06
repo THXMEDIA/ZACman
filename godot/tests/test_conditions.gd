@@ -29,7 +29,8 @@ func _initialize() -> void:
 		var e: Dictionary = Conditions.entry(id)
 		_check("registry %s: instance with id, name, look and icon" % id, c != null and c.id == id and c.display_name != "" and c.look_id != "" and c.icon != "")
 		_check("registry %s: is_good/duration/weight from the registry" % id, c.is_good == e.is_good and c.duration_s == e.duration_s and c.weight == e.weight and e.weight > 0.0)
-		_check("registry %s: good 10 s, bad 8 s" % id, c.duration_s == (10.0 if c.is_good else 8.0))
+		var want := 15.0 if id == "matrix" else (10.0 if c.is_good else 8.0)
+		_check("registry %s: good 10 s (Matrix 15 s, E10), bad 8 s" % id, c.duration_s == want)
 	_check("registry: '' and unknown ids mean no condition", Conditions.get_condition("") == null and Conditions.get_condition("matrix_ghost") == null)
 	_check("registry: matrix_ghost.gd is gone (renamed to matrix.gd)", not FileAccess.file_exists("res://scripts/conditions/matrix_ghost.gd") and FileAccess.file_exists("res://scripts/conditions/matrix.gd"))
 	_check("registry: no start-screen selection API any more", not ("SELECTABLE_IDS" in Conditions) and not Conditions.has_method("other_condition_id"))
@@ -85,6 +86,10 @@ func _initialize() -> void:
 		_check("F&L %s: symbol and subtitle for the title card" % kind, f.icon == "fl_" + kind and f.subtitle() != "")
 	var f2 = Fear.new()
 	_check("F&L: the old sine noise / unannounced inversion is gone", not ("NOISE_AMOUNT" in f2) and not ("_inverted" in f2))
+	# E10 (b): swap mirrors both axes, drift pulls 40 %
+	f2.set_manipulation(Fear.SWAP)
+	_check("F&L swap mirrors A/D and W/S", f2.modify_input(Vector2(0.3, 0.8), 1.0 / 60.0).is_equal_approx(Vector2(-0.3, -0.8)))
+	_check("F&L drift share is 40 % (E10)", is_equal_approx(Fear.DRIFT_SHARE, 0.4))
 
 	# --- Taschenuhr: the clock is silent in the last 3 s (GD review), so the
 	# end ticks of every condition stay audible ---

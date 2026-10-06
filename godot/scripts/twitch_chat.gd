@@ -18,6 +18,11 @@ extends Node
 ## tests/test_twitch.gd.
 
 signal chat_command(user: String, command: String, args: String)
+## Every recognized command of EVERY joined channel, with its channel (lower
+## case, no '#'). chat_command above stays limited to the primary `channel`,
+## so a Versus opponent's chat (joined as an extra channel, E17) can never
+## trigger !power / !fruit in this game.
+signal channel_command(channel: String, user: String, command: String, args: String)
 signal connection_state_changed(is_connected: bool)
 
 const HOST := "irc.chat.twitch.tv"
@@ -33,6 +38,9 @@ const KNOWN_COMMANDS := ["power", "fruit", "gut", "schlecht"]
 
 var enabled := false
 var channel := ""
+## Further channels read on the same anonymous connection (Versus: the
+## opponent's chat). Joined on connect, or right away when already connected.
+var extra_channels: Array = []
 
 var _tcp: StreamPeerTCP
 var _connected := false
@@ -42,7 +50,8 @@ var _recv_buffer := ""
 
 func connect_to_channel(channel_name: String) -> void:
 	channel = channel_name.strip_edges().to_lower().trim_prefix("#")
-	if channel == "":
+	if channel == "" or not _valid_login(channel):
+		channel = ""
 		return
 	_tcp = StreamPeerTCP.new()
 	var err := _tcp.connect_to_host(HOST, PORT)
@@ -81,6 +90,8 @@ func _process(_delta: float) -> void:
 			_tcp.put_data(("PASS blah\r\n").to_utf8_buffer())
 			_tcp.put_data(("NICK %s\r\n" % anon_nick).to_utf8_buffer())
 			_tcp.put_data(("JOIN #%s\r\n" % channel).to_utf8_buffer())
+			for extra in extra_channels:
+				_tcp.put_data(("JOIN #%s\r\n" % extra).to_utf8_buffer())
 			_connected = true
 			connection_state_changed.emit(true)
 		var avail := _tcp.get_available_bytes()
@@ -102,7 +113,8 @@ func _handle_line(line: String) -> void:
 	if line == "":
 		return
 	if line.begins_with("PING"):
-		_tcp.put_data(("PONG :tmi.twitch.tv\r\n").to_utf8_buffer())
+		if _tcp != null:
+			_tcp.put_data(("PONG :tmi.twitch.tv\r\n").to_utf8_buffer())
 		return
 	var parsed := parse_irc_line(line)
 	if parsed.is_empty():
@@ -110,7 +122,46 @@ func _handle_line(line: String) -> void:
 	var cmd := parse_command(parsed.message)
 	if cmd.is_empty():
 		return
-	chat_command.emit(parsed.user, cmd.command, cmd.args)
+	var chan := String(parsed.channel).to_lower()
+	channel_command.emit(chan, parsed.user, cmd.command, cmd.args)
+	if chan == channel:
+		chat_command.emit(parsed.user, cmd.command, cmd.args)
+
+
+## Reads `channel_name` too (Versus: the opponent's chat) on the open
+## connection; "" or the primary channel is ignored.
+func join_extra(channel_name: String) -> void:
+	var c := channel_name.strip_edges().to_lower().trim_prefix("#")
+	if c == "" or c == channel or extra_channels.has(c) or not _valid_login(c):
+		return
+	extra_channels.append(c)
+	if _tcp != null and _registered:
+		_tcp.put_data(("JOIN #%s\r\n" % c).to_utf8_buffer())
+
+
+## Twitch logins: a–z, 0–9, _, 1–25 characters. Anything else could smuggle
+## IRC commands onto the connection (Versus code review K2).
+static func _valid_login(c: String) -> bool:
+	if c.length() < 1 or c.length() > 25:
+		return false
+	for ch in c:
+		var u := ch.unicode_at(0)
+		if not ((u >= 97 and u <= 122) or (u >= 48 and u <= 57) or u == 95):
+			return false
+	return true
+
+
+## Stops reading every extra channel (end of a Versus match).
+func leave_extras() -> void:
+	if _tcp != null and _registered:
+		for c in extra_channels:
+			_tcp.put_data(("PART #%s\r\n" % c).to_utf8_buffer())
+	extra_channels.clear()
+
+
+## Feeds one raw IRC line as if it had come from the socket (tests).
+func inject_line(line: String) -> void:
+	_handle_line(line)
 
 
 ## Pure parser: a raw Twitch IRC line -> {user, channel, message}, or {} if

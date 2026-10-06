@@ -35,6 +35,13 @@ func _initialize() -> void:
 			failures += 1
 			print("FAIL %s music loop_end should cover the whole buffer" % track_name)
 
+	# --- Tokyo scramble: the synthetic crossing tone (two short chirps) ---
+	var chirps: Array = sfx.crossing_streams()
+	checks += 1
+	if chirps.size() != 2 or chirps[0] == null or chirps[0].data.size() == 0 or chirps[0].get_length() > 0.2 or chirps[1].get_length() > 0.2:
+		failures += 1
+		print("FAIL the crossing tone should be two short non-empty chirps")
+
 	# --- play_*/stop_music()/music_state() track which track is playing ---
 	checks += 1
 	if sfx.music_state() != "":

@@ -94,6 +94,10 @@ func record_level_time(level_id: String, elapsed_seconds: float, board: String =
 	if not LevelsScript.is_valid_board_key(key):
 		push_error("Speedrun: refusing to record on unknown board '%s'" % key)
 		return {"is_new_best": false, "previous_best": -1.0, "beat_target": false, "target": target, "newly_unlocked_bonus": false}
+	# QA 04.10. N8: the loader only accepts times > 0, so a 0-s time (a level
+	# "cleared" in the frame it started — tools, tests) is never written.
+	if not (elapsed_seconds > 0.0):
+		return {"is_new_best": false, "previous_best": best_for(level_id, board, mode), "beat_target": false, "target": target, "newly_unlocked_bonus": false}
 	var previous_best := best_for(level_id, board, mode)
 	var is_new_best := previous_best < 0.0 or elapsed_seconds < previous_best
 	if is_new_best:

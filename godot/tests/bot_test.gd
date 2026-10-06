@@ -685,6 +685,304 @@ func _run_checks() -> void:
 	main.begin_game()
 	await get_tree().process_frame
 
+	# ---- Tokyo Explorer city (docs/design/tokyo-explorer.md, M1): chosen on
+	# the start screen, calm like Manhattan, its own neon look; the subway
+	# exit leads into a speedrun and the speedrun must not keep Tokyo's
+	# glow / SSR / volumetrics (theme reset) ----
+	_check("start screen: explorer choice Manhattan / Tokyo", main.hud.manhattan_btn.visible and main.hud.tokyo_btn != null and main.hud.tokyo_btn.visible and main.hud.tokyo_btn.text == "TOKYO")
+	var speedrun_far: float = main.player.camera.far
+	var speedrun_light: Color = main.player.light.light_color
+	main.hud.explorer_pressed.emit("tokyo")
+	await get_tree().process_frame
+	var tokyo_theme = load("res://scripts/city_themes.gd").get_theme("tokyo")
+	_check("tokyo: the TOKYO button starts the Tokyo explorer city", main.running and main.playing_explorer and main.explorer_city_id == "tokyo" and not main.playing_manhattan)
+	_check("tokyo: HUD level chip says TOKYO", main.hud.level_label.text == "TOKYO", main.hud.level_label.text)
+	_check("tokyo: no ghosts, no power pellets, no rabbit", main.enemies.is_empty() and main.maze_view.power_cells.is_empty() and main.maze_view.rabbit_node == null)
+	_check("tokyo: timer / score / lives chips are hidden", main.hud.timer_label.get_parent().get_parent().visible == false and main.hud.score_label.get_parent().get_parent().visible == false)
+	_check("tokyo: the neon line city is built", main.maze_view.scenery_root != null and main.maze_view.city_theme.id == "tokyo")
+	_check("tokyo: exactly one subway exit (地下鉄), in the station facade", main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("tokyo_metro_station.gd"))
+	_check("tokyo: pellets lead the way", main.maze_view.pellet_cells.size() > 40, "got %d" % main.maze_view.pellet_cells.size())
+	_check("tokyo: level seed from the city registry", main.maze_view.scenery_seed == 7310)
+	# ---- Tokyo M2: rain, traffic, passers-by, scramble (tokyo_life.gd) ----
+	var tk_life = main.tokyo_life
+	_check("tokyo M2: the moving city runs (rain, cars, people)", tk_life != null and tk_life.rain_mmi != null and tk_life.car_count() >= 12 and tk_life.walker_count() >= 125)
+	_check("tokyo M2: seeded with the city's level seed", tk_life != null and tk_life.seed_value == 7310)
+	var tk_car_p: Vector3 = tk_life.car_position(0)
+	var tk_car_f: Vector3 = tk_life.car_fwd[0]
+	var tk_side := Vector3(-tk_car_f.z, 0, tk_car_f.x)
+	main.player.global_position = Vector3(tk_car_p.x, main.player.global_position.y, tk_car_p.z) + tk_side * 0.4
+	main._check_explorer_obstacles()
+	var tk_car_d := Vector2(main.player.global_position.x - tk_car_p.x, main.player.global_position.z - tk_car_p.z).length()
+	_check("tokyo M2: a car is an obstacle (pushed out like Manhattan)", tk_car_d >= tk_life.CAR_RADIUS - 0.01, "%.2f" % tk_car_d)
+	var tk_wi := -1
+	for i in tk_life.walker_count():
+		if tk_life.walker_visible(i):
+			tk_wi = i
+			break
+	var tk_wp: Vector3 = tk_life.walker_position(tk_wi)
+	main.player.global_position = Vector3(tk_wp.x + 0.1, main.player.global_position.y, tk_wp.z)
+	var tk_score_before: int = main.score
+	var tk_lives_before: int = main.lives
+	main._check_explorer_obstacles()
+	_check("tokyo M2: passers-by are harmless (soft push, no score, no life lost)", main.score == tk_score_before and main.lives == tk_lives_before and Vector2(main.player.global_position.x - tk_wp.x, main.player.global_position.z - tk_wp.z).length() >= main.MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS - 0.01)
+	main.set_reduce_rain(true)
+	_check("tokyo M2: 'Regen reduzieren' stored, switches in sync, applied to the rain", SettingsScript.load_settings().reduce_rain and main.hud.reduce_rain_start.button_pressed and main.hud.reduce_rain_pause.button_pressed and tk_life.rain_visible_count() < 8000)
+	main.set_reduce_rain(false)
+	main.set_reduce_fx(true)
+	_check("tokyo M2: 'Effekte reduzieren' dampens the rain as well", tk_life.rain_visible_count() < 8000 and tk_life.rain_visible_count() > int(8000 * 0.35))
+	main.set_reduce_fx(false)
+	_check("tokyo M2: both off -> full rain, settings stored", tk_life.rain_visible_count() == 8000 and not SettingsScript.load_settings().reduce_rain)
+	_check("tokyo M2: the crossing tone exists (synthetic, short)", Sfx.has_method("crossing_signal") and Sfx.crossing_streams().size() == 2 and Sfx.crossing_streams()[0].get_length() < 0.2)
+	_check("QA K4: 'Regen reduzieren' in the pause where it rains (Tokyo), named on the start screen", main.hud.reduce_rain_pause.visible and main.hud.reduce_rain_start.text.contains("Tokyo"))
+	_check("UX K-A: explorer minimap - white player arrow, exit ring glyph pulsing", main.hud._explorer_hud and main.hud.exit_glyph_pulsing() and main.hud.MINIMAP_PLAYER_EXPLORER.to_html(false) == "f4f1e8")
+	var tk_walk_tone := [0]
+	tk_life.walk_started.connect(func(): tk_walk_tone[0] += 1)
+	tk_life.advance(tk_life.WALK_START - tk_life.cycle_time + 0.1)
+	_check("tokyo M2: All Walk is announced (walk_started)", tk_walk_tone[0] == 1 and tk_life.is_walk_phase())
+	main.player.global_position = Vector3(main.start_cell.y * main.CELL, main.player.global_position.y, main.start_cell.x * main.CELL)
+	var tenv: Environment = main.world_env.environment
+	var ssr_expected: bool = RenderingServer.get_rendering_device() != null # SSR only in Forward+ (QA K2)
+	_check("tokyo: glow on, SSR only where Forward+ has it, filmic tonemap", tenv.glow_enabled and tenv.ssr_enabled == ssr_expected and tenv.tonemap_mode == Environment.TONE_MAPPER_FILMIC and not tenv.volumetric_fog_enabled)
+	_check("tokyo: warm player lamp, far plane for the skyline", main.player.light.light_color.is_equal_approx(tokyo_theme.player_light_color) and is_equal_approx(main.player.camera.far, tokyo_theme.camera_far))
+	_check("tokyo: player starts on the southern avenue looking north", main.player.cell() == main.start_cell and is_equal_approx(main.player.yaw, 0.0))
+	# Collision sits exactly at the neon base line: walk west on the sidewalk
+	# (cell row 30, col 20) into the facade of the block at x = 39 m.
+	main.player.global_position = Vector3(40.6, main.player.global_position.y, 60.0)
+	main.player.yaw = PI / 2.0
+	main.player.move_input = Vector2(0, 1)
+	for i in 30:
+		await get_tree().physics_frame
+	main.player.move_input = Vector2.ZERO
+	var stop_x: float = main.player.global_position.x
+	_check("tokyo: the player stops exactly at the facade (base line = collision)", absf(stop_x - (39.0 + main.player.PLAYER_RADIUS)) < 0.03, "x=%.3f" % stop_x)
+	var tokyo_score: int = main.score
+	var tokyo_left: int = main.maze_view.remaining_pickups()
+	for cell in main.maze_view.pellet_cells.slice(0, 5):
+		main.player.global_position = Vector3(cell.y * main.CELL, main.player.global_position.y, cell.x * main.CELL)
+		await get_tree().process_frame
+		await get_tree().process_frame
+	_check("tokyo: pellets are eaten but give no score", main.maze_view.remaining_pickups() <= tokyo_left - 5 and main.score == tokyo_score, "left %d -> %d, score %d -> %d" % [tokyo_left, main.maze_view.remaining_pickups(), tokyo_score, main.score])
+	main.hud.restart_pressed.emit() # NEUSTART restarts Tokyo, not Manhattan or a speedrun
+	await get_tree().process_frame
+	_check("tokyo: NEUSTART restarts Tokyo", main.running and main.explorer_city_id == "tokyo" and main.playing_explorer)
+	var tmetro = main.metro_stations[0]
+	main.skip_start_intro = false
+	main.player.global_position = Vector3(tmetro.position.x, main.player.global_position.y, tmetro.position.z - 0.5)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().create_timer(1.6).timeout
+	_check("tokyo: the subway exit ends the Tokyo run", main.playing_explorer == false)
+	_check("tokyo: the subway exit starts a speedrun level", main.running and main.level_id != "")
+	var renv: Environment = main.world_env.environment
+	_check("theme reset Tokyo -> speedrun: glow off", renv.glow_enabled == false)
+	_check("theme reset Tokyo -> speedrun: SSR off", renv.ssr_enabled == false)
+	_check("theme reset Tokyo -> speedrun: volumetric fog off", renv.volumetric_fog_enabled == false)
+	_check("theme reset Tokyo -> speedrun: linear tonemap, exposure 1", renv.tonemap_mode == Environment.TONE_MAPPER_LINEAR and is_equal_approx(renv.tonemap_exposure, 1.0) and is_equal_approx(renv.tonemap_white, 1.0))
+	_check("theme reset Tokyo -> speedrun: background, fog, sky affect of the speedrun", renv.background_color.is_equal_approx(normal_theme.env_bg_color) and is_equal_approx(renv.fog_density, normal_theme.env_fog_density) and is_equal_approx(renv.fog_sky_affect, 1.0))
+	_check("theme reset Tokyo -> speedrun: player lamp and far plane restored", main.player.light.light_color.is_equal_approx(speedrun_light) and is_equal_approx(main.player.camera.far, speedrun_far))
+	_check("theme reset Tokyo -> speedrun: the speedrun look is built (no neon city)", main.maze_view.scenery_root == null and main.maze_view.city_theme.id == "normal")
+	_check("theme reset Tokyo -> speedrun: no rain, traffic or passers-by left", main.tokyo_life == null)
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
+	# ---- QA W1/W3 (04.10.): the start screen lists every registered city,
+	# and HAUPTMENÜ from a city leaves no frozen city behind the panel ----
+	var reg_ids: Array = load("res://scripts/explorer_cities.gd").EXPLORER_IDS
+	var btn_ok: bool = main.hud.explorer_buttons.size() == reg_ids.size()
+	for cid in reg_ids:
+		btn_ok = btn_ok and main.hud.explorer_buttons.has(cid)
+	_check("start screen: one explorer button per registered city", btn_ok, str(main.hud.explorer_buttons.keys()))
+	# UX N-B: a short description per city, shown when a button is hovered or
+	# focused; buttons in 16 px; the order stays the owner's
+	var desc_ok := true
+	for cid in reg_ids:
+		var dsc: String = load("res://scripts/explorer_cities.gd").get_city(cid).get("desc", "")
+		desc_ok = desc_ok and dsc.begins_with(load("res://scripts/explorer_cities.gd").get_city(cid).label.capitalize()) and dsc.length() < 70
+		main.hud.explorer_buttons[cid].mouse_entered.emit()
+		desc_ok = desc_ok and main.hud.explorer_desc_label.text == dsc
+		main.hud.explorer_buttons[cid].mouse_exited.emit()
+	_check("UX N-B: every city describes itself in the line under the buttons (hover / focus)", desc_ok and main.hud.explorer_desc_label.text == main.hud.EXPLORER_DESC_DEFAULT)
+	_check("UX N-B: city buttons in 16 px, order Manhattan, Tokyo, Kyoto, Amsterdam, Arles", main.hud.explorer_buttons["arles"].get_theme_font_size("font_size") == 16 and reg_ids == ["manhattan", "tokyo", "kyoto", "amsterdam", "arles"])
+	_check("code W6: SSR / SSAO only in Forward+ (asked by renderer name)", main.is_forward_plus() == (String(ProjectSettings.get_setting_with_override("rendering/renderer/rendering_method")) == "forward_plus" and RenderingServer.get_rendering_device() != null))
+
+	_check("explorer ids: one list (CityThemes == ExplorerCities)", load("res://scripts/city_themes.gd").EXPLORER_IDS == reg_ids)
+	main.hud.explorer_pressed.emit("tokyo")
+	await get_tree().process_frame
+	_check("tokyo: exit banner does not say LEVEL GESCHAFFT", main._explorer_city().get("exit_title", "") != "LEVEL GESCHAFFT!")
+	main.go_to_main_menu()
+	await get_tree().process_frame
+	_check("main menu from Tokyo: city life cleared", main.tokyo_life == null and main.metro_stations.is_empty() and main.taxis.is_empty() and main.pedestrians.is_empty())
+	_check("main menu from Tokyo: maze hidden behind the start screen", main.maze_view.visible == false)
+	_check("main menu from Tokyo: no SSR outside Forward+", main.world_env.environment.ssr_enabled == false)
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+	_check("speedrun after main menu: maze visible again", main.maze_view.visible == true)
+
+	# ---- Kyoto Explorer city (docs/design/kyoto-explorer.md): pop-up book,
+	# exit at the foot of Kiyomizu into a speedrun; the speedrun gets its own
+	# look back (no cards, no paper fog) ----
+	main.hud.explorer_pressed.emit("kyoto")
+	await get_tree().process_frame
+	_check("kyoto: the KYOTO button starts the Kyoto explorer city", main.running and main.playing_explorer and main.explorer_city_id == "kyoto")
+	_check("kyoto: HUD level chip says KYOTO", main.hud.level_label.text == "KYOTO", main.hud.level_label.text)
+	_check("kyoto: no ghosts, no traffic, one exit", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("kyoto_exit.gd"))
+	_check("kyoto: the pop-up city is built", main.maze_view.scenery_root != null and main.maze_view.city_theme.id == "kyoto" and main.maze_view.scenery_root.card_count > 150)
+	_check("kyoto: pellets lead the way", main.maze_view.pellet_cells.size() > 50)
+	_check("kyoto: the exit is on the minimap", main.hud.minimap_exit_cells.size() == 1)
+	_check("kyoto: the book opens on start (intro)", main.maze_view.scenery_root.intro_running())
+	_check("kyoto: the fold is explained once on start", main.hud.is_hint_visible() and main.hud.hint_text().contains("Effekte reduzieren"))
+	# UX W-C: the hint box sits centred in the upper third, at most 560 px wide
+	var hb: Control = main.hud.hint_box
+	var vr2: Vector2 = main.hud.get_viewport().get_visible_rect().size
+	var hbr: Rect2 = hb.get_global_rect()
+	_check("UX W-C: hint box centred, <= 560 px wide, upper third (off the pellet trail)", absf(hbr.get_center().x - vr2.x * 0.5) < 2.0 and hbr.size.x <= 560.0 and hbr.end.y < vr2.y / 3.0, str(hbr))
+	# UX N-A: its time stands while the pause is open
+	var left0: float = main.hud._hint_left
+	main.toggle_pause()
+	for k in 10:
+		await get_tree().process_frame
+	_check("UX N-A: the hint waits while paused (hidden, time stands)", not main.hud.is_hint_visible() and is_equal_approx(main.hud._hint_left, left0))
+	_check("QA K4: no 'Regen reduzieren' in the pause of a city without rain", not main.hud.reduce_rain_pause.visible)
+	main.toggle_pause()
+	await get_tree().process_frame
+	_check("UX N-A: ... and comes back after the pause", main.hud.is_hint_visible())
+	_check("kyoto: paper sky, no glow", main.world_env.environment.glow_enabled == false and main.world_env.environment.background_color.is_equal_approx(load("res://scripts/kyoto_style.gd").PAPER))
+	main.set_reduce_fx(true)
+	_check("kyoto: 'Effekte reduzieren' reaches the pop-ups", main.maze_view.scenery_root.fold_enabled() == false)
+	_check("UX K-A: the minimap's exit ring stands still with 'Effekte reduzieren'", not main.hud.exit_glyph_pulsing())
+	main.set_reduce_fx(false)
+	_check("kyoto: pop-ups fold again without it", main.maze_view.scenery_root.fold_enabled() == true)
+	var ky_exit: Vector3 = main.metro_stations[0].position
+	main.player.global_position = Vector3(ky_exit.x, main.player.global_position.y, ky_exit.z - 0.8)
+	var ky_tries := 0
+	while main.playing_explorer and ky_tries < 400: # banner 1.4 s, robust under load (code review H5)
+		await get_tree().process_frame
+		ky_tries += 1
+	await get_tree().process_frame
+	_check("kyoto: the exit ends the Kyoto run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("theme reset Kyoto -> speedrun: no pop-up city, speedrun background", main.maze_view.scenery_root == null and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color))
+	_check("speedrun after Kyoto: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
+	# ---- Amsterdam Explorer city (docs/design/amsterdam-explorer.md): the
+	# cardboard model at golden hour, exit = green tram into a speedrun; the
+	# speedrun gets its own look back (no lights, no HDRI sky) ----
+	_check("amsterdam: the start screen has a button for it", main.hud.explorer_buttons.has("amsterdam") and main.hud.explorer_buttons["amsterdam"].text == "AMSTERDAM")
+	# QA W1: the way hint also comes with "Effekte reduzieren" (Kyoto's fold hint not)
+	main.set_reduce_fx(true)
+	main.hud.explorer_pressed.emit("amsterdam")
+	await get_tree().process_frame
+	_check("QA W1: Amsterdam's way hint also with 'Effekte reduzieren'", main.hud.is_hint_visible() and main.hud.hint_text() == "Folge den blauen Nadeln zur grünen Tram", main.hud.hint_text())
+	main.hud.explorer_pressed.emit("kyoto")
+	await get_tree().process_frame
+	_check("QA W1: Kyoto's fold hint stays off with 'Effekte reduzieren'", not main.hud.is_hint_visible())
+	main.set_reduce_fx(false)
+	main.hud.explorer_pressed.emit("amsterdam")
+	await get_tree().process_frame
+	_check("amsterdam: the AMSTERDAM button starts the Amsterdam explorer city", main.running and main.playing_explorer and main.explorer_city_id == "amsterdam")
+	_check("amsterdam: HUD level chip says AMSTERDAM", main.hud.level_label.text == "AMSTERDAM", main.hud.level_label.text)
+	_check("amsterdam: no ghosts, no traffic, one exit (the tram)", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("amsterdam_exit.gd"))
+	var am_sr = main.maze_view.scenery_root
+	_check("amsterdam: the cardboard model is built", am_sr != null and main.maze_view.city_theme.id == "amsterdam" and am_sr.panel_count > 3000)
+	_check("amsterdam: pins lead the way", main.maze_view.pellet_cells.size() > 80)
+	_check("amsterdam: the exit is on the minimap, in #00B894", main.hud.minimap_exit_cells.size() == 1 and main.maze_view.city_theme.minimap_exit_color.to_html(false) == "00b894")
+	_check("amsterdam: evening room as sky, lit by the sun and the desk lamp", main.world_env.environment.background_mode == Environment.BG_SKY and main.world_env.environment.sky != null and am_sr.sun != null and am_sr.lamp != null)
+	_check("amsterdam: no ghost siren (quiet city)", Sfx.siren_state() == "")
+	main.set_reduce_fx(true)
+	_check("amsterdam: 'Effekte reduzieren' stops the exit pulse", main.metro_stations[0].pulse_enabled() == false and am_sr.fx_reduced())
+	main.set_reduce_fx(false)
+	_check("amsterdam: the pulse runs again without it", main.metro_stations[0].pulse_enabled() == true)
+	var am_exit: Vector3 = main.metro_stations[0].position
+	# GD W6: the exit hint comes from ~12 m on, the banner hides it
+	main.player.global_position = Vector3(am_exit.x - 0.5, main.player.global_position.y, am_exit.z - 10.0)
+	main._check_metro_entry()
+	_check("GD W6: the exit hint shows from ~12 m", main.hud.is_hint_visible() and main.hud.hint_text() == "Grüne Tram: einsteigen in den Speedrun", main.hud.hint_text())
+	main.player.global_position = Vector3(am_exit.x - 0.6, main.player.global_position.y, am_exit.z)
+	main._check_metro_entry()
+	_check("GD W6: the banner takes over, the hint goes (no overlap)", main.hud.levelclear_panel.visible and not main.hud.is_hint_visible())
+	var am_tries := 0
+	while main.playing_explorer and am_tries < 400:
+		await get_tree().process_frame
+		am_tries += 1
+	await get_tree().process_frame
+	_check("amsterdam: the tram ends the Amsterdam run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("code H1: back in the speedrun the HDRI sky is dropped (env.sky = null)", main.world_env.environment.sky == null)
+	_check("UX K-A: speedrun minimap - cyan arrow again", not main.hud._explorer_hud)
+	_check("theme reset Amsterdam -> speedrun: no model, no lights, colour background, no SSAO/adjustment", main.maze_view.scenery_root == null
+		and main.world_env.environment.background_mode == Environment.BG_COLOR and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color)
+		and main.world_env.environment.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR and not main.world_env.environment.adjustment_enabled
+		and not main.world_env.environment.ssao_enabled and main.world_env.environment.tonemap_mode == normal_theme.env_tonemap_mode)
+	var am_lights := []
+	for n in main.maze_view.find_children("*", "Light3D", true, false):
+		var gone := false
+		var up: Node = n
+		while up != null:
+			if up.is_queued_for_deletion():
+				gone = true
+			up = up.get_parent()
+		if not gone:
+			am_lights.append(n)
+	var am_left: Array = am_lights.filter(func(l): return String(l.name) in ["Sun", "DeskLamp", "Bounce"] or l is DirectionalLight3D)
+	_check("speedrun after Amsterdam: the sun and the desk lamp are gone", am_left.is_empty(), str(am_left.map(func(l): return str(l.get_path()))))
+	_check("speedrun after Amsterdam: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
+	# ---- Arles Explorer city (docs/design/arles-explorer.md): the painted
+	# starry night, exit = the green door of the Yellow House into a speedrun;
+	# the speedrun gets its own look back (no moon, no omni lights, no glow) ----
+	_check("arles: the start screen has a button for it", main.hud.explorer_buttons.has("arles") and main.hud.explorer_buttons["arles"].text == "ARLES")
+	main.hud.explorer_pressed.emit("arles")
+	await get_tree().process_frame
+	_check("arles: the ARLES button starts the Arles explorer city", main.running and main.playing_explorer and main.explorer_city_id == "arles")
+	_check("arles: HUD level chip says ARLES", main.hud.level_label.text == "ARLES", main.hud.level_label.text)
+	_check("arles: no ghosts, no traffic, one exit (the green door)", main.enemies.is_empty() and main.tokyo_life == null and main.metro_stations.size() == 1 and main.metro_stations[0].get_script().resource_path.ends_with("arles_exit.gd"))
+	var ar_sr = main.maze_view.scenery_root
+	_check("arles: the painted city is built (houses, objects, halos)", ar_sr != null and main.maze_view.city_theme.id == "arles" and ar_sr.house_box_count > 100 and ar_sr.halo_count > 70)
+	_check("arles: vermilion pellets lead the way (way dense, branches dotted)", main.maze_view.pellet_cells.size() > 110)
+	_check("arles: the exit is on the minimap, in mint green", main.hud.minimap_exit_cells.size() == 1 and main.maze_view.city_theme.minimap_exit_color.to_html(false) == "3af5c8")
+	_check("arles: night with glow, colour background, the sky baked at start", main.world_env.environment.glow_enabled and main.world_env.environment.background_mode == Environment.BG_COLOR and ar_sr.sky_state != "")
+	_check("arles: no ghost siren (quiet city)", Sfx.siren_state() == "")
+	_check("arles: the way hint 'Folge den Kugeln zur grünen Tür' on start", main.hud.is_hint_visible() and main.hud.hint_text() == "Folge den Kugeln zur grünen Tür", main.hud.hint_text())
+
+	main.set_reduce_fx(true)
+	_check("arles: 'Effekte reduzieren' stops sky and exit pulse", main.metro_stations[0].pulse_enabled() == false and ar_sr.fx_reduced() and ar_sr.animated_nodes().is_empty())
+	main.set_reduce_fx(false)
+	_check("arles: both run again without it", main.metro_stations[0].pulse_enabled() == true and not ar_sr.animated_nodes().is_empty())
+	var ar_exit: Vector3 = main.metro_stations[0].position
+	main.player.global_position = Vector3(ar_exit.x, main.player.global_position.y, ar_exit.z + 0.6)
+	var ar_tries := 0
+	while main.playing_explorer and ar_tries < 400:
+		await get_tree().process_frame
+		ar_tries += 1
+	await get_tree().process_frame
+	_check("arles: the green door ends the Arles run and starts a speedrun", main.playing_explorer == false and main.running and main.level_id != "")
+	_check("theme reset Arles -> speedrun: no painted city, no glow, speedrun background", main.maze_view.scenery_root == null
+		and main.world_env.environment.glow_enabled == normal_theme.env_glow_enabled
+		and main.world_env.environment.background_color.is_equal_approx(normal_theme.env_bg_color)
+		and main.world_env.environment.tonemap_mode == normal_theme.env_tonemap_mode)
+	var ar_lights := []
+	for n in main.maze_view.find_children("*", "Light3D", true, false):
+		var gone := false
+		var up: Node = n
+		while up != null:
+			if up.is_queued_for_deletion():
+				gone = true
+			up = up.get_parent()
+		if not gone:
+			ar_lights.append(n)
+	var ar_left: Array = ar_lights.filter(func(l): return String(l.name) in ["Moon", "Cafe", "Statue", "Portal", "Arena", "QuayNorth", "QuaySouth"] or l is DirectionalLight3D)
+	_check("speedrun after Arles: the moon and the lamps are gone", ar_left.is_empty(), str(ar_left.map(func(l): return str(l.get_path()))))
+	_check("speedrun after Arles: no exit marker on the minimap", main.hud.minimap_exit_cells.is_empty())
+	main.skip_start_intro = true
+	main.begin_game()
+	await get_tree().process_frame
+
 	# ---- Konditionen: only the rabbit starts one; none at level start ----
 	_check("conditions: none active at level start", main.active_condition == null and main.player.active_condition == null)
 	main.start_condition(ConditionsScript.get_condition("matrix"))
@@ -799,7 +1097,7 @@ func _run_look_checks() -> void:
 	if overlay_ok:
 		var crt: Shader = overlay.get_child(0).material.shader
 		_check("look: CRT overlay has 270 lines per image height, no TIME (no flicker)", crt.code.find("line_count = 270.0") != -1 and crt.code.find("TIME") == -1)
-	_check("look: pellets are cream cubes at ~0.4 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is BoxMesh and absf(mv.pellet_meshes[0].position.y - 0.42) < 0.01 and ct.pellet_color.is_equal_approx(Color("fff0c8")))
+	_check("look: pellets are cream cubes at ~0.4 m", mv.pellet_cells.size() > 0 and mv.pellet_mesh() is BoxMesh and absf(mv.pellet_position(0).y - 0.42) < 0.01 and ct.pellet_color.is_equal_approx(Color("fff0c8")))
 	_check("look: power pellet is a diamond blinking below 3 Hz", mv.power_nodes.size() > 0 and mv.power_nodes[0].mesh is BoxMesh and absf(mv.power_nodes[0].rotation.x) > 0.1 and ct.power_blink_hz > 0.0 and ct.power_blink_hz < 3.0)
 	_check("look: minimap walls #128F7C", ct.minimap_wall_color.is_equal_approx(Color("128f7c")))
 	_check("look: no wall line in the blue hue range 215-250 deg (all looks + minimap)", _theme_line_colors_not_blue(ct))
@@ -875,7 +1173,7 @@ func _run_look_checks() -> void:
 	_check("manhattan unchanged: floor color", mv.floor_mesh.material_override.albedo_color.is_equal_approx(man.floor_color))
 	_check("manhattan unchanged: no level look", mv.level_look_id == "" and mv.level_look.is_empty())
 	_check("manhattan unchanged: environment", main.world_env.environment.background_color.is_equal_approx(man.env_bg_color) and main.world_env.environment.fog_light_color.is_equal_approx(man.env_fog_color))
-	_check("manhattan unchanged: pellets are the original spheres at 0.32 m", mv.pellet_meshes.size() > 0 and mv.pellet_meshes[0].mesh is SphereMesh and is_equal_approx(mv.pellet_meshes[0].mesh.radius, 0.11) and is_equal_approx(mv.pellet_meshes[0].position.y, 0.32))
+	_check("manhattan unchanged: pellets are the original spheres at 0.32 m", mv.pellet_cells.size() > 0 and mv.pellet_mesh() is SphereMesh and is_equal_approx(mv.pellet_mesh().radius, 0.11) and is_equal_approx(mv.pellet_position(0).y, 0.32))
 	_check("manhattan unchanged: original minimap and pickup colors", man.minimap_wall_color == defaults.minimap_wall_color and man.minimap_bg_color == defaults.minimap_bg_color and man.pellet_color == defaults.pellet_color)
 
 
@@ -1075,7 +1373,7 @@ func _run_condition_checks() -> void:
 	_check("F&L: no input -> no movement (all manipulations, also right after releasing)", no_move)
 	var fs = FearScript.new()
 	fs.set_manipulation(FearScript.SWAP)
-	_check("F&L swap: A/D mirrored, W untouched", fs.modify_input(Vector2(1, 0), 0.016) == Vector2(-1, 0) and fs.modify_input(Vector2(0, 1), 0.016) == Vector2(0, 1))
+	_check("F&L swap: A/D and W/S mirrored (E10)", fs.modify_input(Vector2(1, 0), 0.016) == Vector2(-1, 0) and fs.modify_input(Vector2(0, 1), 0.016) == Vector2(0, -1))
 	var fd = FearScript.new()
 	fd.set_manipulation(FearScript.DRIFT)
 	var dv: Vector2 = fd.modify_input(Vector2(0, 1), 0.016)
@@ -1111,7 +1409,7 @@ func _run_condition_checks() -> void:
 		await get_tree().process_frame
 		flip_max = maxf(flip_max, float(main.maze_view.cond_wall_material.get_shader_parameter("flip")))
 	_release_all_move_keys()
-	_check("F&L: view/camera never touched (yaw, pitch, camera, FOV)", is_equal_approx(main.player.yaw, 0.7) and is_equal_approx(main.player.rotation.y, 0.7) and is_equal_approx(main.player.pitch, 0.2) and is_equal_approx(main.player.camera.rotation.x, 0.2) and is_equal_approx(main.player.camera.fov, fov_before) and main.player.camera.position == Vector3(0, main.player.EYE_H, 0))
+	_check("F&L: view/camera never touched (yaw, pitch, camera, FOV)", is_equal_approx(main.player.yaw, 0.7) and is_equal_approx(main.player.rotation.y, 0.7) and is_equal_approx(main.player.pitch, 0.2) and is_equal_approx(main.player.camera.rotation.x, 0.2) and is_equal_approx(main.player.camera.fov, fov_before) and main.player.camera.position == Vector3(0, main.player.eye_h, 0))
 	_check("F&L: Kippbild tips while the manipulation acts", flip_max > 0.5, "flip=%f" % flip_max)
 	_check("F&L: title card shows the manipulation symbol", main.hud.condition_icon_kind == "fl_drift" and main.hud.condition_sub_label.text != "")
 	main._end_condition(false)
@@ -1448,7 +1746,7 @@ func _texts_of(node: Node) -> Array:
 
 
 func _start_pos() -> Vector3:
-	return Vector3(main.start_cell.y * main.CELL, main.player.EYE_H, main.start_cell.x * main.CELL)
+	return Vector3(main.start_cell.y * main.CELL, main.player.eye_h, main.start_cell.x * main.CELL)
 
 
 func _esc() -> void:
@@ -1727,6 +2025,10 @@ func _run_review_fix_checks() -> void:
 		var ch = box.get_child(i)
 		if ch is Button and ch.text == "SPEEDRUN":
 			speedrun_idx = i
+		elif ch is HBoxContainer: # QA N6 (Versus): SPEEDRUN and VERSUS share a row
+			for b in ch.get_children():
+				if b is Button and b.text == "SPEEDRUN":
+					speedrun_idx = i
 	_check("UX-W5: options (Chaos, comfort) above the SPEEDRUN button", main.hud.chaos_start.get_index() < speedrun_idx and main.hud.comfort_start_block.get_index() < speedrun_idx)
 	var small := []
 	for l in _labels_under(main.hud.start_panel):

@@ -2,7 +2,9 @@ extends RefCounted
 ## Conditions — the registry of "Konditionen": time-limited effects that only
 ## the white rabbit triggers (spec docs/design/kaninchen-speedrun.md 2.3).
 ##
-## Each entry: id, script, is_good, duration_s (good 10 s, bad 8 s), weight.
+## Each entry: id, script, is_good, duration_s (good 10 s, Matrix 15 s, bad
+## 8 s – E10, 04.10.2026: the bet barely paid off in the bot measurement),
+## weight.
 ## Base ratio good:bad = 60:40 (P_GOOD_BASE); within good resp. bad the
 ## weights decide (all 1 today = equally likely). A new condition = one
 ## script under scripts/conditions/ plus one entry here.
@@ -14,10 +16,12 @@ extends RefCounted
 
 const P_GOOD_BASE := 0.6
 const GOOD_DURATION_S := 10.0
+## E10 (b): the Matrix shortcut needs time to pay back the detour.
+const MATRIX_DURATION_S := 15.0
 const BAD_DURATION_S := 8.0
 
 const REGISTRY := [
-	{"id": "matrix", "script": "res://scripts/conditions/matrix.gd", "is_good": true, "duration_s": GOOD_DURATION_S, "weight": 1.0},
+	{"id": "matrix", "script": "res://scripts/conditions/matrix.gd", "is_good": true, "duration_s": MATRIX_DURATION_S, "weight": 1.0},
 	{"id": "taschenuhr", "script": "res://scripts/conditions/taschenuhr.gd", "is_good": true, "duration_s": GOOD_DURATION_S, "weight": 1.0},
 	{"id": "fear_and_loathing", "script": "res://scripts/conditions/fear_and_loathing.gd", "is_good": false, "duration_s": BAD_DURATION_S, "weight": 1.0},
 	{"id": "stromausfall", "script": "res://scripts/conditions/stromausfall.gd", "is_good": false, "duration_s": BAD_DURATION_S, "weight": 1.0},
