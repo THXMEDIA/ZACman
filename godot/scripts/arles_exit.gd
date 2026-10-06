@@ -131,6 +131,7 @@ func set_reduce_fx(on: bool) -> void:
 	# the house is painted with the brush like the city: calmer as well (code H2)
 	if house != null and house.material_override is ShaderMaterial:
 		house.material_override.set_shader_parameter("calm", 1.0 if on else 0.0)
+		house.material_override.set_shader_parameter("moving", 0.0 if on else 1.0) # no sway either
 	if on:
 		_apply(0.0)
 

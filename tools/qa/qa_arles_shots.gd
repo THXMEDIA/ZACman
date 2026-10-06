@@ -21,6 +21,12 @@
 #   r13_cafe_route.png      der Weg an der Caféterrasse entlang nach Westen (Säulen voraus)
 #   r14_kugeln.png          Kugeln aus der Nähe (Objekt statt Licht, dunkle Kontur)
 #   r15_abstecher.png       Rond-point: Abstecher gepunktet, Arena
+#   r16_passanten.png       Passanten am Kai (Paar), von der Seite
+#   r17_statue.png          Spaziergänger um das Mistral-Denkmal, Place du Forum
+#   r18_nah.png             Passant aus der Nähe (Mantel, Hut, Pinselstriche)
+#   r19_pinsel_a.png        Fassaden und Pflaster mit dem Wabern der Pinselstriche (momentane Phase)
+#   r20_pinsel_ruhig.png    dieselbe Ansicht mit „Effekte reduzieren“ (Striche und Passanten stehen);
+#                           Bildvergleich r19/r20 zeigt die Verschiebung der Striche (wenige cm)
 extends SceneTree
 
 const SHIFT := Vector3(1.0, 0.0, 1.0)
@@ -65,6 +71,25 @@ func _look(pos: Vector3, look: Vector3) -> void:
 	main.player.camera.rotation.x = pitch
 
 
+## Stand `dist` m to the side of the first walker of the lane/loop `path_id`
+## and look at it (the walker is moved to a spot of its lane first).
+func _look_walker(path_id: String, dist: float, height: float, advance_s: float) -> void:
+	var sr = main.maze_view.scenery_root
+	var life = sr.life
+	var pi: int = life.path_ids.find(path_id)
+	var wi := -1
+	for i in life.walker_count():
+		if life.w_path[i] == pi:
+			wi = i
+			break
+	life.advance(advance_s)
+	var wp: Vector3 = life.walker_map_position(wi)
+	var d: Vector2 = life.walker_direction(wi)
+	var side := Vector2(-d.y, d.x)
+	var pos := Vector3(wp.x + side.x * dist, height, wp.z + side.y * dist)
+	_look(pos, Vector3(wp.x, 1.35, wp.z))
+
+
 func _plan() -> void:
 	var only := OS.get_environment("ONLY")
 	_steps.append({"wait": 40, "do": func(): _shot("r1_start.png")})
@@ -89,6 +114,22 @@ func _plan() -> void:
 			continue
 		_steps.append({"wait": 2, "do": func(): _look(v[1], v[2])})
 		_steps.append({"wait": 24, "do": func(): _shot(v[0])})
+	if _wanted(only, "r16_passanten.png"):
+		_steps.append({"wait": 2, "do": func(): _look_walker("quai_mitte", 3.4, 2.6, 0.0)})
+		_steps.append({"wait": 24, "do": func(): _shot("r16_passanten.png")})
+	if _wanted(only, "r17_statue.png"):
+		_steps.append({"wait": 2, "do": func(): _look_walker("statue", 6.5, 2.2, 0.0)})
+		_steps.append({"wait": 24, "do": func(): _shot("r17_statue.png")})
+	if _wanted(only, "r18_nah.png"):
+		_steps.append({"wait": 2, "do": func(): _look_walker("hotel_de_ville", 2.3, 1.6, 0.0)})
+		_steps.append({"wait": 24, "do": func(): _shot("r18_nah.png")})
+	if _wanted(only, "r19_pinsel_a.png"):
+		_steps.append({"wait": 2, "do": func(): _look(Vector3(24.0, 1.6, 59.0), Vector3(24.0, 4.0, 44.0))})
+		_steps.append({"wait": 24, "do": func(): _shot("r19_pinsel_a.png")})
+		_steps.append({"wait": 2, "do": func(): main.set_reduce_fx(true)})
+		_steps.append({"wait": 24, "do": func():
+			_shot("r20_pinsel_ruhig.png")
+			main.set_reduce_fx(false)})
 	if _wanted(only, "r10_totale.png"):
 		_steps.append({"wait": 2, "do": func():
 			_qa_cam = Camera3D.new()

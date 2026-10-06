@@ -73,8 +73,29 @@ const LIT_RATIO := 0.38 # share of lit windows (tiefe Nacht)
 const LOD_NEAR := 14.0 # m: impasto -> soft dabs between these distances
 const LOD_FAR := 28.0
 const SKY_DRIFT := 0.10 # phase per second (was 0.04: Abnahme 06.10. "schneller"); 0.1 Hz, far below the 3 Hz flicker limit
+## Slow sway of the brush strokes on facades, objects and paving (common include
+## arles_common.gdshaderinc, Abnahme 06.10.): every stroke row slides along its
+## own length by at most FLOW_AMP of the stroke length, as a slow wave across the
+## rows (FLOW_HZ). Far dabs never move (fades with the stroke LOD), the paving
+## only at half strength, the Rhône not at all (it has its own shimmer).
+const FLOW_AMP := 0.05
+const FLOW_HZ := 0.08
+const FLOW_FLOOR_GAIN := 0.5
 const SKY_BAKE_SIZE := Vector2i(2048, 1024)
 const PULSE_HZ := 0.5
+
+## ---- passers-by (arles_life.gd, shaders/arles_walker.gdshader) ----
+## Evening figures in coat and hat, painted with the same impasto brush as the
+## city; brighter than paving and facades (technical condition). No vermilion,
+## no mint green: tested against the exclusive colours with world_colors().
+const WALKER_COAT_A := [Color("7a86c0"), Color("b08a62"), Color("9a8ac8"), Color("b07a86"), Color("d8cca4"), Color("8a8fb0")]
+const WALKER_COAT_B := [Color("6a76b0"), Color("9a7450"), Color("8474b4"), Color("9a6a76"), Color("c0b48e"), Color("747aa0")]
+const WALKER_COAT_C := [Color("a8b4e0"), Color("d8b488"), Color("c4b8e8"), Color("d8a8b4"), Color("f0e6c0"), Color("b4b8d8")]
+const WALKER_HAT := [Color("4a3c34"), Color("2e2850"), Color("b89a62")]
+const WALKER_SKIN := [Color("d9a066"), Color("c8946a"), Color("f0c080")]
+const WALKER_HAIR := Color("2a2240")
+const WALKER_SHOE := Color("1e1a34")
+const WALKER_EMIT := 0.22
 
 ## Brush materials of every single object (landmarks, props, figures,
 ## trees, lamps, the far city): name -> [a, b, accent colour, params]. Params
@@ -158,6 +179,12 @@ static func world_colors() -> Array:
 	out.append_array(FACADE_C)
 	out.append_array(ROOF_A)
 	out.append_array(ROOF_B)
+	out.append_array(WALKER_COAT_A)
+	out.append_array(WALKER_COAT_B)
+	out.append_array(WALKER_COAT_C)
+	out.append_array(WALKER_HAT)
+	out.append_array(WALKER_SKIN)
+	out.append_array([WALKER_HAIR, WALKER_SHOE])
 	for k in MATS:
 		var m: Array = MATS[k]
 		for i in 3:

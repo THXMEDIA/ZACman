@@ -15,11 +15,12 @@ const Scenery := preload("res://scripts/arles_scenery.gd")
 const Style := preload("res://scripts/arles_style.gd")
 const CityThemes := preload("res://scripts/city_themes.gd")
 const ExplorerCities := preload("res://scripts/explorer_cities.gd")
+const Life := preload("res://scripts/arles_life.gd")
 
 const LEVEL_SEED := 1888
 ## Static draw calls (visible geometry without the pellets): floor, houses,
-## objects, arcades, tympanum, Rhône, sky, halos. The wall MultiMesh is physics
-## only (not drawn).
+## objects, arcades, tympanum, Rhône, sky, halos and the passers-by (ONE
+## MultiMesh). The wall MultiMesh is physics only (not drawn).
 const STATIC_DRAW_BUDGET := 9
 const OBJECT_VERT_BUDGET := 60000
 const HOUSE_VERT_BUDGET := 40000
@@ -305,8 +306,150 @@ func _initialize() -> void:
 	_check("floor: calm paving, gutter exactly on the block edge", fl.contains("calm_floor") and fl.contains("if (dmin < 0.26) c = gutter;") and _f(floor_mat.get_shader_parameter("calm_floor"), 0.45) >= 0.4)
 	_check("halos: fade out right in front of the camera (no full-screen flash), unfogged", FileAccess.get_file_as_string("res://shaders/arles_halo.gdshader").contains("smoothstep(2.5, 7.0, d)") and FileAccess.get_file_as_string("res://shaders/arles_halo.gdshader").contains("fog_disabled"))
 
+	# ---- passers-by (Abnahme 06.10.): strolling figures in the style of the city ----
+	var life = sr.life
+	var n_walk: int = life.walker_count() if life != null else 0
+	_check("life: strolling passers-by exist (24-40), one per slot of the lanes", life != null and n_walk >= 24 and n_walk <= 40 and n_walk == Life.total_walkers() and life.path_count() == Life.path_defs().size(), str(n_walk))
+	_check("life: the static café figures stay (14 figures, the terrace guests)", Scenery.FIGURES.size() == 14 and sr.object_parts.any(func(p): return p.group == "figure0") and sr.object_parts.any(func(p): return p.group == "terrace"))
+	_check("life: ONE MultiMesh, one draw call, whatever the number", life != null and life.draw_calls() == 1 and life.mmi.multimesh.instance_count == n_walk and geo.has(life.mmi) and life.get_child_count() == 1)
+	_check("life: the figure is one small mesh (coat, head, hats, feet)", life.mmi.multimesh.mesh.surface_get_array_len(0) < 1500, str(life.mmi.multimesh.mesh.surface_get_array_len(0)))
+	_check("life: painted with the city's brush (arles_common include), pool lights, LOD 14-28 m", life.material.shader.code.contains("arles_common") and life.material.shader.code.contains("impasto(") and life.material.shader.code.contains("pools(wpos") and is_equal_approx(_f(life.material.get_shader_parameter("lod_near"), 0.0), 14.0) and sr.brush_materials.has(life.material))
+	var l2 := Node3D.new()
+	l2.set_script(Life)
+	l2.setup(LEVEL_SEED, Scenery.walker_material())
+	var l3 := Node3D.new()
+	l3.set_script(Life)
+	l3.setup(LEVEL_SEED + 1, Scenery.walker_material())
+	var same0 := true
+	for i in n_walk:
+		if life.walker_map_position(i) != l2.walker_map_position(i):
+			same0 = false
+	l2.advance(37.5)
+	l3.advance(37.5)
+	var same1 := true
+	var differs := false
+	var ref := Node3D.new()
+	ref.set_script(Life)
+	ref.setup(LEVEL_SEED, Scenery.walker_material())
+	ref.advance(37.5)
+	for i in n_walk:
+		if ref.walker_map_position(i) != l2.walker_map_position(i):
+			same1 = false
+		if l3.walker_map_position(i) != l2.walker_map_position(i):
+			differs = true
+	_check("life: deterministic per seed (same seed, same steps -> same people), the seed varies them", same0 and same1 and differs)
+	for n in [l2, l3, ref]:
+		n.free()
+	# free lanes: sample 400 s of every walker against walls, obstacles, the
+	# start, the exit and each other
+	var start_pt := Vector2(start.y * 2.0 + 1.0, start.x * 2.0 + 1.0)
+	var exit_pt := Vector2(exit_cell.y * 2.0 + 1.0, exit_cell.x * 2.0 + 1.0)
+	var bad_cell := ""
+	var bad_wall := ""
+	var bad_obs := ""
+	var bad_near := ""
+	var closest := 99.0
+	var vmax := 0.0
+	var vmin := 99.0
+	for step_i in 580:
+		for i in n_walk:
+			var mp: Vector3 = life.walker_map_position(i)
+			var p := Vector2(mp.x, mp.z)
+			if not M.is_open(int(floor(p.y / 2.0)), int(floor(p.x / 2.0))):
+				bad_cell += "w%d %s; " % [i, p]
+			elif _wall_dist(p) < 0.85:
+				bad_wall += "w%d %s %.2f; " % [i, p, _wall_dist(p)]
+			for o in sr.obstacle_boxes:
+				if Rect2(Vector2(o.aabb.position.x, o.aabb.position.z), Vector2(o.aabb.size.x, o.aabb.size.z)).grow(0.5).has_point(p):
+					bad_obs += "w%d at %s; " % [i, o.name]
+			if p.distance_to(start_pt) < 3.0 or p.distance_to(exit_pt) < 3.0:
+				bad_near += "w%d %s; " % [i, p]
+			for j in range(i + 1, n_walk):
+				var mq: Vector3 = life.walker_map_position(j)
+				closest = minf(closest, p.distance_to(Vector2(mq.x, mq.z)))
+			vmax = maxf(vmax, life.walker_speed(i))
+			vmin = minf(vmin, life.walker_speed(i))
+		life.advance(0.7)
+	_check("life: every walker stays on open street cells", bad_cell == "", bad_cell.left(300))
+	_check("life: lanes keep 0.85 m off every wall (the 2 m aisles stay free)", bad_wall == "", bad_wall.left(300))
+	_check("life: lanes keep 0.5 m off every obstacle (lamps, trees, terrace, statue, obelisk, cart, café figures)", bad_obs == "", bad_obs.left(300))
+	_check("life: never within 3 m of the start or the exit door", bad_near == "", bad_near.left(300))
+	_check("life: nobody walks through anybody (>= 0.55 m, pairs 0.64 m side by side)", closest >= 0.55, "%.2f m" % closest)
+	_check("life: slow (0.5-0.9 m/s), stride <= 1 Hz (far below the 3 Hz flicker limit)", vmin >= 0.5 - 0.001 and vmax <= 0.9 + 0.001 and life.stride_hz(0) <= 1.0 and Life.SPEED_MAX / Life.STRIDE <= 1.0)
+	var wsd := FileAccess.get_file_as_string("res://scripts/arles_life.gd")
+	_check("life: lane geometry - pairs side by side (0.64 m), out-and-back aisle 0.9 m", Life.PAIR_HALF * 2.0 <= 0.7 and Life.LANE_HALF * 2.0 <= 1.0)
+	# harmless: the walkers touch no lives, no score and never the camera (Main only pushes softly)
+	_check("life: harmless - no lives, no camera, no input, never moves the player itself", not wsd.contains("lose_life") and not wsd.contains("camera.") and not wsd.contains("get_viewport") and not wsd.contains("global_position =") and not wsd.contains("Input.") and not wsd.contains("score"))
+	var main_src := FileAccess.get_file_as_string("res://scripts/main.gd")
+	_check("life: Main gives them the soft Tokyo push (radius 0.35) and updates them every explorer frame", main_src.contains("life_walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS") and main_src.contains("arles_sr.update_life(delta, player.global_position)") and main_src.contains("const MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS := 0.35"))
+	# no allocation per frame
+	for i in 120:
+		sr.update_life(1.0 / 60.0, Vector3.ZERO)
+	var obj0 := Performance.get_monitor(Performance.OBJECT_COUNT)
+	var res0 := Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var node0 := _count_nodes(root)
+	var mem0 := OS.get_static_memory_usage()
+	var t_before: float = life.time
+	for i in 600:
+		sr.update_life(1.0 / 60.0, Vector3.ZERO)
+	var obj1 := Performance.get_monitor(Performance.OBJECT_COUNT)
+	var res1 := Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var node1 := _count_nodes(root)
+	var mem1 := OS.get_static_memory_usage()
+	_check("frames: the passers-by walk on (10 s of frames)", life.time - t_before > 9.9)
+	_check("frames: no new objects, resources or nodes in 600 frames (no mesh rebuild, no node per figure)", obj1 == obj0 and res1 == res0 and node1 == node0, "objects %d -> %d, resources %d -> %d, nodes %d -> %d" % [obj0, obj1, res0, res1, node0, node1])
+	_check("frames: static memory does not grow", mem1 - mem0 < 64 * 1024, "%d bytes" % (mem1 - mem0))
+	print("ARLES LIFE COUNTERS: %d walkers, objects %d -> %d, resources %d -> %d, nodes %d -> %d, static memory %+d bytes" % [n_walk, obj0, obj1, res0, res1, node0, node1, mem1 - mem0])
+	# "Effekte reduzieren": they stand still, the gait stops, the brush stops swaying
+	var before: Array = []
+	for i in n_walk:
+		before.append(life.walker_map_position(i))
+	sr.set_reduce_fx(true)
+	for i in 30:
+		sr.update_life(0.1, Vector3.ZERO)
+	var stood := true
+	var gait_zero := true
+	for i in n_walk:
+		if life.walker_map_position(i) != before[i]:
+			stood = false
+		if life.stride_hz(i) != 0.0 or life.walker_speed(i) != 0.0:
+			gait_zero = false
+		if life.gait_sent[i] != 0.0:
+			gait_zero = false
+	_check("comfort: 'Effekte reduzieren' - the passers-by stand still, the gait stops", stood and gait_zero and not life.is_moving() and _f(life.material.get_shader_parameter("moving"), 1.0) == 0.0)
+	sr.set_reduce_fx(false)
+	sr.update_life(1.0, Vector3.ZERO)
+	var walked := false
+	for i in n_walk:
+		if life.walker_map_position(i) != before[i]:
+			walked = true
+	_check("comfort: ... and they walk on again", walked and life.is_moving() and life.gait_sent[0] > 0.0)
+
+	# ---- slow sway of the brush strokes (facades, objects, paving) ----
+	_check("sway: strokes slide along their length (one impasto evaluation, no second layer), far dabs use the plain s", common.contains("float ss = s + sway;") and common.contains("floor((ss + off) / rl)") and common.contains("vnoise(vec2(s / (len * 5.0)"))
+	_check("sway: fades out with the stroke LOD (far = no motion = no edge flicker), stops with moving = 0", common.contains("flow_amp * flow_gain * moving * (1.0 - lod) * len") and common.contains("uniform float moving = 1.0;"))
+	_check("sway: 5 % of the stroke length at 0.08 Hz (limit 0.1 Hz, 6 %), floor at half strength", Style.FLOW_AMP <= 0.06 and Style.FLOW_HZ <= 0.1 and Style.FLOW_FLOOR_GAIN <= 0.5 and is_equal_approx(Style.FLOW_HZ, 0.08))
+	var sway_ok := true
+	var sway_names := ""
+	for m in sr.brush_materials:
+		var code: String = m.shader.code
+		if m == sr.water_material:
+			if _f(m.get_shader_parameter("flow_gain"), 1.0) != 0.0:
+				sway_ok = false
+			continue
+		if not code.contains("arles_common") or not is_equal_approx(_f(m.get_shader_parameter("flow_amp"), 0.0), Style.FLOW_AMP) or not is_equal_approx(_f(m.get_shader_parameter("flow_hz"), 0.0), Style.FLOW_HZ) or _f(m.get_shader_parameter("moving"), 0.0) != 1.0:
+			sway_ok = false
+			sway_names += code.left(40)
+	_check("sway: facades, objects, arcades and the passers-by carry it, the Rhône (own shimmer) does not", sway_ok, sway_names)
+	_check("sway: the paving sways at half strength", is_equal_approx(_f(floor_mat.get_shader_parameter("flow_gain"), 1.0), Style.FLOW_FLOOR_GAIN) and is_equal_approx(_f(floor_mat.get_shader_parameter("flow_amp"), 0.0), Style.FLOW_AMP))
+	sr.set_reduce_fx(true)
+	var moving_off: bool = sr.brush_materials.all(func(m): return _f(m.get_shader_parameter("moving"), 1.0) == 0.0) and _f(floor_mat.get_shader_parameter("moving"), 1.0) == 0.0
+	_check("sway: 'Effekte reduzieren' switches the sway off everywhere (facades, objects, arcades, paving, passers-by)", moving_off)
+	sr.set_reduce_fx(false)
+	_check("sway: ... and back on", sr.brush_materials.all(func(m): return _f(m.get_shader_parameter("moving"), 0.0) == 1.0) and _f(floor_mat.get_shader_parameter("moving"), 0.0) == 1.0)
+
 	# ---- comfort ----
-	_check("comfort: sky and Rhône move without reduced effects", sr.animated_nodes().size() == 2 and _f(sr.sky_material.get_shader_parameter("moving"), 1.0) != 0.0)
+	_check("comfort: sky, Rhône and passers-by move without reduced effects", sr.animated_nodes().size() == 3 and _f(sr.sky_material.get_shader_parameter("moving"), 1.0) != 0.0)
 	sr.set_reduce_fx(true)
 	var calm_ok: bool = sr.brush_materials.all(func(m): return _f(m.get_shader_parameter("calm"), 0.0) == 1.0)
 	_check("comfort: 'Effekte reduzieren' stops sky and Rhône, calms the brush", sr.fx_reduced() and _f(sr.sky_material.get_shader_parameter("moving"), 1.0) == 0.0 and _f(sr.water_material.get_shader_parameter("shimmer"), 1.0) == 0.0 and calm_ok and _f(floor_mat.get_shader_parameter("calm"), 0.0) == 1.0 and sr.animated_nodes().is_empty())
@@ -423,6 +566,29 @@ func _initialize() -> void:
 	else:
 		print("%d/%d ARLES CHECKS FAILED" % [failures, checks])
 	quit(1 if failures > 0 else 0)
+
+
+## Distance (m) of a map-space point to the nearest closed cell (walls, landmarks,
+## the parapet, the edge of the map).
+func _wall_dist(p: Vector2) -> float:
+	var c0 := int(floor(p.x / 2.0))
+	var r0 := int(floor(p.y / 2.0))
+	var best := 99.0
+	for r in range(r0 - 2, r0 + 3):
+		for c in range(c0 - 2, c0 + 3):
+			if M.is_open(r, c):
+				continue
+			var cx := clampf(p.x, c * 2.0, c * 2.0 + 2.0)
+			var cz := clampf(p.y, r * 2.0, r * 2.0 + 2.0)
+			best = minf(best, p.distance_to(Vector2(cx, cz)))
+	return best
+
+
+func _count_nodes(n: Node) -> int:
+	var k := 1
+	for ch in n.get_children():
+		k += _count_nodes(ch)
+	return k
 
 
 ## A shader parameter as float; `def` when the material never set it.

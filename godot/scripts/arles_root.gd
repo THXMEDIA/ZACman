@@ -9,8 +9,8 @@ extends Node3D
 ## The read-back waits for RenderingServer.frame_post_draw as a one-shot
 ## connection (no await: freeing the city right after the build leaves no
 ## coroutine behind). Main forwards "Effekte reduzieren" here: the sky stands,
-## the Rhône stops trembling, the brush gets calmer (the exit pulse stops in
-## arles_exit.gd).
+## the Rhône stops trembling, the brush gets calmer and stops swaying, the
+## passers-by stand still (the exit pulse stops in arles_exit.gd).
 
 const Style := preload("res://scripts/arles_style.gd")
 
@@ -26,6 +26,8 @@ var omni_count := 0
 var brush_materials: Array = []
 var water_material: ShaderMaterial = null
 var halo_material: ShaderMaterial = null
+## The strolling passers-by (arles_life.gd); Main updates and pushes via update_life.
+var life: Node3D = null
 var sky_material: ShaderMaterial = null
 var bake_material: ShaderMaterial = null
 var bake_viewport: SubViewport = null
@@ -109,18 +111,38 @@ func set_reduce_fx(on: bool) -> void:
 		water_material.set_shader_parameter("shimmer", 0.0 if on else 1.0)
 	for m in brush_materials:
 		m.set_shader_parameter("calm", 1.0 if on else 0.0)
+		m.set_shader_parameter("moving", 0.0 if on else 1.0) # the brush strokes stand still
+	if life != null:
+		life.set_reduce_fx(on) # the passers-by stand still
 	# the floor belongs to MazeView (arles_floor.gdshader): calmer as well
 	var mv = get_parent()
 	if mv != null and "floor_mesh" in mv and mv.floor_mesh != null and mv.floor_mesh.material_override is ShaderMaterial:
 		mv.floor_mesh.material_override.set_shader_parameter("calm", 1.0 if on else 0.0)
+		mv.floor_mesh.material_override.set_shader_parameter("moving", 0.0 if on else 1.0)
 
 
 func fx_reduced() -> bool:
 	return _reduce_fx
 
 
-## What moves in the city: the sky drift and the trembling Rhône.
+## What moves in the city: the sky drift, the trembling Rhône, the strolling
+## passers-by (the swaying brush strokes ride on the brush materials).
 func animated_nodes() -> Array:
 	if _reduce_fx:
 		return []
-	return [sky_material, water_material]
+	return [sky_material, water_material, life]
+
+
+## Main, every frame of an Explorer run: the passers-by walk on.
+func update_life(delta: float, player_pos: Vector3) -> void:
+	if life != null:
+		life.update(delta, player_pos)
+
+
+## For Main's soft push (like Tokyo's passers-by): count and world positions.
+func life_walker_count() -> int:
+	return life.walker_count() if life != null else 0
+
+
+func life_walker_position(i: int) -> Vector3:
+	return life.walker_position(i)

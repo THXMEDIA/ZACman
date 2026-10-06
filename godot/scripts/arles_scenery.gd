@@ -16,6 +16,7 @@ extends RefCounted
 ##   Rhône     water with the mirrored lamps (arles_water.gdshader)
 ##   Sky       the swirl sky, baked once at level start (arles_root.gd)
 ##   Halos     every lamp, star and the moon as ONE MultiMesh
+##   Life      the strolling passers-by (arles_life.gd) as ONE MultiMesh
 ## Light: the moon (directional, no shadow) and 6 omni lights without shadow
 ## in the city (+1 green one in the exit = 7, technical condition <= 8); all
 ## other lamps and every window only paint light pools / glow in the shaders
@@ -28,6 +29,7 @@ extends RefCounted
 const M := preload("res://scripts/arles_maze.gd")
 const Style := preload("res://scripts/arles_style.gd")
 const RootScript := preload("res://scripts/arles_root.gd")
+const LifeScript := preload("res://scripts/arles_life.gd")
 const OBJ_SHADER := preload("res://shaders/arles_obj.gdshader")
 const FACADE_SHADER := preload("res://shaders/arles_facade.gdshader")
 const WATER_SHADER := preload("res://shaders/arles_water.gdshader")
@@ -36,6 +38,7 @@ const SKY_BAKE_SHADER := preload("res://shaders/arles_sky_bake.gdshader")
 const HALO_SHADER := preload("res://shaders/arles_halo.gdshader")
 const ARCADE_SHADER := preload("res://shaders/arles_arcade.gdshader")
 const TYMPANON_SHADER := preload("res://shaders/arles_tympanon.gdshader")
+const WALKER_SHADER := preload("res://shaders/arles_walker.gdshader")
 
 const CELL := 2.0
 ## World = map - MAP_SHIFT (the City node sits at -MAP_SHIFT).
@@ -360,12 +363,44 @@ static func set_pool_params(sm: ShaderMaterial) -> void:
 	sm.set_shader_parameter("lamp_col", Vector3(Style.LAMP_POOL.r, Style.LAMP_POOL.g, Style.LAMP_POOL.b))
 	sm.set_shader_parameter("lod_near", Style.LOD_NEAR)
 	sm.set_shader_parameter("lod_far", Style.LOD_FAR)
+	sm.set_shader_parameter("flow_amp", Style.FLOW_AMP)
+	sm.set_shader_parameter("flow_hz", Style.FLOW_HZ)
+	sm.set_shader_parameter("moving", 1.0)
 
 
 static func obj_material() -> ShaderMaterial:
 	var sm := ShaderMaterial.new()
 	sm.shader = OBJ_SHADER
 	Style.apply_mat_table(sm)
+	set_pool_params(sm)
+	return sm
+
+
+## The passers-by's brush (arles_walker.gdshader): coat / hat / skin palette
+## from ArlesStyle, the same light pools as the city.
+static func walker_material() -> ShaderMaterial:
+	var sm := ShaderMaterial.new()
+	sm.shader = WALKER_SHADER
+	var ca := PackedVector3Array()
+	var cb := PackedVector3Array()
+	var cc := PackedVector3Array()
+	for i in 6:
+		ca.append(Style.lin(Style.WALKER_COAT_A[i]))
+		cb.append(Style.lin(Style.WALKER_COAT_B[i]))
+		cc.append(Style.lin(Style.WALKER_COAT_C[i]))
+	var hats := PackedVector3Array()
+	for i in 3:
+		hats.append(Style.lin(Style.WALKER_HAT[i]))
+	sm.set_shader_parameter("coat_a", ca)
+	sm.set_shader_parameter("coat_b", cb)
+	sm.set_shader_parameter("coat_c", cc)
+	sm.set_shader_parameter("hat_col", hats)
+	sm.set_shader_parameter("skin_a", Style.lin(Style.WALKER_SKIN[0]))
+	sm.set_shader_parameter("skin_b", Style.lin(Style.WALKER_SKIN[1]))
+	sm.set_shader_parameter("skin_c", Style.lin(Style.WALKER_SKIN[2]))
+	sm.set_shader_parameter("hair_col", Style.lin(Style.WALKER_HAIR))
+	sm.set_shader_parameter("shoe_col", Style.lin(Style.WALKER_SHOE))
+	sm.set_shader_parameter("emit", Style.WALKER_EMIT)
 	set_pool_params(sm)
 	return sm
 
@@ -414,6 +449,7 @@ static func setup_floor(mat: ShaderMaterial, _maze, _seed: int) -> void:
 	mat.set_shader_parameter("kerb", Style.KERB)
 	mat.set_shader_parameter("outside", Style.OUTSIDE)
 	set_pool_params(mat)
+	mat.set_shader_parameter("flow_gain", Style.FLOW_FLOOR_GAIN) # the paving sways at half strength
 
 
 ## ---------------------------------------------------------------- houses
@@ -1044,6 +1080,7 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	wm.set_shader_parameter("refl", ra)
 	wm.set_shader_parameter("nrefl", mini(refl.size(), 40))
 	set_pool_params(wm)
+	wm.set_shader_parameter("flow_gain", 0.0) # the Rhône has its own shimmer
 	water.material_override = wm
 	city.add_child(water)
 
@@ -1081,6 +1118,14 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 	hmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	city.add_child(hmi)
 	root.halo_count = hl.size()
+
+	# the strolling passers-by: ONE MultiMesh, moved on the CPU, gait in the shader
+	var wmat := walker_material()
+	var life := Node3D.new()
+	life.set_script(LifeScript)
+	city.add_child(life)
+	life.setup(seed, wmat)
+	root.life = life
 
 	# what reaches into the streets below eye height blocks the player
 	var obs := obstacles(B.parts)
@@ -1120,7 +1165,7 @@ static func build(_maze, _city_theme, seed: int) -> Node3D:
 		city.add_child(l)
 	root.omni_count = OMNI.size()
 
-	root.brush_materials = [fm, obm, am, wm]
+	root.brush_materials = [fm, obm, am, wm, wmat]
 	root.water_material = wm
 	root.halo_material = hmi.material_override
 	return root

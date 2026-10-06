@@ -914,6 +914,11 @@ func _check_explorer_obstacles() -> void:
 		for i in tokyo_life.walker_count():
 			if tokyo_life.walker_visible(i):
 				_push_player_away_from(tokyo_life.walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	# Arles: the same soft, harmless push for the strolling passers-by
+	var arles_sr = maze_view.scenery_root if maze_view != null else null
+	if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("life_walker_count"):
+		for i in arles_sr.life_walker_count():
+			_push_player_away_from(arles_sr.life_walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
@@ -1535,6 +1540,10 @@ func _process(delta: float) -> void:
 			m.update(delta, now)
 		if tokyo_life != null:
 			tokyo_life.update(delta, player.global_position, player.camera.global_position)
+		# Arles: the strolling passers-by walk on (they stand with reduced effects)
+		var arles_sr = maze_view.scenery_root if maze_view != null else null
+		if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("update_life"):
+			arles_sr.update_life(delta, player.global_position)
 
 	# Pickups are checked before the obstacle push so a taxi/pedestrian that
 	# happens to be passing over the player's exact cell this frame can
