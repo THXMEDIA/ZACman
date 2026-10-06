@@ -414,6 +414,7 @@ func _apply_theme_environment(theme_id: String) -> void:
 	env.adjustment_saturation = ct.env_adjustment_saturation
 	if player != null and player.camera != null:
 		player.camera.far = ct.camera_far
+		player.set_eye_height(ct.eye_height)
 		if player.light != null:
 			player.light.light_color = ct.player_light_color
 			player.light.light_energy = ct.player_light_energy

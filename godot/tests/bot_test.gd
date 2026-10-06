@@ -1409,7 +1409,7 @@ func _run_condition_checks() -> void:
 		await get_tree().process_frame
 		flip_max = maxf(flip_max, float(main.maze_view.cond_wall_material.get_shader_parameter("flip")))
 	_release_all_move_keys()
-	_check("F&L: view/camera never touched (yaw, pitch, camera, FOV)", is_equal_approx(main.player.yaw, 0.7) and is_equal_approx(main.player.rotation.y, 0.7) and is_equal_approx(main.player.pitch, 0.2) and is_equal_approx(main.player.camera.rotation.x, 0.2) and is_equal_approx(main.player.camera.fov, fov_before) and main.player.camera.position == Vector3(0, main.player.EYE_H, 0))
+	_check("F&L: view/camera never touched (yaw, pitch, camera, FOV)", is_equal_approx(main.player.yaw, 0.7) and is_equal_approx(main.player.rotation.y, 0.7) and is_equal_approx(main.player.pitch, 0.2) and is_equal_approx(main.player.camera.rotation.x, 0.2) and is_equal_approx(main.player.camera.fov, fov_before) and main.player.camera.position == Vector3(0, main.player.eye_h, 0))
 	_check("F&L: Kippbild tips while the manipulation acts", flip_max > 0.5, "flip=%f" % flip_max)
 	_check("F&L: title card shows the manipulation symbol", main.hud.condition_icon_kind == "fl_drift" and main.hud.condition_sub_label.text != "")
 	main._end_condition(false)
@@ -1746,7 +1746,7 @@ func _texts_of(node: Node) -> Array:
 
 
 func _start_pos() -> Vector3:
-	return Vector3(main.start_cell.y * main.CELL, main.player.EYE_H, main.start_cell.x * main.CELL)
+	return Vector3(main.start_cell.y * main.CELL, main.player.eye_h, main.start_cell.x * main.CELL)
 
 
 func _esc() -> void:

@@ -282,7 +282,7 @@ func _initialize() -> void:
 	_check("sky: run time without noise or loops (3 texture reads)", not sky_code.contains("for (") and not sky_code.contains("vnoise") and sky_code.count("texture(") == 3)
 	var bake_code: String = sr.bake_material.shader.code
 	_check("sky: seamless all around (periodic swirl field and noise in x)", bake_code.contains("r.x -= W * round(r.x / W)") and bake_code.contains("mod(i.x, per)"))
-	_check("sky: drift 0.04 phase/s (far below 0.5 Hz)", is_equal_approx(_f(sr.sky_material.get_shader_parameter("speed"), 0.0), 0.04) and Style.SKY_DRIFT <= 0.04)
+	_check("sky: drift 0.10 phase/s (0.1 Hz, far below the 3 Hz limit)", is_equal_approx(_f(sr.sky_material.get_shader_parameter("speed"), 0.0), 0.10) and Style.SKY_DRIFT <= 0.15)
 	var lod_ok := true
 	for m in sr.brush_materials:
 		if m.shader.code.contains("stroke_lod") or m.shader.code.contains("arles_common"):

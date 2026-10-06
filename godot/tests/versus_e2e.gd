@@ -165,7 +165,7 @@ func _autopilot(speed: int, r: int) -> void:
 				if not alive:
 					continue
 				var cell: Vector2i = mv.pellet_cells[e[1]] if e[0] == "p" else mv.power_cells[e[1]]
-				main.player.global_position = Vector3(cell.y * CELL, main.player.EYE_H, cell.x * CELL)
+				main.player.global_position = Vector3(cell.y * CELL, main.player.eye_h, cell.x * CELL)
 				main.invuln_until = 1e9
 				main._check_pickups()
 				break

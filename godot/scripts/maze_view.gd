@@ -4,6 +4,10 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
+## Pickup radii (m, horizontal). Pellets 0.65 (was 0.42), power/fruit/rabbit 0.75 (was 0.5).
+## Levels.PICKUP_R is the same number (reference route times).
+const PICKUP_PELLET_R := 0.65
+const PICKUP_BIG_R := 0.75
 const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal" (Speedrun) theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
 ## The voxel-cloud sky sits well above the wall tops rather than hugging
 ## them: both the sky ceiling and the clouds under it float at
@@ -1048,7 +1052,7 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			continue
 		var cell: Vector2i = pellet_cells[i]
 		var d := Vector2(cell.y * CELL - pos.x, cell.x * CELL - pos.z).length()
-		if d < 0.42:
+		if d < PICKUP_PELLET_R:
 			pellet_alive[i] = false
 			_hide_pellet(i)
 			result.pellet = true
@@ -1058,21 +1062,21 @@ func consume_at(pos: Vector3, now: float) -> Dictionary:
 			continue
 		var node: MeshInstance3D = power_nodes[i]
 		var d := Vector2(node.position.x - pos.x, node.position.z - pos.z).length()
-		if d < 0.5:
+		if d < PICKUP_BIG_R:
 			power_alive[i] = false
 			node.visible = false
 			result.power = true
 
 	if rabbit_alive and rabbit_node != null:
 		var dr := Vector2(rabbit_node.position.x - pos.x, rabbit_node.position.z - pos.z).length()
-		if dr < 0.5:
+		if dr < PICKUP_BIG_R:
 			rabbit_alive = false
 			rabbit_node.visible = false
 			result.rabbit = true
 
 	if fruit_alive and fruit_node != null:
 		var d := Vector2(fruit_node.position.x - pos.x, fruit_node.position.z - pos.z).length()
-		if d < 0.5:
+		if d < PICKUP_BIG_R:
 			fruit_alive = false
 			fruit_node.visible = false
 			result.fruit = true

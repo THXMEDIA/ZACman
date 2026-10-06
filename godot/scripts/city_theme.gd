@@ -204,6 +204,9 @@ var player_light_color := Color(0.56, 0.83, 1.0)
 var player_light_energy := 1.1
 var player_light_range := 7.0
 var camera_far := 100.0
+## Eye height of the player (m). Default = PlayerController.EYE_H (Abnahme 06.10.:
+## the old 0.95 was too low in every level).
+var eye_height := 1.25
 
 ## ---- Neon-line city (Tokyo, docs/design/tokyo-explorer.md) ----
 ## A script with a static `build(maze, city_theme, seed: int) -> Node3D`

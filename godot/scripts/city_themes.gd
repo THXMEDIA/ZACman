@@ -159,6 +159,7 @@ static func manhattan() -> Resource:
 	var t = CityThemeScript.new()
 	t.id = "manhattan"
 	t.display_name = "Manhattan"
+	t.eye_height = 1.6 # eye height (m), tune here
 	t.wall_word = "BUILDING"
 	t.wall_font_size = 22
 	t.wall_depth_scale = 0.6
@@ -339,6 +340,7 @@ static func tokyo() -> Resource:
 	t.player_light_energy = 0.3
 	t.player_light_range = 5.0
 	t.camera_far = 260.0 # the sky-deck tower and the skyline beyond the map
+	t.eye_height = 1.6 # Tokyo: eye height (m), tune here
 
 	# Pickups: warm white-gold orbs, exclusive to the pellets.
 	t.pellet_color = TokyoStyle.PELLET_CORE
@@ -399,6 +401,7 @@ static func kyoto() -> Resource:
 	t.player_light_energy = 0.0
 	t.player_light_range = 1.0
 	t.camera_far = 450.0 # hills and the tower outside the map
+	t.eye_height = 1.55 # Kyoto: eye height (m), tune here
 
 	# Pickups: gold leaf, exclusive to the pellets (unlit world: emission only).
 	t.pellet_color = KyotoStyle.PELLET
@@ -481,6 +484,7 @@ static func amsterdam() -> Resource:
 	t.player_light_energy = 0.0
 	t.player_light_range = 1.0
 	t.camera_far = 420.0 # the desk, mug and pencil beyond the model edge
+	t.eye_height = 1.6 # Amsterdam: eye height (m), tune here
 
 	# Pickups: glass-head pins (cobalt, exclusive) on a needle in the plate.
 	t.pellet_color = AmsterdamStyle.PIN
@@ -554,6 +558,7 @@ static func arles() -> Resource:
 	t.player_light_energy = 0.0
 	t.player_light_range = 1.0
 	t.camera_far = 800.0 # the baked sky sphere, Montmajour and the Alpilles
+	t.eye_height = 1.6 # Arles: eye height (m), tune here
 
 	# Pickups: vermilion with a dark contour, exclusive (the only red-orange).
 	t.pellet_color = ArlesStyle.PELLET

@@ -72,7 +72,7 @@ const LIT_RATIO := 0.38 # share of lit windows (tiefe Nacht)
 # ---- brush (stroke) ----
 const LOD_NEAR := 14.0 # m: impasto -> soft dabs between these distances
 const LOD_FAR := 28.0
-const SKY_DRIFT := 0.04 # phase per second, far below 0.5 Hz
+const SKY_DRIFT := 0.10 # phase per second (was 0.04: Abnahme 06.10. "schneller"); 0.1 Hz, far below the 3 Hz flicker limit
 const SKY_BAKE_SIZE := Vector2i(2048, 1024)
 const PULSE_HZ := 0.5
 
