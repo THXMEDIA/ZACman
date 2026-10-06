@@ -86,9 +86,9 @@ func _initialize() -> void:
 	var capped: Array = lb.get_top("klassik-1", "woche", lb.MAX_ENTRIES_PER_BOARD + 10)
 	_check("board caps at MAX_ENTRIES_PER_BOARD", capped.size() == lb.MAX_ENTRIES_PER_BOARD, str(capped.size()))
 
-	# --- written file: version 3, boards, atomic --------------------------
+	# --- written file: version 4, boards, atomic --------------------------
 	var saved = _read_json(lb.save_path())
-	_check("a written save is {version: 3, boards: {...}}", typeof(saved) == TYPE_DICTIONARY and saved.get("version", 0) == lb_script.SAVE_VERSION and lb_script.SAVE_VERSION == 3 and typeof(saved.get("boards")) == TYPE_DICTIONARY, str(saved).left(120))
+	_check("a written save is {version: 4, boards: {...}}", typeof(saved) == TYPE_DICTIONARY and saved.get("version", 0) == lb_script.SAVE_VERSION and lb_script.SAVE_VERSION == 4 and typeof(saved.get("boards")) == TYPE_DICTIONARY, str(saved).left(120))
 	_check("the atomic write leaves no .tmp file", not FileAccess.file_exists(lb.save_path() + ".tmp"))
 
 	# --- migration v1 (before the level pool, top-level boards) -----------
@@ -125,17 +125,20 @@ func _initialize() -> void:
 	for k in archived:
 		if not m2.archive.has(k) or m2.archive[k].size() != v2_boards[k].size():
 			all_in = false
-	_check("v2: condition boards are archived with all their entries", all_in and m2.archive.size() == archived.size(), str(m2.archive.keys()))
+	var rs: String = lb_script.RULES1_SUFFIX
+	_check("v2: condition boards are archived with all their entries (plus the 3 Etappe-2 boards as |regel1)", all_in and m2.archive.size() == archived.size() + 3, str(m2.archive.keys()))
 	_check("v2: archived boards are never shown", m2.get_top("klassik-1", "woche").size() == 0 and m2.get_top("offen", "chat").size() == 0)
 	_check("v2: old 'none' times are not taken over to the weekly board", m2.get_top("klassik-1", "woche").is_empty())
-	_check("v2: Etappe-2 weekly boards move to level|woche|mode (week unknown)", m2.get_top("durchbruch", "woche").size() == 1 and m2.get_top("durchbruch", "woche")[0].week == "" and m2.get_top("klassik-3", "woche", 5, "coop").size() == 1)
-	_check("v2: |woche|chat moves to the chat board", m2.get_top("durchbruch", "chat").size() == 1 and m2.get_top("durchbruch", "chat")[0].name == "C")
+	# Rules version 2 (Bewegungs-Paket): Etappe-2 boards keep their v3 key but,
+	# run without Dash/Kehrtwende, land in the archive as "<key>|regel1".
+	_check("v2: Etappe-2 weekly boards are archived as level|woche|mode|regel1 (week unknown)", m2.archive.has("durchbruch|woche|solo" + rs) and m2.archive["durchbruch|woche|solo" + rs][0].week == "" and m2.archive.has("klassik-3|woche|coop" + rs) and m2.get_top("durchbruch", "woche").is_empty())
+	_check("v2: |woche|chat is archived on the chat board, nothing live", m2.archive.has("durchbruch|chat|solo" + rs) and m2.archive["durchbruch|chat|solo" + rs][0].name == "C" and m2.get_top("durchbruch", "chat").is_empty())
 	m2.submit_time("klassik-1", "woche", 125.0, "Neu", "solo", "2026-W40")
 	m2.free()
 	var after = _read_json(lb.save_path())
-	_check("v2 -> v3: file rewritten as version 3 with the archive", after.get("version") == 3 and typeof(after.get("archive")) == TYPE_DICTIONARY and after.archive.size() == archived.size(), str(after).left(160))
+	_check("v2 -> v4: file rewritten as version 4 with the archive", after.get("version") == 4 and typeof(after.get("archive")) == TYPE_DICTIONARY and after.archive.size() == archived.size() + 3, str(after).left(160))
 
-	# --- round trip: v3 load + save changes nothing --------------------------
+	# --- round trip: v4 load + save changes nothing --------------------------
 	var rt1 = lb_script.new()
 	rt1.reload()
 	var boards1: Dictionary = rt1._boards.duplicate(true)
@@ -144,12 +147,23 @@ func _initialize() -> void:
 	rt1.free()
 	var rt2 = lb_script.new()
 	rt2.reload()
-	_check("v3 round trip keeps boards and archive", rt2._boards == boards1 and rt2.archive == arch1 and rt2.loaded_version == 3)
-	_check("v3 round trip keeps the week of an entry", rt2.get_top("klassik-1", "woche")[0].week == "2026-W40")
+	_check("v4 round trip keeps boards and archive", rt2._boards == boards1 and rt2.archive == arch1 and rt2.loaded_version == 4)
+	_check("v4 round trip keeps the week of an entry", rt2.get_top("klassik-1", "woche")[0].week == "2026-W40")
 	rt2.free()
 
-	# --- v3 with an unknown key: archived; dirty entries dropped -----------
+	# --- a v3 file (rules version 1): every board is archived as |regel1 ----
 	_write(lb.save_path(), JSON.stringify({"version": 3, "boards": {
+		"klassik-1|woche|solo": [{"name": "Old", "time": 100.0, "week": "2026-W40"}],
+	}}))
+	var v3f = lb_script.new()
+	_check("v3 file: the board is archived as |regel1 and nothing is live", v3f.get_top("klassik-1", "woche").is_empty() and v3f.archive.has("klassik-1|woche|solo" + rs) and v3f.archive["klassik-1|woche|solo" + rs][0].name == "Old")
+	v3f.submit_time("klassik-1", "woche", 90.0, "Neu", "solo", "2026-W41")
+	var v3_after = _read_json(lb.save_path())
+	_check("v3 file: rewritten as version 4 with archive and the new board", v3_after.get("version") == 4 and v3_after.archive.has("klassik-1|woche|solo" + rs) and v3_after.boards.has("klassik-1|woche|solo"))
+	v3f.free()
+
+	# --- v4 with an unknown key: archived; dirty entries dropped -----------
+	_write(lb.save_path(), JSON.stringify({"version": 4, "boards": {
 		"klassik-1|woche|solo": [
 			{"name": "Ok", "time": 90.0, "week": "2026-W40"},
 			{"name": "NoTime"},
@@ -207,7 +221,7 @@ func _initialize() -> void:
 	lm.reload()
 	var ct2: Array = lm.get_top("klassik-1", "woche")
 	_check("cond and date survive save and load", ct2.size() == 4 and ct2[0].cond == "matrix" and ct2[1].cond == "" and ct2[0].date == "2026-10-03", str(ct2))
-	_write(lm.save_path(), JSON.stringify({"version": 3, "boards": {"klassik-2|woche|solo": [{"name": "Player", "time": 100.0, "week": "2026-W39"}]}}))
+	_write(lm.save_path(), JSON.stringify({"version": 4, "boards": {"klassik-2|woche|solo": [{"name": "Player", "time": 100.0, "week": "2026-W39"}]}}))
 	lm.reload()
 	var old_e: Dictionary = lm.get_top("klassik-2", "woche")[0]
 	_check("an older entry without cond/date loads as unknown", old_e.cond == "?" and old_e.date == "", str(old_e))

@@ -2244,6 +2244,32 @@ func _run_movement_checks() -> void:
 	main.end_game()
 	main.go_to_main_menu()
 
+	# ---- EINSTELLUNGEN / STEUERUNG in the menu ----
+	var hud = main.hud
+	_check("settings: the start screen has an EINSTELLUNGEN button", hud.settings_btn != null and hud.settings_btn.text == "EINSTELLUNGEN" and hud.start_panel.visible)
+	hud.settings_btn.pressed.emit()
+	_check("settings: it opens the panel and hides the start screen", hud.controls_panel.visible and not hud.start_panel.visible and not hud.leaderboard_panel.visible)
+	var texts := " ".join(_texts_under(hud.controls_panel))
+	_check("settings: explains movement, Dash (Shift), Kehrtwende (Q), pause", texts.contains("Laufen") and texts.contains("DASH") and texts.contains("Shift") and texts.contains("KEHRTWENDE") and texts.contains("Q") and texts.contains("Esc"), texts.left(160))
+	_check("settings: explains the dash charges and the comfort options", texts.contains("Ladung") and texts.contains("Komfort".to_upper()) and texts.contains("Effekte reduzieren"))
+	_esc()
+	_check("settings: Esc returns to the start screen", hud.start_panel.visible and not hud.controls_panel.visible)
+	hud.settings_btn.pressed.emit()
+	hud.close_controls()
+	_check("settings: ZURÜCK returns to the start screen", hud.start_panel.visible and not hud.controls_panel.visible)
+	# from the pause menu back to the pause menu
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	main.toggle_pause()
+	_check("settings: the pause menu has a STEUERUNG button", hud.controls_pause_btn != null and hud.pause_panel.visible)
+	hud.controls_pause_btn.pressed.emit()
+	_check("settings: opened from the pause it hides the pause menu", hud.controls_panel.visible and not hud.pause_panel.visible and main.paused)
+	_esc()
+	_check("settings: Esc returns to the pause menu, the game stays paused", hud.pause_panel.visible and not hud.controls_panel.visible and main.paused)
+	main.toggle_pause()
+	main.end_game()
+	main.go_to_main_menu()
+
 
 func _labels_under(node: Node) -> Array:
 	var out := []

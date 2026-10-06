@@ -35,7 +35,12 @@ const SAVE_FILE := "zapmaniac_leaderboards.json"
 ##              "" = rabbit left alone, "?" = unknown (older entry) — metadata
 ##              only, never part of the key (spec 2.5)
 ##        date  local date of the run "YYYY-MM-DD", "" = unknown
-const SAVE_VERSION := 3
+##   4: rules version 2 (Bewegungs-Paket: Dash + Kehrtwende, 06.10.2026): on
+##      the first load every board of an older file moves to the archive under
+##      "<key>|regel1" (kept, never shown), the boards start fresh.
+const SAVE_VERSION := 4
+## Suffix of archived boards from before the Bewegungs-Paket (rules version 1).
+const RULES1_SUFFIX := "|regel1"
 ## Entry `cond` values besides a Conditions id (see the version history).
 const COND_NONE := ""
 const COND_UNKNOWN := "?"
@@ -178,6 +183,8 @@ func _load() -> void:
 		var new_key := migrate_key(old_key, version)
 		if new_key == "":
 			_put(archive, old_key, board)
+		elif version < 4:
+			_put(archive, new_key + RULES1_SUFFIX, board) # run without Dash/Kehrtwende: not comparable
 		else:
 			_put(_boards, new_key, board)
 	var raw_archive = parsed.get("archive", {}) if version >= 3 else {}

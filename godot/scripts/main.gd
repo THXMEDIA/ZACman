@@ -1564,6 +1564,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# UX-K2: Esc closes the Bestenliste (back to where it was opened from).
 		if hud.leaderboard_panel.visible:
 			hud.close_leaderboard()
+		elif hud.controls_panel.visible:
+			hud.close_controls()
 		elif hud.is_menu_confirm_open():
 			hud.cancel_menu_confirm()
 		else:

@@ -16,7 +16,13 @@ const SAVE_FILE := "zapmaniac_speedrun.json"
 ##      {"time": float, "week": "2026-W40"} — the ISO week only on the weekly
 ##      board ("" = unknown, a time from before weeks were stored). Old
 ##      condition keys are moved into "archive" (kept, never shown).
-const SAVE_VERSION := 3
+##   4: rules version 2 (Bewegungs-Paket: Dash + Kehrtwende in every Speedrun
+##      level, 06.10.2026). Times set without them are not comparable, so on
+##      the first load every best time of an older file moves to the archive
+##      under "<key>|regel1" (kept, never shown). Everything else as in 3.
+const SAVE_VERSION := 4
+## Suffix of archived boards from before the Bewegungs-Paket (rules version 1).
+const RULES1_SUFFIX := "|regel1"
 
 const LevelsScript := preload("res://scripts/levels.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
@@ -297,4 +303,13 @@ static func migrate_best_times(raw: Dictionary, version: int) -> Dictionary:
 			arch[k] = float(v)
 		elif not out.has(nk) or float(v) < out[nk].time:
 			out[nk] = {"time": float(v), "week": ""}
+	# Rules version 2 (Dash + Kehrtwende): everything from a file older than
+	# version 4 was run without them -> archived, the boards start fresh.
+	if version < 4:
+		for k in out.keys():
+			var ak: String = str(k) + RULES1_SUFFIX
+			var t: float = float(out[k].time)
+			if not arch.has(ak) or t < float(arch[ak]):
+				arch[ak] = t
+		out = {}
 	return {"best_times": out, "archive": arch, "dropped": dropped}

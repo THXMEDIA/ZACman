@@ -238,13 +238,17 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL old 'none' times must not be taken over to the weekly board: %s" % [mig.best_times])
 	checks += 1
-	if mig.best_for("durchbruch") != 140.0 or mig.best_entry("durchbruch").week != "" or mig.best_for("durchbruch", "chat") != 111.0 or mig.best_for("klassik-4", "woche", "pvp") != 170.0:
+	# Rules version 2 (Bewegungs-Paket): the Etappe-2 weekly keys still move to
+	# level|woche|mode (chat board for |woche|chat), but as they were run without
+	# Dash/Kehrtwende they land in the archive with the "|regel1" suffix.
+	var rsuf: String = speedrun_script.RULES1_SUFFIX
+	if mig.archive.get("durchbruch|woche|solo" + rsuf) != 140.0 or mig.archive.get("durchbruch|chat|solo" + rsuf) != 111.0 or mig.archive.get("klassik-4|woche|pvp" + rsuf) != 170.0:
 		failures += 1
-		print("FAIL Etappe-2 weekly keys should move to level|woche|mode (week unknown), |woche|chat to the chat board: %s" % [mig.best_times])
+		print("FAIL Etappe-2 weekly keys should be archived as level|board|mode|regel1: %s" % [mig.archive])
 	checks += 1
-	if mig.best_times.size() != 3:
+	if mig.best_times.size() != 0 or mig.archive.size() != arch_keys.size() + 3:
 		failures += 1
-		print("FAIL exactly 3 boards should survive the migration, got %s" % [mig.best_times.keys()])
+		print("FAIL a file older than v4 must leave no live boards (all archived), got %s / %s" % [mig.best_times.keys(), mig.archive.keys()])
 	var rmig: Dictionary = mig.record_level_time("klassik-1", 200.0, "woche", "solo", "2026-W40")
 	checks += 1
 	if not rmig.is_new_best:
@@ -255,9 +259,9 @@ func _initialize() -> void:
 	var rt = JSON.parse_string(rt_file.get_as_text())
 	rt_file.close()
 	checks += 1
-	if rt.get("version") != 3 or typeof(rt.get("archive")) != TYPE_DICTIONARY or rt.archive.size() != arch_keys.size():
+	if rt.get("version") != 4 or typeof(rt.get("archive")) != TYPE_DICTIONARY or rt.archive.size() != arch_keys.size() + 3:
 		failures += 1
-		print("FAIL the migrated file should be version 3 and keep the archive: %s" % str(rt).left(200))
+		print("FAIL the migrated file should be version 4 and keep the archive: %s" % str(rt).left(200))
 	# round trip: load the v3 file, save it again: nothing changes
 	var rt1 = speedrun_script.new()
 	rt1.reload() # best_times/archive are read directly below: load first
@@ -270,9 +274,9 @@ func _initialize() -> void:
 	var rt2 = speedrun_script.new()
 	rt2.reload() # best_times/archive are read directly below: load first
 	checks += 1
-	if rt2.best_times != times1 or rt2.archive != arch1 or rt2.loaded_version != 3:
+	if rt2.best_times != times1 or rt2.archive != arch1 or rt2.loaded_version != 4:
 		failures += 1
-		print("FAIL v3 round trip changed the data: %s vs %s" % [rt2.best_times, times1])
+		print("FAIL v4 round trip changed the data: %s vs %s" % [rt2.best_times, times1])
 	rt2.free()
 	# idempotent: migrating the same v2 file twice gives the same result
 	var once: Dictionary = speedrun_script.migrate_best_times(v2.best_times, 2)
@@ -292,10 +296,24 @@ func _initialize() -> void:
 	var v3 = speedrun_script.new()
 	v3.reload() # best_times/archive are read directly below: load first
 	checks += 1
-	if v3.best_for("klassik-1") != 99.0 or v3.best_for("klassik-2") != -1.0 or v3.best_for("klassik-3") != -1.0 or v3.best_entry("klassik-4").week != "" or not v3.archive.has("klassik-1|matrix|solo") or not v3.archive.has("alt|none"):
+	# Rules version 2: valid v3 boards are archived as "|regel1", unknown keys and
+	# the old archive stay; invalid values are dropped; no live board remains.
+	if v3.best_for("klassik-1") != -1.0 or v3.best_times.size() != 0 or v3.archive.get("klassik-1|woche|solo" + rsuf) != 99.0 or v3.archive.get("klassik-4|woche|solo" + rsuf) != 120.0 or v3.archive.has("klassik-2|woche|solo" + rsuf) or v3.archive.has("klassik-3|woche|solo" + rsuf) or not v3.archive.has("klassik-1|matrix|solo") or not v3.archive.has("alt|none"):
 		failures += 1
-		print("FAIL v3 load should type-check entries and keep the archive: %s / %s" % [v3.best_times, v3.archive])
+		print("FAIL v3 load should archive the boards as |regel1, type-check entries and keep the archive: %s / %s" % [v3.best_times, v3.archive])
 	v3.free()
+
+	# a v4 file keeps its live boards (the new rules' times count)
+	_write(SAVE_PATH, JSON.stringify({"version": 4, "best_times": {
+		"klassik-1|woche|solo": {"time": 88.0, "week": "2026-W41"},
+	}, "archive": {"klassik-1|woche|solo" + rsuf: 99.0}}))
+	var v4 = speedrun_script.new()
+	v4.reload()
+	checks += 1
+	if v4.best_for("klassik-1") != 88.0 or v4.archive.get("klassik-1|woche|solo" + rsuf) != 99.0 or v4.loaded_version != 4:
+		failures += 1
+		print("FAIL a v4 file keeps live boards and its archive: %s / %s" % [v4.best_times, v4.archive])
+	v4.free()
 
 	# --- Code-W3: version field and type checks ---------------------------
 	var sr5 = speedrun_script.new()

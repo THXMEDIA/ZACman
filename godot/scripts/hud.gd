@@ -106,6 +106,11 @@ var chaos_start: CheckBox
 ## Bestenliste (start screen / game over): board tabs, level switcher, week
 ## or all-time filter, top 10.
 var leaderboard_panel: PanelContainer
+## EINSTELLUNGEN / STEUERUNG: explains every key (start screen and pause menu).
+var controls_panel: PanelContainer
+var controls_return_panel: Control = null
+var settings_btn: Button
+var controls_pause_btn: Button
 var lb_board := "woche"
 var lb_level_index := 0
 ## "week" = only this ISO week, "all" = all time (UX-W6).
@@ -223,6 +228,7 @@ func _ready() -> void:
 	_build_pause_panel()
 	_build_gameover_panel()
 	_build_leaderboard_panel()
+	_build_controls_panel()
 	_build_levelclear_label()
 	_build_condition_card()
 	_build_start_intro()
@@ -533,7 +539,7 @@ func _build_start_panel() -> void:
 	reduce_rain_start.text = "Regen reduzieren (Tokyo)"
 	box.add_child(comfort_start_block)
 
-	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus.  WASD laufen · Maus umschauen · Esc Pause"))
+	box.add_child(_subtitle_label("Lauf durchs Labyrinth, schlucke jede Kugel, weich den Wesen aus.  WASD laufen · Maus umschauen · Shift Dash · Q Kehrtwende · Esc Pause"))
 
 	var hs_row := HBoxContainer.new()
 	hs_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -583,9 +589,17 @@ func _build_start_panel() -> void:
 	vs_btn.pressed.connect(func(): versus_pressed.emit())
 	run_row.add_child(vs_btn)
 	box.add_child(_subtitle_label("Speedrun: zufälliges Level, Zeitjagd, in jedem Level ein weißes Kaninchen – gut oder schlecht. Versus: zu zweit übers Netz, gleiche Level, schnellere Zeit gewinnt."))
+	var lb_row := HBoxContainer.new()
+	lb_row.add_theme_constant_override("separation", 10)
+	box.add_child(lb_row)
 	var lb_btn := _make_button("BESTENLISTE")
+	lb_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lb_btn.pressed.connect(func(): show_leaderboard())
-	box.add_child(lb_btn)
+	lb_row.add_child(lb_btn)
+	settings_btn = _make_button("EINSTELLUNGEN")
+	settings_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_btn.pressed.connect(func(): show_controls(start_panel))
+	lb_row.add_child(settings_btn)
 
 	# Always available as its own choice, right from the start screen —
 	# not gated behind the speedrun bonus-unlock anymore (that still
@@ -787,6 +801,9 @@ func _build_pause_panel() -> void:
 	restart_btn.pressed.connect(func(): restart_pressed.emit())
 	box.add_child(restart_btn)
 	pause_restart_btn = restart_btn
+	controls_pause_btn = _make_button("STEUERUNG")
+	controls_pause_btn.pressed.connect(func(): show_controls(pause_panel))
+	box.add_child(controls_pause_btn)
 	menu_btn = _make_button("HAUPTMENÜ")
 	menu_btn.pressed.connect(_on_pause_menu_pressed)
 	box.add_child(menu_btn)
@@ -956,6 +973,73 @@ func _tab_button(text: String, width: float) -> Button:
 	t.add_theme_color_override("font_pressed_color", ACCENT)
 	t.add_theme_color_override("font_hover_pressed_color", ACCENT)
 	return t
+
+
+## Key name of an input action for the Steuerung texts (follows the InputMap,
+## so a rebinding shows up here; `fallback` while the action is not registered yet).
+func _key_name(action: String, fallback: String) -> String:
+	if InputMap.has_action(action):
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventKey:
+				var code: int = ev.physical_keycode if ev.physical_keycode != 0 else ev.keycode
+				return OS.get_keycode_string(DisplayServer.keyboard_get_keycode_from_physical(code) if ev.physical_keycode != 0 else code)
+	return fallback
+
+
+## EINSTELLUNGEN: the controls explained (keys, Dash, Kehrtwende, what counts)
+## and where the comfort options live. One panel for the start screen and
+## the pause menu; ZURÜCK / Esc return to where it was opened from.
+func _build_controls_panel() -> void:
+	controls_panel = _overlay_panel()
+	controls_panel.visible = false
+	var box: VBoxContainer = controls_panel.get_child(0)
+	box.add_theme_constant_override("separation", 10)
+	box.add_child(_title_label("EINSTELLUNGEN"))
+	box.add_child(_subtitle_label("STEUERUNG", 16))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 22)
+	grid.add_theme_constant_override("v_separation", 6)
+	box.add_child(grid)
+	var rows := [
+		["W A S D", "Laufen (vor, links, zurück, rechts)"],
+		["Maus", "Umschauen (Klick ins Fenster fängt die Maus)"],
+		[_key_name("dash", "Shift"), "DASH: kurzer Spurt, ca. 3,6 m in Laufrichtung (ohne Eingabe geradeaus). Geht durch normale Geister hindurch und frisst verängstigte."],
+		[_key_name("turn_around", "Q"), "KEHRTWENDE: dreht die Ansicht sofort um 180°, danach kurze Pause."],
+		["Esc", "Pause, Menü, Einstellungen"],
+	]
+	for r in rows:
+		var k := Label.new()
+		k.text = r[0]
+		k.add_theme_color_override("font_color", ACCENT)
+		k.add_theme_font_size_override("font_size", 15)
+		k.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		k.custom_minimum_size = Vector2(90, 0)
+		grid.add_child(k)
+		var d := _subtitle_label(r[1])
+		d.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		d.custom_minimum_size = Vector2(360, 0)
+		grid.add_child(d)
+	box.add_child(_subtitle_label("DASH-LADUNGEN", 16))
+	box.add_child(_subtitle_label("Du startest jedes Level mit 1 Ladung, mehr als 2 gehen nicht. Eine neue Ladung gibt es nur, wenn du einen verängstigten Geist frisst oder die Frucht erwischst, nie über die Zeit. Steht eine Wand direkt davor, startet der Dash nicht und kostet nichts. Der Chip DASH oben links zeigt die Ladungen."))
+	box.add_child(_subtitle_label("SPEEDRUN", 16))
+	box.add_child(_subtitle_label("Die Zeit läuft bis zur letzten Kugel. Dash und Kehrtwende gelten in allen Speedrun-Leveln für alle gleich. In den Explorer-Städten gibt es nur die Kehrtwende. Mit diesen Regeln (Regelversion 2) starten die Bestenlisten neu, frühere Zeiten bleiben im Archiv der Spieldatei erhalten."))
+	box.add_child(_subtitle_label("KOMFORT", 16))
+	box.add_child(_subtitle_label("Sichtfeld, Mausempfindlichkeit und „Effekte reduzieren“ stehen oben im Startbildschirm und im Pausemenü."))
+	var back := _make_button("ZURÜCK  (Esc)")
+	back.pressed.connect(close_controls)
+	box.add_child(back)
+
+
+## Opens the Steuerung. `from` = the panel ZURÜCK / Esc return to.
+func show_controls(from: Control = null) -> void:
+	controls_return_panel = from if from != null else start_panel
+	show_only(controls_panel)
+
+
+func close_controls() -> void:
+	show_only(controls_return_panel if controls_return_panel != null else start_panel)
 
 
 ## Opens the Bestenliste. `from` = the panel ZURÜCK / Esc return to (default:
@@ -1617,7 +1701,7 @@ func _panel_box(panel: PanelContainer) -> VBoxContainer:
 
 
 func show_only(panel: Control) -> void:
-	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel]:
+	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel, controls_panel]:
 		p.visible = p == panel
 	if versus_ui != null:
 		versus_ui.lobby.visible = versus_ui.lobby == panel
@@ -1628,6 +1712,7 @@ func hide_all_panels() -> void:
 	pause_panel.visible = false
 	gameover_panel.visible = false
 	leaderboard_panel.visible = false
+	controls_panel.visible = false
 	if versus_ui != null:
 		versus_ui.lobby.visible = false
 
