@@ -21,6 +21,7 @@ void vertex() {
 
 void fragment() {
 	float far = 1.0 - smoothstep(far_flat * 0.6, far_flat * 1.2, vdist);
+	far = min(far, pitch_fade(fwidth(UV.x)));
 	vec3 c; vec2 nxy; float r;
 	kraft_face(UV * vec2(1.0, 3.0), far, c, nxy, r);
 	// light falls off quickly into the cavity (vertex colour is linear in depth)

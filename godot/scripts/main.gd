@@ -268,6 +268,8 @@ var metro_stations: Array = [] # Array[MetroStation] — Manhattan only
 ## Tokyo: rain, traffic, passers-by and the scramble crossing (tokyo_life.gd);
 ## null in every other level.
 var tokyo_life: Node3D = null
+## Amsterdam: card passers-by and bicycles (amsterdam_life.gd); harmless soft push.
+var amsterdam_life: Node3D = null
 var obstacle_root: Node3D
 var world_env: WorldEnvironment
 
@@ -647,6 +649,8 @@ func start_explorer_level(city_id: String) -> void:
 		_spawn_manhattan_obstacles()
 	elif city.traffic == "tokyo":
 		_spawn_tokyo_life(int(city.seed))
+	elif city.traffic == "amsterdam":
+		_spawn_amsterdam_life(int(city.seed))
 	_spawn_metro_stations(metro_cells, city.metro_script)
 	_apply_scenery_comfort()
 	var sr = maze_view.scenery_root
@@ -750,6 +754,19 @@ func _clear_explorer_obstacles() -> void:
 	if tokyo_life != null:
 		tokyo_life.queue_free()
 		tokyo_life = null
+	if amsterdam_life != null:
+		amsterdam_life.queue_free()
+		amsterdam_life = null
+
+
+## Amsterdam: card passers-by and bicycles as one node of two MultiMeshes
+## (amsterdam_life.gd), seeded with the city's level seed.
+func _spawn_amsterdam_life(level_seed: int) -> void:
+	amsterdam_life = Node3D.new()
+	amsterdam_life.set_script(load("res://scripts/amsterdam_life.gd"))
+	obstacle_root.add_child(amsterdam_life)
+	amsterdam_life.setup(maze_view, level_seed)
+	amsterdam_life.set_comfort(reduce_fx)
 
 
 ## Tokyo (M2): rain, cars, passers-by and the scramble crossing as one node
@@ -919,6 +936,11 @@ func _check_explorer_obstacles() -> void:
 	if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("life_walker_count"):
 		for i in arles_sr.life_walker_count():
 			_push_player_away_from(arles_sr.life_walker_position(i), MANHATTAN_PEDESTRIAN_OBSTACLE_RADIUS)
+	if amsterdam_life != null:
+		# Amsterdam: passers-by and bicycles only nudge (soft push, never a block)
+		var apv: Vector2 = amsterdam_life.push_for(player.global_position)
+		player.global_position.x += apv.x
+		player.global_position.z += apv.y
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
@@ -1039,6 +1061,8 @@ func set_reduce_fx(on: bool) -> void:
 		hud.set_flip_frame(0.0)
 	if tokyo_life != null:
 		tokyo_life.set_comfort(reduce_rain, reduce_fx)
+	if amsterdam_life != null:
+		amsterdam_life.set_comfort(on)
 
 
 ## "Regen reduzieren" (comfort block): stored right away, applied to a
@@ -1544,6 +1568,8 @@ func _process(delta: float) -> void:
 		var arles_sr = maze_view.scenery_root if maze_view != null else null
 		if arles_sr != null and is_instance_valid(arles_sr) and arles_sr.has_method("update_life"):
 			arles_sr.update_life(delta, player.global_position)
+		if amsterdam_life != null:
+			amsterdam_life.update(delta)
 
 	# Pickups are checked before the obstacle push so a taxi/pedestrian that
 	# happens to be passing over the player's exact cell this frame can

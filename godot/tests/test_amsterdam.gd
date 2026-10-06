@@ -380,7 +380,7 @@ func _initialize() -> void:
 			far = maxf(far, Vector2(pnt.x - cc.x, pnt.z - cc.y).length())
 	_check("theme: the camera reaches the desk beyond the model", th.camera_far > far + 40.0, "far %.0f, camera %.0f" % [far, th.camera_far])
 	var city: Dictionary = ExplorerCities.get_city("amsterdam")
-	_check("registry: label, exit script, no traffic, quiet, own texts", city.label == "AMSTERDAM" and city.metro_script.ends_with("amsterdam_exit.gd") and city.traffic == "" and city.siren == false and city.exit_text != "" and city.exit_title != "" and city.exit_hint != "" and city.intro_hint != "" and city.metro_radius > 0.9)
+	_check("registry: label, exit script, card traffic, quiet, own texts", city.label == "AMSTERDAM" and city.metro_script.ends_with("amsterdam_exit.gd") and city.traffic == "amsterdam" and city.siren == false and city.exit_text != "" and city.exit_title != "" and city.exit_hint != "" and city.intro_hint != "" and city.metro_radius > 0.9)
 	_check("minimap: exit marker #00B894, canals in their own colour", th.minimap_exit_color == Style.EXIT and th.minimap_water_script != null and M.is_water(8, 20) and not M.is_water(12, 20))
 	var bg: Color = th.minimap_bg_color
 	_check("minimap: pins and blocks stand out from the dark streets (>= 3:1)", _contrast(th.pellet_color, bg) >= 3.0 and _contrast(th.minimap_wall_color, bg) >= 3.0, "pins %.1f, blocks %.1f" % [_contrast(th.pellet_color, bg), _contrast(th.minimap_wall_color, bg)])
@@ -493,6 +493,8 @@ func _initialize() -> void:
 			lic_ok = false
 	_check("licences: every scan listed in docs/art/lizenzen.md (CC0, source, where used)", lic_ok and lic.contains("CC0"))
 
+	_check_life(mv, maze, start, exit_cell)
+
 	mv.queue_free()
 	ex.queue_free()
 	if failures == 0:
@@ -500,6 +502,225 @@ func _initialize() -> void:
 	else:
 		print("%d/%d AMSTERDAM CHECKS FAILED" % [failures, checks])
 	quit(1 if failures > 0 else 0)
+
+
+func _make_life(mv: Node3D, level_seed: int) -> Node3D:
+	var l := Node3D.new()
+	l.set_script(load("res://scripts/amsterdam_life.gd"))
+	root.add_child(l)
+	l.setup(mv, level_seed)
+	return l
+
+
+func _count_nodes(n: Node) -> int:
+	var c := 1
+	for ch in n.get_children():
+		c += _count_nodes(ch)
+	return c
+
+
+func _life_signature(l: Node3D) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for i in l.walker_count():
+		out.append(l.walker_position(i))
+	for i in l.rider_count():
+		out.append(l.rider_position(i))
+	for i in l.parked_count():
+		out.append(l.parked_position(i))
+	return out
+
+
+## Card people, riders and parked bicycles (amsterdam_life.gd): present,
+## deterministic, two draw calls, lanes clear, no per-frame allocation,
+## slow, harmless (soft push), frozen by "Effekte reduzieren", palette.
+func _check_life(mv: Node3D, maze, start: Vector2i, exit_cell: Vector2i) -> void:
+	var life := _make_life(mv, LEVEL_SEED)
+	_check("life: people, riders and parked bicycles present", life.walker_count() >= 30 and life.rider_count() >= 12 and life.parked_count() >= 6,
+		"%d / %d / %d" % [life.walker_count(), life.rider_count(), life.parked_count()])
+	# draw calls: two MultiMeshes, nothing else drawn
+	var mmis := []
+	_collect_mmis(life, mmis)
+	_check("life: exactly two MultiMeshInstance3D (people, bicycles)", mmis.size() == 2, "%d" % mmis.size())
+	var geo := []
+	_collect(mv, geo, {mv.pellet_mmi: true})
+	_check("life: static budget stays <= %d (the life node is on top, 2 draw calls)" % STATIC_DRAW_BUDGET, geo.size() <= STATIC_DRAW_BUDGET, "%d" % geo.size())
+	var wv: int = life.walker_mmi.multimesh.mesh.surface_get_array_len(0)
+	var bv: int = life.bike_mmi.multimesh.mesh.surface_get_array_len(0)
+	_check("life: meshes small (walker <= 1500 / bicycle <= 3500 vertices)", wv <= 1500 and bv <= 3500, "%d / %d" % [wv, bv])
+	_check("life: the shader is the card shader without TIME", _code_without_comments("res://shaders/amsterdam_folk.gdshader").find("TIME") < 0)
+
+	# deterministic
+	life.advance(37.0)
+	var life2 := _make_life(mv, LEVEL_SEED)
+	life2.advance(37.0)
+	var s1 := _life_signature(life)
+	var s2 := _life_signature(life2)
+	_check("life: same seed, same time -> same positions", s1 == s2 and s1.size() > 0)
+	var life3 := _make_life(mv, LEVEL_SEED + 1)
+	life3.advance(37.0)
+	_check("life: another seed -> other positions", _life_signature(life3) != s1)
+	life2.free()
+	life3.free()
+
+	# paths clear, always (sampled over four minutes)
+	var pins := []
+	for pc in mv.pellet_cells:
+		pins.append(Vector2(pc.y * 2.0, pc.x * 2.0))
+	var sp: Vector2 = life.start_pos()
+	var ep: Vector2 = life.exit_pos()
+	var bad_ground := 0
+	var bad_pin := 0
+	var bad_keep := 0
+	var min_pin := 99.0
+	var worst := ""
+	var probe := _make_life(mv, LEVEL_SEED)
+	for step in 241:
+		for i in probe.walker_count():
+			var p: Vector3 = probe.walker_position(i)
+			var q := Vector2(p.x, p.z)
+			if not life.clear_at(q, 0.34 + 0.1):
+				bad_ground += 1
+				worst = "walker %d at %s" % [i, str(q)]
+			for pin in pins:
+				var d := q.distance_to(pin)
+				min_pin = minf(min_pin, d)
+				if d < 1.0:
+					bad_pin += 1
+					worst = "walker %d at %s pin %s" % [i, str(q), str(pin)]
+			if q.distance_to(sp) < 5.0 - 0.01 or q.distance_to(ep) < 7.0 - 0.01:
+				bad_keep += 1
+		for i in probe.rider_count():
+			var p2: Vector3 = probe.rider_position(i)
+			var q2 := Vector2(p2.x, p2.z)
+			if not life.clear_at(q2, 0.34 + 0.1):
+				bad_ground += 1
+				worst = "rider %d at %s" % [i, str(q2)]
+			for pin in pins:
+				var d2 := q2.distance_to(pin)
+				min_pin = minf(min_pin, d2)
+				if d2 < 0.5:
+					bad_pin += 1
+					worst = "rider %d at %s pin %s" % [i, str(q2), str(pin)]
+			if q2.distance_to(sp) < 5.0 - 0.01 or q2.distance_to(ep) < 7.0 - 0.01:
+				bad_keep += 1
+		probe.advance(1.0)
+	_check("life: people and riders always on open ground (clear of kerb, facade, rail)", bad_ground == 0, "%d, e.g. %s" % [bad_ground, worst])
+	_check("life: people 1 m / riders 0.5 m clear of every pin (the trail stays free; riders only cross it)", bad_pin == 0, "%d, min %.2f, %s" % [bad_pin, min_pin, worst])
+	_check("life: nobody within 5 m of the start / 7 m of the exit, at any time", bad_keep == 0, "%d" % bad_keep)
+	var pk_ok := true
+	for i in life.parked_count():
+		var pp: Vector3 = life.parked_position(i)
+		if Vector2(pp.x, pp.z).distance_to(sp) < 5.0 or Vector2(pp.x, pp.z).distance_to(ep) < 7.0:
+			pk_ok = false
+		for pin in pins:
+			if Vector2(pp.x, pp.z).distance_to(pin) < 1.0:
+				pk_ok = false
+	_check("life: parked bicycles keep clear of pins, start and exit", pk_ok)
+
+	# slow, harmless, calm
+	var slow := true
+	for i in life.walker_count():
+		if life.walker_speed(i) > 1.3:
+			slow = false
+	for i in life.rider_count():
+		if life.rider_speed(i) > 4.0:
+			slow = false
+	_check("life: people <= 1.3 m/s, bicycles <= 4 m/s (player 5.06 m/s)", slow)
+	_check("life: no motion at 3 Hz or more (stride, pedals, wheel marker)", life.max_motion_hz() < 3.0, "%.2f Hz" % life.max_motion_hz())
+	var far_push: Vector2 = life.push_for(Vector3(-50.0, 0.0, -50.0))
+	_check("life: no push far from everything", far_push == Vector2.ZERO)
+	var max_push := 0.0
+	for i in life.walker_count():
+		var wp: Vector3 = life.walker_position(i)
+		max_push = maxf(max_push, life.push_for(wp + Vector3(0.1, 0.0, 0.0)).length())
+	for i in life.rider_count():
+		var rp: Vector3 = life.rider_position(i)
+		max_push = maxf(max_push, life.push_for(rp + Vector3(0.0, 0.0, 0.05)).length())
+	_check("life: the push is soft (<= 0.5 m per frame) and exists", max_push <= 0.5 and max_push > 0.0, "%.3f" % max_push)
+	var open_pairs := true
+	var corridor_free := true
+	for i in life.walker_count():
+		var wq: Vector3 = life.walker_position(i)
+		# the 2 m corridor around any centre line stays walkable: nobody pushes a player on a centre line
+		for pin in pins:
+			if life.push_for(Vector3(pin.x, 0.0, pin.y)) != Vector2.ZERO and Vector2(wq.x, wq.z).distance_to(pin) < 2.0:
+				corridor_free = false
+		break
+	_check("life: a player on a pin is never pushed (at t=0)", corridor_free and open_pairs)
+
+	# no allocation per frame
+	var cam := Vector3(48.6, 0.95, 64.0)
+	for i in 120:
+		life.update(1.0 / 60.0, cam, cam)
+	var obj0 := Performance.get_monitor(Performance.OBJECT_COUNT)
+	var res0 := Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var node0 := _count_nodes(root)
+	var mem0 := OS.get_static_memory_usage()
+	for i in 600:
+		life.update(1.0 / 60.0, cam, cam)
+		life.push_for(cam)
+	var obj1 := Performance.get_monitor(Performance.OBJECT_COUNT)
+	var res1 := Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var node1 := _count_nodes(root)
+	var mem1 := OS.get_static_memory_usage()
+	_check("life: no new objects / resources / nodes in 600 frames", obj1 == obj0 and res1 == res0 and node1 == node0, "obj %d -> %d, res %d -> %d, nodes %d -> %d" % [obj0, obj1, res0, res1, node0, node1])
+	_check("life: no memory growth in 600 frames (< 64 KB)", mem1 - mem0 < 65536, "%d bytes" % (mem1 - mem0))
+
+	# "Effekte reduzieren": everything stands, nothing moves
+	life.set_comfort(true)
+	var f0 := _life_signature(life)
+	for i in 120:
+		life.update(1.0 / 60.0, cam, cam)
+	life.advance(5.0)
+	_check("life: Effekte reduzieren stops all movement", life.is_frozen() and f0 == _life_signature(life))
+	var still := true
+	for i in life.walker_count():
+		if life.walker_moving(i):
+			still = false
+	_check("life: reduced effects: nobody is marked moving", still)
+	life.set_comfort(false)
+	life.advance(3.0)
+	_check("life: movement resumes without reduced effects", f0 != _life_signature(life))
+
+	# palette: warm, muted, no blue (pins), none near pin blue / exit green
+	var pal_ok := true
+	var pal_detail := ""
+	for cs in [Style.FOLK_COATS, Style.FOLK_SKIN, Style.FOLK_BIKES]:
+		for c in cs:
+			var col: Color = c
+			var hue := col.h * 360.0
+			if col.s > 0.25 and hue >= 190.0 and hue <= 260.0:
+				pal_ok = false
+				pal_detail = "blue " + col.to_html(false)
+			if _dist(col, Style.PIN) < 0.12 or _dist(col, Style.EXIT) < 0.12:
+				pal_ok = false
+				pal_detail = "near pin/exit " + col.to_html(false)
+			if col.get_luminance() > _lum(Style.WHITE_PAINT) + 0.001:
+				pal_ok = false
+				pal_detail = "brighter than the white paint " + col.to_html(false)
+	_check("life: figure palette has no blue / pin / exit colours, none brighter than the white paint", pal_ok, pal_detail)
+
+	probe.free()
+	life.free()
+
+
+func _code_without_comments(path: String) -> String:
+	var out := ""
+	for line in FileAccess.get_file_as_string(path).split("\n"):
+		if not line.strip_edges().begins_with("//"):
+			out += line + "\n"
+	return out
+
+
+func _lum(c: Color) -> float:
+	return c.get_luminance()
+
+
+func _collect_mmis(n: Node, out: Array) -> void:
+	if n is MultiMeshInstance3D:
+		out.append(n)
+	for ch in n.get_children():
+		_collect_mmis(ch, out)
 
 
 ## A board intrudes when a point of it (corners, edge middles, centre) lies

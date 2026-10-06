@@ -296,12 +296,22 @@ static func house(K: Kit, w: float, floors: int, gkind: int, depth: float, bri: 
 	# side walls (fire walls) - or, at a street corner, a second front with windows
 	for s in [-1.0, 1.0]:
 		if (s < 0.0 and open_left) or (s > 0.0 and open_right):
+			# The side front runs between the front board and the back wall
+			# (z -depth+T .. -T), not into them: its end caps would lie in the
+			# front's plane (z 0) and the back's plane (a coplanar strip 40 cm
+			# wide over the whole height at every outer corner, z-fighting).
+			# Very shallow corner houses keep a 2.6 m minimum (the ends then
+			# vanish inside the front and back boards).
 			var keep := K.frame
 			K.frame = keep * Transform3D(Basis(Vector3.UP, s * PI * 0.5), Vector3(s * w * 0.5, 0, -depth * 0.5))
-			facade(K, depth, floors, bri, false)
+			facade(K, maxf(depth - 2.0 * T, 2.6), floors, bri, false)
 			K.frame = keep
 		else:
-			K.board(Vector3(s * (w * 0.5 - T * 0.25), H * 0.5, -depth * 0.5), Vector3(T * 0.5, H, depth), bri * 0.85)
+			# Fire wall between the front board (z -T..0) and the back wall
+			# (z -depth..-depth+T): it must not reach into either, or its end
+			# faces would lie in the same planes as theirs (z-fighting strips
+			# at every house corner = edge flicker, Abnahme 06.10.).
+			K.board(Vector3(s * (w * 0.5 - T * 0.25), H * 0.5, -depth * 0.5), Vector3(T * 0.5, H, depth - 2.0 * T), bri * 0.85)
 	K.board(Vector3(0, H * 0.5, -depth + T * 0.5), Vector3(w, H, T), bri * 0.8)
 	# gable and the saddle roof behind it (ridge runs back from the street)
 	var gp := gable(gkind, w)
@@ -347,8 +357,10 @@ static func facade(K: Kit, w: float, floors: int, bri: float, door: bool) -> flo
 				continue
 			if f == 0:
 				K.board(Vector3(wx, yb * 0.5, zc), Vector3(ww, yb, T), bri)
-			# window cross of thin strips, a little behind the front
-			K.board(Vector3(wx, yb + (yt - yb) * 0.62, -T * 0.55), Vector3(ww, 0.12, 0.12), bri)
+			# window cross of thin strips, a little behind the front (the
+			# crossbar is 2 cm shallower than the post: no coplanar faces where
+			# they cross, no z-fighting square)
+			K.board(Vector3(wx, yb + (yt - yb) * 0.62, -T * 0.55), Vector3(ww, 0.12, 0.10), bri)
 			K.board(Vector3(wx, (yb + yt) * 0.5, -T * 0.55), Vector3(0.12, yt - yb, 0.12), bri)
 			# the cutter ran a little too far at a window corner
 			if K.rng.randf() < 0.35:
@@ -497,8 +509,11 @@ static func westerkerk(K: Kit) -> void:
 	K.board(Vector3(2.0, H + 4.5, -depth * 0.75), Vector3(30.5, T * 0.6, rl), bri * 0.85, Basis(Vector3(1, 0, 0), -ra))
 	var tri := PackedVector2Array([Vector2(-depth * 0.5, 0), Vector2(0, 9.0), Vector2(depth * 0.5, 0)])
 	for ex in [-13.0, 17.0]:
-		K.board(Vector3(ex, H * 0.5, -depth * 0.5), Vector3(T, H, depth), bri * 0.8)
-		K.cut(tri, T, Vector3(ex, H, -depth * 0.5), Basis(Vector3.UP, PI * 0.5), bri * 0.8)
+		# the end walls stand behind the front boards (z -T..0), shifted in by
+		# half a board: no end face in the plane of the front (z-fighting)
+		var exi: float = ex + (T * 0.5 if ex < 0.0 else -T * 0.5)
+		K.board(Vector3(exi, H * 0.5, -(depth + T) * 0.5), Vector3(T, H, depth - T), bri * 0.8)
+		K.cut(tri, T, Vector3(exi, H, -depth * 0.5), Basis(Vector3.UP, PI * 0.5), bri * 0.8)
 	# two transept gables on the front (step gables, 8 m wide)
 	for gx in [-8.3, 10.3]:
 		K.cut(gable(0, 8.0), T, Vector3(gx, H - 0.01, -T * 0.5), Basis(), bri)
@@ -617,8 +632,8 @@ static func bridge(K: Kit, b: Dictionary) -> void:
 	for s in [-1.0, 1.0]:
 		var rz: float = s * (hw + 0.2)
 		# rails end at the quay edge (they stand over the water, beside the walkable width)
-		K.board(Vector3(0, 1.0, rz), Vector3(span - 0.1, 0.14, 0.16), bri, Basis(), paint)
-		K.board(Vector3(0, 0.55, rz), Vector3(span - 0.1, 0.1, 0.1), bri, Basis(), paint)
+		K.board(Vector3(0, 1.0, rz), Vector3(span - 0.16, 0.14, 0.16), bri, Basis(), paint)
+		K.board(Vector3(0, 0.55, rz), Vector3(span - 0.16, 0.1, 0.1), bri, Basis(), paint)
 		var np := int(span / 1.4)
 		for k in np + 1:
 			K.board(Vector3(-hs + 0.12 + k * (span - 0.24) / np, 0.5, rz), Vector3(0.14, 1.0, 0.14), bri, Basis(), paint)
@@ -749,6 +764,12 @@ static func kit(seed: int) -> Kit:
 
 static func panels(seed: int) -> Array:
 	return kit(seed).panels
+
+
+## Tree trunk positions of the cached model of a level seed (the moving
+## figures keep clear of them, amsterdam_life.gd).
+static func trees(seed: int) -> Array:
+	return _cached(seed).kit.trees
 
 
 # ------------------------------------------------------------------ meshes
