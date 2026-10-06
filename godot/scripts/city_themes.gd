@@ -159,7 +159,7 @@ static func manhattan() -> Resource:
 	var t = CityThemeScript.new()
 	t.id = "manhattan"
 	t.display_name = "Manhattan"
-	t.eye_height = 1.6 # eye height (m), tune here
+	t.eye_height = 1.25 # eye height (m), tune here
 	t.wall_word = "BUILDING"
 	t.wall_font_size = 22
 	t.wall_depth_scale = 0.6

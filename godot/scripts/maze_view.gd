@@ -4,10 +4,10 @@ extends Node3D
 ## Instanced fresh by Main.gd for every level.
 
 const CELL := 2.0
-## Pickup radii (m, horizontal). Pellets 0.65 (was 0.42), power/fruit/rabbit 0.75 (was 0.5).
+## Pickup radii (m, horizontal). Pellets 0.8 (was 0.42), power/fruit/rabbit 0.9 (was 0.5).
 ## Levels.PICKUP_R is the same number (reference route times).
-const PICKUP_PELLET_R := 0.65
-const PICKUP_BIG_R := 0.75
+const PICKUP_PELLET_R := 0.8
+const PICKUP_BIG_R := 0.9
 const WALL_H := 4.4 # was 3.8 (doubled from the original 1.9 earlier); raised again per user request — taller, more imposing corridors. Only the "normal" (Speedrun) theme actually uses this as its wall height: Manhattan sets its own real-world building heights (CityTheme.wall_height_min/max) and ignores WALL_H except as a last-resort fallback (see _wall_height_for_cell).
 ## The voxel-cloud sky sits well above the wall tops rather than hugging
 ## them: both the sky ceiling and the clouds under it float at

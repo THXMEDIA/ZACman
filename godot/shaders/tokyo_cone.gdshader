@@ -17,8 +17,11 @@ void vertex() {
 
 void fragment() {
 	float t = UV.y;
-	float edge = pow(abs(dot(normalize(NORMAL), VIEW)), 1.5);
+	float edge = pow(clamp(abs(dot(normalize(NORMAL), VIEW)), 0.0, 1.0), 1.5);
 	float near = smoothstep(0.8, 3.0, length(VERTEX));
-	float a = pow(1.0 - t, 1.6) * edge * near;
+	// max(): UV.y can overshoot 1.0 by rounding at the base ring; pow(negative, x)
+	// is NaN on real GPUs and blend_add turns that into black arcs on the street.
+	float a = pow(max(1.0 - t, 0.0), 1.6) * edge * near;
+	a = clamp(a, 0.0, 4.0);
 	ALBEDO = v_col * a * gain;
 }

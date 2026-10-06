@@ -16,9 +16,9 @@ extends RefCounted
 
 ## Player speed (player_controller.gd PLAYER_SPEED) and the length of one
 ## grid step (maze_view.gd CELL) — the basis of reference_route_seconds().
-const PLAYER_SPEED := 5.06
+const PLAYER_SPEED := 5.31
 ## Pickup radius for pellets (m). Widened from 0.42 (Abnahme 06.10.: you ran past pellets).
-const PICKUP_R := 0.65
+const PICKUP_R := 0.8
 const CELL_M := 2.0
 
 ## target_s (seconds) is data, not computed at runtime: tests/test_levels.gd
@@ -33,11 +33,11 @@ const CELL_M := 2.0
 ## Klassik II/IV, the other levels alternate (spec 1.1).
 const POOL := [
 	{"id": "klassik-1", "name": "Klassik I", "rows": 19, "cols": 21, "ghost_speed": 2.0, "ghost_count": 3, "seed": 10003, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 95.0, "look": "lagune"},
-	{"id": "klassik-2", "name": "Klassik II", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 20080, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 145.0, "look": "riff"},
-	{"id": "klassik-3", "name": "Klassik III", "rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed": 30157, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 175.0, "look": "lagune"},
-	{"id": "klassik-4", "name": "Klassik IV", "rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed": 40234, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 195.0, "look": "riff"},
-	{"id": "offen", "name": "Offen", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 50003, "loop_prob": 0.45, "breakthroughs": 0, "target_s": 140.0, "look": "lagune"},
-	{"id": "durchbruch", "name": "Durchbruch", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 60003, "loop_prob": 0.16, "breakthroughs": 3, "target_s": 150.0, "look": "riff"},
+	{"id": "klassik-2", "name": "Klassik II", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 20080, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 140.0, "look": "riff"},
+	{"id": "klassik-3", "name": "Klassik III", "rows": 23, "cols": 27, "ghost_speed": 2.5, "ghost_count": 4, "seed": 30157, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 170.0, "look": "lagune"},
+	{"id": "klassik-4", "name": "Klassik IV", "rows": 23, "cols": 29, "ghost_speed": 2.75, "ghost_count": 5, "seed": 40234, "loop_prob": 0.16, "breakthroughs": 0, "target_s": 185.0, "look": "riff"},
+	{"id": "offen", "name": "Offen", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 50003, "loop_prob": 0.45, "breakthroughs": 0, "target_s": 130.0, "look": "lagune"},
+	{"id": "durchbruch", "name": "Durchbruch", "rows": 21, "cols": 25, "ghost_speed": 2.25, "ghost_count": 4, "seed": 60003, "loop_prob": 0.16, "breakthroughs": 3, "target_s": 145.0, "look": "riff"},
 ]
 
 

@@ -88,7 +88,7 @@ func _initialize() -> void:
 		print("FAIL bonus should be unlocked after beating target")
 
 	# Unlocking again on a later beat-target run must not re-report "newly" unlocked.
-	var r4: Dictionary = sr.record_level_time("klassik-2", 130.0) # under the klassik-2 target (145.0)
+	var r4: Dictionary = sr.record_level_time("klassik-2", 130.0) # under the klassik-2 target (140.0)
 	checks += 1
 	if r4.newly_unlocked_bonus:
 		failures += 1

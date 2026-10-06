@@ -83,7 +83,7 @@ void fragment() {
 	float f;
 	if (v_kind > 0.0) {
 		// peak at the mirror point (q.y = 0), long tail towards the camera
-		float along = q.y < 0.0 ? pow(1.0 + q.y, 0.8) : pow(1.0 - q.y, 2.0);
+		float along = q.y < 0.0 ? pow(max(1.0 + q.y, 0.0), 0.8) : pow(max(1.0 - q.y, 0.0), 2.0);
 		f = exp(-q.x * q.x * 5.0) * along;
 	} else {
 		// beam pool: soft ellipse, brightest near the car

@@ -8,8 +8,8 @@ const CELL := 2.0
 ## (Main applies it with set_eye_height). Was 0.95 everywhere: too low (Abnahme 06.10.).
 const EYE_H := 1.25
 const PLAYER_RADIUS := 0.34
-## +15 % (Abnahme 06.10.: 4.4 -> 5.06); Levels.PLAYER_SPEED must stay equal.
-const PLAYER_SPEED := 5.06
+## +15 %, then +5 % (Abnahme 06.10.: 4.4 -> 5.06 -> 5.31); Levels.PLAYER_SPEED must stay equal.
+const PLAYER_SPEED := 5.31
 const MOUSE_SENSITIVITY := 0.0022
 
 var camera: Camera3D
