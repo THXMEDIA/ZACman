@@ -201,6 +201,9 @@ var manhattan_btn: Button
 var tokyo_btn: Button
 var manhattan_bonus_label: Label
 var debug_label: Label
+## Dash charges ("● ○"), see set_dash(); the chip is hidden in Explorer cities.
+var dash_label: Label
+var dash_chip: Control
 var twitch_toggle: CheckBox
 var twitch_channel_edit: LineEdit
 var twitch_status_label: Label
@@ -263,6 +266,9 @@ func _build_hud_bar() -> void:
 	board_chip.visible = false
 	timed_chips = [score_label.get_parent().get_parent(), timer_label.get_parent().get_parent(), best_label.get_parent().get_parent()]
 	_build_chat_chip(left)
+
+	dash_label = _make_chip(left, "DASH", "●")
+	dash_chip = dash_label.get_parent().get_parent()
 
 	# Debug overlay (FPS / player position / cell) — hidden unless
 	# set_debug_overlay(true) is called (F3 in debug builds, see main.gd).
@@ -380,6 +386,7 @@ func set_explorer_hud(is_explorer: bool) -> void:
 		hide_hint()
 	for chip in timed_chips:
 		chip.visible = not is_explorer
+	dash_chip.visible = not is_explorer
 	if is_explorer:
 		set_board_badge("")
 		set_chat_share_visible(false)
@@ -460,6 +467,20 @@ func set_debug_overlay(visible_now: bool) -> void:
 ## (see main.gd::_process).
 func update_debug_overlay(fps: float, pos: Vector3, cell: Vector2i) -> void:
 	debug_label.text = "%d fps  ·  (%.1f, %.1f, %.1f)  ·  cell (%d, %d)" % [int(fps), pos.x, pos.y, pos.z, cell.x, cell.y]
+
+
+## Dash chip: one filled dot per charge, empty dots up to the maximum; a
+## dimmed text while the cooldown runs.
+func set_dash(charges: int, max_charges: int, ready: bool) -> void:
+	var s := ""
+	for i in max_charges:
+		s += ("● " if i < charges else "○ ")
+	dash_label.text = s.strip_edges()
+	dash_label.modulate = Color(1, 1, 1, 1.0 if ready or charges == 0 else 0.55)
+
+
+func set_dash_visible(on: bool) -> void:
+	dash_chip.visible = on
 
 
 func set_power_timer(remaining: float, duration: float) -> void:

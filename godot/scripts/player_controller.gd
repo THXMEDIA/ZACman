@@ -12,6 +12,19 @@ const PLAYER_RADIUS := 0.34
 const PLAYER_SPEED := 5.31
 const MOUSE_SENSITIVITY := 0.0022
 
+## ---- Bewegungs-Paket (ZAP-5, Abnahme 06.10.): Dash + Kehrtwende ----
+## Both are triggered by the player alone (keys), never by a Kondition, the
+## rabbit or the chat (red line E8e): turn_around() is a cut (yaw + PI, no
+## camera sweep, pitch and FOV untouched); the dash only moves the body.
+const DASH_SPEED := 18.0 # m/s while dashing
+const DASH_TIME := 0.2 # s -> ~3.6 m
+const DASH_COOLDOWN := 0.5 # s anti-spam between two dashes
+const DASH_AFTERGLOW := 0.15 # s: still ghost-proof after the dash, so you never end inside a ghost
+const DASH_MIN_FREE := 1.0 # m of free space in front, else the charge is not spent
+const DASH_MAX_CHARGES := 2
+const DASH_START_CHARGES := 1
+const TURN_COOLDOWN := 0.4 # s -> far below 3 Hz
+
 var camera: Camera3D
 ## Current eye height of the camera (m), set per city by set_eye_height().
 var eye_h := EYE_H
@@ -34,6 +47,19 @@ var mouse_sensitivity_scale := 1.0
 ## The small lamp the player carries; Main sets its color per city theme
 ## (CityTheme.player_light_*).
 var light: OmniLight3D
+
+## Dash state (see the constants above). Charges come only from game state
+## (a ghost eaten, the fruit), never from time.
+var dash_charges := DASH_START_CHARGES
+var dash_time_left := 0.0
+var dash_afterglow_left := 0.0
+var dash_cooldown_left := 0.0
+var turn_cooldown_left := 0.0
+var _dash_dir := Vector3.ZERO
+var _last_move_input := Vector2.ZERO # the movement vector of the last physics tick (after the Kondition)
+## Counters for tests / the bot measurement.
+var dash_count := 0
+var turn_count := 0
 
 
 func _ready() -> void:
@@ -134,8 +160,21 @@ func has_move_input() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	dash_cooldown_left = maxf(dash_cooldown_left - delta, 0.0)
+	turn_cooldown_left = maxf(turn_cooldown_left - delta, 0.0)
+	dash_afterglow_left = maxf(dash_afterglow_left - delta, 0.0)
 	if not input_enabled or movement_locked:
 		velocity = Vector3.ZERO
+		dash_time_left = 0.0
+		return
+
+	if dash_time_left > 0.0:
+		# the dash: fixed direction, fixed speed, a hair of afterglow at the end
+		dash_time_left = maxf(dash_time_left - delta, 0.0)
+		if dash_time_left <= 0.0:
+			dash_afterglow_left = DASH_AFTERGLOW
+		velocity = _dash_dir * DASH_SPEED
+		move_and_slide()
 		return
 
 	var v := raw_move_input()
@@ -155,8 +194,79 @@ func _physics_process(delta: float) -> void:
 	var right_x := sin(yaw + PI / 2.0)
 	var right_z := cos(yaw + PI / 2.0)
 	var move_dir := Vector3(dir_x * v.y + right_x * v.x, 0.0, dir_z * v.y + right_z * v.x)
+	_last_move_input = v
 	velocity = move_dir * PLAYER_SPEED
 	move_and_slide()
+
+
+## True while the dash runs and for a moment after it: normal ghosts do not
+## hurt then (frightened ones can still be eaten).
+func is_dash_protected() -> bool:
+	return dash_time_left > 0.0 or dash_afterglow_left > 0.0
+
+
+func is_dashing() -> bool:
+	return dash_time_left > 0.0
+
+
+## Back to the start state (level start, lost life).
+func reset_dash() -> void:
+	dash_charges = DASH_START_CHARGES
+	dash_time_left = 0.0
+	dash_afterglow_left = 0.0
+	dash_cooldown_left = 0.0
+
+
+## A ghost eaten / the fruit: +1 charge up to the maximum. Returns true if it counted.
+func add_dash_charge() -> bool:
+	if dash_charges >= DASH_MAX_CHARGES:
+		return false
+	dash_charges += 1
+	return true
+
+
+## The dash direction in world space: the movement input of the last tick
+## (already through a Kondition such as Fear & Loathing, so the dash is no
+## free cure for it), without input straight ahead.
+func dash_direction() -> Vector3:
+	var v := _last_move_input
+	if v.length() < 0.1:
+		v = Vector2(0.0, 1.0)
+	v = v.normalized()
+	var dir := Vector3(-sin(yaw), 0.0, -cos(yaw))
+	var right := Vector3(sin(yaw + PI / 2.0), 0.0, cos(yaw + PI / 2.0))
+	return (dir * v.y + right * v.x).normalized()
+
+
+## Starts a dash if one is allowed: input on, not locked, a charge, no
+## cooldown, and at least DASH_MIN_FREE metres free ahead (no wasted charge
+## in front of a wall). Returns true if it started.
+func try_dash() -> bool:
+	if not input_enabled or movement_locked or dash_time_left > 0.0:
+		return false
+	if dash_charges <= 0 or dash_cooldown_left > 0.0:
+		return false
+	var d := dash_direction()
+	if collision_mask != 0 and test_move(global_transform, d * DASH_MIN_FREE):
+		return false
+	_dash_dir = d
+	dash_charges -= 1
+	dash_time_left = DASH_TIME
+	dash_cooldown_left = DASH_COOLDOWN + DASH_TIME
+	dash_count += 1
+	return true
+
+
+## 180 degree turn on a key press: a cut, yaw + PI. Pitch, FOV and the
+## camera itself are untouched (no sweep -> no apparent motion, E8e).
+func turn_around() -> bool:
+	if not input_enabled or turn_cooldown_left > 0.0:
+		return false
+	yaw = wrapf(yaw + PI, -PI, PI)
+	rotation.y = yaw
+	turn_cooldown_left = TURN_COOLDOWN
+	turn_count += 1
+	return true
 
 
 ## Tunnel wraparound: called by Main after physics, since it's a teleport,

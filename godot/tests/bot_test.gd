@@ -52,6 +52,7 @@ func _ready() -> void:
 	await _run_board_checks()
 	await _run_chat_vote_checks()
 	await _run_review_fix_checks()
+	await _run_movement_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -2115,6 +2116,131 @@ func _run_review_fix_checks() -> void:
 	_check("UX-W3: floats above the floor, turns below 0.5 Hz", fig.position.y > 0.1 and mv.RABBIT_TURN_RAD_S / TAU < 0.5 and mv.RABBIT_BOB_HZ < 0.5)
 	var bm: StandardMaterial3D = mv.rabbit_material
 	_check("UX-W3: rabbit white #F2F2ED", bm != null and bm.albedo_color.is_equal_approx(Color("f2f2ed")))
+	main.end_game()
+	main.go_to_main_menu()
+
+
+## Bewegungs-Paket (ZAP-5): Kehrtwende und Dash.
+func _run_movement_checks() -> void:
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	var pl = main.player
+	_release_all_move_keys()
+	_check("move pack: start with 1 dash charge, max 2", pl.dash_charges == 1 and pl.DASH_MAX_CHARGES == 2)
+	_check("move pack: keys registered (Shift = dash, Q = turn around)", InputMap.has_action("dash") and InputMap.has_action("turn_around"))
+
+	# ---- 180 degree turn: a cut, camera and FOV untouched, cooldown ----
+	pl.yaw = 0.7
+	pl.rotation.y = 0.7
+	pl.pitch = 0.2
+	pl.camera.rotation.x = 0.2
+	var fov_before: float = pl.camera.fov
+	var cam_pos_before: Vector3 = pl.camera.position
+	var turned: bool = pl.turn_around()
+	var expected_yaw := wrapf(0.7 + PI, -PI, PI)
+	_check("turn: a key press turns the view by exactly 180 degrees", turned and is_equal_approx(pl.yaw, expected_yaw) and is_equal_approx(pl.rotation.y, expected_yaw))
+	_check("turn: pitch, camera, FOV and eye height untouched (E8e)", is_equal_approx(pl.pitch, 0.2) and is_equal_approx(pl.camera.rotation.x, 0.2) and is_equal_approx(pl.camera.fov, fov_before) and pl.camera.position == cam_pos_before)
+	_check("turn: 0.4 s cooldown blocks a second turn (< 3 Hz)", not pl.turn_around() and pl.TURN_COOLDOWN >= 0.34)
+	for i in 30:
+		await get_tree().physics_frame
+	_check("turn: available again after the cooldown", pl.turn_around())
+	pl.input_enabled = false
+	for i in 30:
+		await get_tree().physics_frame
+	_check("turn: not while input is off", not pl.turn_around())
+	pl.input_enabled = true
+
+	# ---- Dash: distance, cost, cooldown, no charge in front of a wall ----
+	main.invuln_until = 0.0
+	pl.yaw = 0.0
+	pl.rotation.y = 0.0
+	var found_wall := false
+	var wall_yaw := 0.0
+	for k in 4:
+		var y := k * PI / 2.0
+		var dir := Vector3(-sin(y), 0.0, -cos(y))
+		if pl.test_move(pl.global_transform, dir * 1.0):
+			found_wall = true
+			wall_yaw = y
+			break
+	_check("dash: the start cell has a wall within 1 m in some direction (test setup)", found_wall)
+	pl.yaw = wall_yaw
+	pl.rotation.y = wall_yaw
+	var charges_before: int = pl.dash_charges
+	_check("dash: in front of a wall nothing starts and no charge is spent", not pl.try_dash() and pl.dash_charges == charges_before)
+
+	# the longest free direction from the start
+	var best_y := 0.0
+	var best_free := -1.0
+	for k in 4:
+		var y := k * PI / 2.0
+		var dir := Vector3(-sin(y), 0.0, -cos(y))
+		var free := 0.0
+		while free < 6.0 and not pl.test_move(pl.global_transform, dir * (free + 0.5)):
+			free += 0.5
+		if free > best_free:
+			best_free = free
+			best_y = y
+	pl.yaw = best_y
+	pl.rotation.y = best_y
+	var p0: Vector3 = pl.global_position
+	_check("dash: starts with a charge, costs it", pl.try_dash() and pl.dash_charges == 0 and pl.is_dashing())
+	_check("dash: a second one is refused without a charge", not pl.try_dash())
+	var max_speed := 0.0
+	var last: Vector3 = pl.global_position
+	for i in 16:
+		await get_tree().physics_frame
+		max_speed = maxf(max_speed, pl.global_position.distance_to(last) * 60.0)
+		last = pl.global_position
+	var dist: float = pl.global_position.distance_to(p0)
+	var want_dist := minf(pl.DASH_SPEED * pl.DASH_TIME, maxf(best_free - 0.4, 0.0))
+	_check("dash: covers ~%.1f m in 0.2 s (free corridor %.1f m)" % [want_dist, best_free], dist >= want_dist * 0.6 and dist <= pl.DASH_SPEED * pl.DASH_TIME + 0.5, "dist=%.2f" % dist)
+	_check("dash: ends after 0.2 s, far faster than walking while it runs", not pl.is_dashing() and max_speed > pl.PLAYER_SPEED * 2.0, "max_speed=%.1f" % max_speed)
+
+	# ---- ghosts: dash through a normal one, eat a frightened one (+1 charge) ----
+	var ghost = main.enemies[0]
+	pl.add_dash_charge()
+	pl.dash_cooldown_left = 0.0
+	var lives_before: int = main.lives
+	pl.try_dash()
+	ghost.mode = "chase"
+	ghost.position = Vector3(pl.global_position.x, ghost.position.y, pl.global_position.z)
+	main.invuln_until = 0.0
+	main._check_enemy_collision(ghost, false)
+	_check("dash: a normal ghost does not hurt while dashing", main.lives == lives_before)
+	for i in 40:
+		await get_tree().physics_frame
+	_check("dash: protection is over after the afterglow", not pl.is_dash_protected())
+	ghost.position = Vector3(pl.global_position.x, ghost.position.y, pl.global_position.z)
+	main.invuln_until = 0.0
+	main._check_enemy_collision(ghost, false)
+	_check("dash: without a dash the ghost still costs a life", main.lives == lives_before - 1)
+	_check("dash: a lost life resets the charges to the start value", pl.dash_charges == pl.DASH_START_CHARGES)
+
+	pl.dash_charges = 0
+	ghost.mode = "chase"
+	ghost.position = Vector3(pl.global_position.x, ghost.position.y, pl.global_position.z)
+	main.invuln_until = 0.0
+	main._check_enemy_collision(ghost, true)
+	_check("dash: a frightened ghost eaten gives +1 charge", ghost.mode == "eaten" and pl.dash_charges == 1)
+	pl.add_dash_charge()
+	_check("dash: capped at the maximum of 2", pl.dash_charges == 2 and not pl.add_dash_charge())
+
+	# ---- Matrix and Fear & Loathing: the dash follows the same input chain ----
+	pl.dash_cooldown_left = 0.0
+	pl.dash_charges = 1
+	pl.yaw = 0.0
+	pl._last_move_input = Vector2(1.0, 0.0)
+	var d_right: Vector3 = pl.dash_direction()
+	_check("dash: direction follows the movement input (strafe right = +x at yaw 0)", d_right.distance_to(Vector3(1, 0, 0)) < 0.01, str(d_right))
+	pl._last_move_input = Vector2.ZERO
+	_check("dash: without input straight ahead", pl.dash_direction().distance_to(Vector3(0, 0, -1)) < 0.01)
+
+	# ---- a new level resets the charges ----
+	pl.dash_charges = 2
+	main.begin_game("klassik-2")
+	await get_tree().process_frame
+	_check("move pack: a new level starts with the start charge", main.player.dash_charges == main.player.DASH_START_CHARGES)
 	main.end_game()
 	main.go_to_main_menu()
 

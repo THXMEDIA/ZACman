@@ -196,7 +196,9 @@ static func reference_route_seconds(maze_gen, maze) -> float:
 
 
 ## Physical lower bound: every pellet needs one 4 m hop, minus what the
-## PICKUP_R pickup radius saves on each end. No route can be faster.
+## PICKUP_R pickup radius saves on each end. No route can be faster WALKING;
+## a dash (PlayerController.DASH_*, ~0.48 s saved each) can beat it, so this
+## bound is only the walking bound and target_s stays a no-dash time.
 static func lower_bound_seconds(maze_gen, maze) -> float:
 	var hops: int = maze_gen.cells_in_room(maze, false).size() - 1
 	return hops * (2.0 * CELL_M - 2.0 * PICKUP_R) / PLAYER_SPEED

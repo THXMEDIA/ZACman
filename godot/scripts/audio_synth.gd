@@ -49,6 +49,9 @@ var _layer_target := 0.0
 var _munch_a: AudioStreamWAV
 var _munch_b: AudioStreamWAV
 var _power: AudioStreamWAV
+var _dash: AudioStreamWAV
+var _dash_empty: AudioStreamWAV
+var _turn: AudioStreamWAV
 var _eat_1: AudioStreamWAV
 var _eat_2: AudioStreamWAV
 var _eat_3: AudioStreamWAV
@@ -89,6 +92,9 @@ func _ready() -> void:
 	_condition_end = _sweep(300.0, 600.0, 0.22, "triangle", 0.4)
 	_clock_tick = _tone(1800.0, 0.025, "triangle", 0.28)
 	_fruit_1 = _tone(700.0, 0.08, "sine", 0.45)
+	_dash = _sweep(260.0, 1100.0, 0.14, "triangle", 0.5)
+	_dash_empty = _tone(150.0, 0.06, "square", 0.3)
+	_turn = _sweep(900.0, 500.0, 0.05, "triangle", 0.35)
 	_fruit_2 = _tone(1000.0, 0.1, "sine", 0.45)
 	for f in [523.0, 659.0, 784.0, 1047.0]:
 		_clear_notes.append(_tone(f, 0.22, "square", 0.5))
@@ -145,6 +151,18 @@ func _play(stream: AudioStreamWAV, delay := 0.0) -> void:
 func munch() -> void:
 	_munch_toggle = not _munch_toggle
 	_play(_munch_b if _munch_toggle else _munch_a)
+
+
+func dash() -> void:
+	_play(_dash)
+
+
+func dash_empty() -> void:
+	_play(_dash_empty)
+
+
+func turn() -> void:
+	_play(_turn)
 
 
 func power() -> void:

@@ -277,6 +277,7 @@ var world_env: WorldEnvironment
 
 
 func _ready() -> void:
+	_register_move_actions()
 	level_rng.randomize()
 	ai_rng.randomize()
 	high_score = _load_highscore()
@@ -526,6 +527,7 @@ func start_level(level: Dictionary) -> void:
 	# level's position/maze risked an unnecessary extra teleport right
 	# before warp_to overwrote it anyway.
 	player.warp_to(start_cell, _facing_yaw_for_start(start_cell)) # GD-W10: look down the longest open corridor instead of a fixed direction
+	player.reset_dash()
 	_refresh_noclip()
 	invuln_until = now + 1.2
 
@@ -1314,6 +1316,7 @@ func lose_life() -> void:
 		return
 	_end_condition(false)
 	player.warp_to(start_cell, _facing_yaw_for_start(start_cell))
+	player.reset_dash()
 	_refresh_noclip()
 	invuln_until = now + 1.6
 	var house_cells := []
@@ -1525,7 +1528,35 @@ func toggle_pause() -> void:
 
 ## ---------------- main loop ----------------
 
+## Registers the Bewegungs-Paket keys in code (project.godot stays untouched,
+## Godot rewrites it on every editor start): Shift = Dash, Q = Kehrtwende.
+func _register_move_actions() -> void:
+	for pair in [["dash", KEY_SHIFT], ["turn_around", KEY_Q]]:
+		if InputMap.has_action(pair[0]):
+			continue
+		InputMap.add_action(pair[0])
+		var ev := InputEventKey.new()
+		ev.physical_keycode = pair[1]
+		InputMap.action_add_event(pair[0], ev)
+
+
+## Dash / 180 turn: only from the player's own key press, only while a game
+## runs (not paused, not during the start hold). Never from a Kondition.
+func _handle_move_keys(event: InputEvent) -> void:
+	if not running or paused or event.is_echo() or not event.is_pressed():
+		return
+	if event.is_action_pressed("turn_around"):
+		if player.turn_around():
+			Sfx.turn()
+	elif event.is_action_pressed("dash") and not playing_explorer and not start_hold:
+		if player.try_dash():
+			Sfx.dash()
+		elif player.dash_charges <= 0 and player.dash_cooldown_left <= 0.0:
+			Sfx.dash_empty()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	_handle_move_keys(event)
 	# UX-W7: from the second start of the session, any key skips the intro.
 	if intro_skippable() and event is InputEventKey and event.pressed and not event.echo and not event.is_action_pressed("pause_toggle"):
 		skip_intro()
@@ -1614,6 +1645,7 @@ func _process(delta: float) -> void:
 		Sfx.set_siren(true, false)
 	hud.set_minimap_visible(active_condition == null or active_condition.minimap_visible())
 	hud.update_minimap(maze, player, enemies, frightened_active, maze_view)
+	hud.set_dash(player.dash_charges, player.DASH_MAX_CHARGES, player.dash_cooldown_left <= 0.0)
 
 
 func _check_enemy_collision(enemy, frightened_active: bool) -> void:
@@ -1639,6 +1671,9 @@ func _check_enemy_collision(enemy, frightened_active: bool) -> void:
 			_add_score(pts)
 			Sfx.eat_enemy()
 			hud.set_score(score)
+			player.add_dash_charge()
+		elif player.is_dash_protected():
+			return # dashing through a ghost: nothing happens
 		else:
 			lose_life()
 
@@ -1670,6 +1705,7 @@ func _check_pickups() -> void:
 			if enemy.mode == "chase":
 				enemy.mode = "frightened"
 	if result.fruit:
+		player.add_dash_charge()
 		_add_score(150 + level_index * 50)
 		Sfx.fruit()
 	if result.rabbit:
