@@ -15,6 +15,9 @@
 #   k8_totale.png         erhöhte Totale (Falten relativ zu einem gedachten Spieler)
 #   k9_reduziert.png      wie k3 mit „Effekte reduzieren“ (alles steht)
 #   k10_theater.png       Shijo-dori nach Westen auf das Theater
+#   k16_bluete_*.png      Kirschblütenbäume: Hanamikoji nach Süden, Torii-Gasse (Kronen über der Tempelmauer)
+#   k17_passanten_*.png   Passanten (erster, ein Schirmträger/Tourist) aus ca. 6 m, Blick auf die Figur
+#   k18_reduziert_bluete.png  Bäume mit „Effekte reduzieren“ (keine Blütenblätter, Passanten stehen)
 #   k11-k15               Regressionsblicke: Torii-Rand, Pagode vom Hanamikoji,
 #                         Ninenzaka Nord, Sannenzaka (Band), Start mit Blick aufs Tor
 extends SceneTree
@@ -50,6 +53,25 @@ func _pose(x: float, z: float, yaw: float, pitch: float = 0.0, lift: float = 0.0
 	main.player.pitch = pitch
 	main.player.rotation.y = yaw
 	main.player.camera.rotation.x = pitch
+
+
+## Stand 5.5 m in front of walker k (beside it along its lane, camera at the
+## usual eye height) and look at it; the figures turn to the camera.
+func _look_at_walker(k: int) -> void:
+	main.set_reduce_fx(false)
+	var life = main.kyoto_life
+	if life == null or k >= life.walker_count():
+		return
+	var wp: Vector3 = life.walker_position(k)
+	var d: Vector2 = life.w_dir[k]
+	var side := Vector2(-d.y, d.x)
+	# the lane side with more room
+	var cam := Vector2(wp.x, wp.z) + side * 3.0 - d * 4.5
+	var cell := Vector2i(int(floor(cam.y / 2.0 + 0.5)), int(floor(cam.x / 2.0 + 0.5)))
+	if cell.x < 0 or cell.y < 0 or cell.x >= main.maze.rows or cell.y >= main.maze.cols or main.maze.grid[cell.x][cell.y] != 0:
+		cam = Vector2(wp.x, wp.z) - side * 3.0 - d * 4.5
+	var yaw := atan2(-(wp.x - cam.x), -(wp.z - cam.y))
+	_pose(cam.x, cam.y, yaw, 0.02)
 
 
 func _fold_center(on: bool, p: Vector3 = Vector3.ZERO) -> void:
@@ -102,6 +124,20 @@ func _plan() -> void:
 	_steps.append({"wait": 20, "do": func(): _shot("k14_sannenzaka_band.png")})
 	_steps.append({"wait": 2, "do": func(): _pose(8.0, 20.0, E, 0.04)})
 	_steps.append({"wait": 20, "do": func(): _shot("k15_start_fern.png")})
+	# cherry trees and passers-by (abnahme/kyoto-bluete)
+	_steps.append({"wait": 2, "do": func(): _pose(46.0, 22.0, S, 0.1)})
+	_steps.append({"wait": 20, "do": func(): _shot("k16_bluete_hanamikoji.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(30.0, 78.0, W, 0.12)})
+	_steps.append({"wait": 20, "do": func(): _shot("k16_bluete_torii.png")})
+	_steps.append({"wait": 2, "do": func(): _pose(60.0, 20.5, E, 0.12)})
+	_steps.append({"wait": 20, "do": func(): _shot("k16_bluete_shijo.png")})
+	for k in [0, 2, 5, 9, 13]:
+		_steps.append({"wait": 2, "do": func(): _look_at_walker(k)})
+		_steps.append({"wait": 20, "do": func(): _shot("k17_passanten_%d.png" % k)})
+	_steps.append({"wait": 2, "do": func():
+		main.set_reduce_fx(true)
+		_pose(46.0, 22.0, S, 0.1)})
+	_steps.append({"wait": 20, "do": func(): _shot("k18_reduziert_bluete.png")})
 	_steps.append({"wait": 2, "do": func(): quit()})
 
 

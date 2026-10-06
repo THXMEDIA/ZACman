@@ -17,6 +17,7 @@ uniform vec3 ai4 : source_color = vec3(0.812, 0.878, 0.933);
 uniform vec3 paper : source_color = vec3(0.953, 0.933, 0.886);
 uniform vec3 sumi : source_color = vec3(0.110, 0.102, 0.118);
 uniform vec3 beni : source_color = vec3(0.784, 0.220, 0.294);
+uniform vec3 blossom : source_color = vec3(0.949, 0.839, 0.824);
 
 uniform float fold_near = 24.0;
 uniform float fold_far = 46.0;
@@ -28,11 +29,13 @@ uniform float use_fold_center = 0.0;
 
 varying flat float v_kind;
 varying flat vec3 v_dim; // width, height, variation
+varying flat float v_flip; // COLOR.g > 0.5: mirror a passer-by (walks to the left)
 varying float v_fold;
 
 void vertex() {
 	float kind = floor(INSTANCE_CUSTOM.r * 255.0 + 0.5);
 	v_kind = kind;
+	v_flip = COLOR.g > 0.5 ? 1.0 : 0.0;
 	v_dim = vec3(INSTANCE_CUSTOM.g * 100.0, INSTANCE_CUSTOM.b * 100.0, INSTANCE_CUSTOM.a);
 	vec3 o = MODEL_MATRIX[3].xyz;
 	vec3 cp = use_fold_center > 0.5 ? fold_center : CAMERA_POSITION_WORLD;
@@ -489,12 +492,146 @@ vec4 figure(vec2 p, float w, float h, float s) {
 	return c;
 }
 
+// Cherry tree (sakura): ink trunk with a fork, a canopy of printed blossom
+// clouds with ink outlines, a shaded underside in pale blue and a few
+// vermilion flowers. `s` varies the cloud layout, the lean and the mirror.
+vec4 sakura(vec2 p, float w, float h, float s, float px) {
+	vec4 c = vec4(0.0);
+	float m = s > 0.5 ? 1.0 : -1.0;
+	float lean = 0.28 * m * sin(p.y / h * 3.0 + s * 6.0);
+	float tw = mix(0.2, 0.09, clamp(p.y / (h * 0.62), 0.0, 1.0));
+	float trunk = step(abs(p.x - lean), tw) * step(p.y, h * 0.62);
+	float fy = h * 0.34;
+	float bx = lean + m * (p.y - fy) * 0.55;
+	float branch = step(abs(p.x - bx), 0.075 + 0.02 * (1.0 - (p.y - fy) / (h * 0.3))) * step(fy, p.y) * step(p.y, fy + h * 0.3);
+	float bx2 = lean - m * (p.y - fy * 1.2) * 0.42;
+	float branch2 = step(abs(p.x - bx2), 0.065) * step(fy * 1.2, p.y) * step(p.y, fy * 1.2 + h * 0.24);
+	float wood = max(trunk, max(branch, branch2));
+	float wood_o = max(step(abs(p.x - lean), tw + 0.06) * step(p.y, h * 0.62 + 0.02), max(step(abs(p.x - bx), 0.135) * step(fy - 0.04, p.y) * step(p.y, fy + h * 0.3 + 0.04), step(abs(p.x - bx2), 0.125) * step(fy * 1.2 - 0.04, p.y) * step(p.y, fy * 1.2 + h * 0.24 + 0.04)));
+	c = lay(c, sumi, wood_o);
+	c = lay(c, ai1, wood);
+	// bark ticks
+	c = lay(c, ai2, trunk * step(0.84, fract(p.y / 0.3 + p.x * 2.0)) * step(abs(p.x - lean), tw - 0.03));
+	// a small ground shadow printed in pale blue
+	c = lay(c, ai3, ell(p, vec2(lean, 0.02), vec2(0.7, 0.1)) * (1.0 - trunk));
+	// canopy: six overlapping clouds
+	float cano = 0.0;
+	float shade = 0.0;
+	for (int i = 0; i < 6; i++) {
+		float fi = float(i);
+		float r1 = h21(vec2(fi + 1.0, s * 13.0 + 0.3));
+		float r2 = h21(vec2(fi + 7.0, s * 7.0 + 1.1));
+		float r3 = h21(vec2(fi + 3.0, s * 19.0 + 2.7));
+		vec2 ctr = vec2((r1 - 0.5) * w * 0.62, h * (0.64 + 0.2 * r2 - 0.04 * abs(r1 - 0.5) * 6.0));
+		vec2 r = vec2(w * (0.27 + 0.09 * r3), h * (0.12 + 0.045 * r2));
+		cano = max(cano, ell(p, ctr, r + 0.08));
+		shade = max(shade, ell(p, ctr - vec2(0.0, r.y * 0.6), r * vec2(0.8, 0.4)) * step(p.y, ctr.y - r.y * 0.3));
+	}
+	float fill = 0.0;
+	for (int i = 0; i < 6; i++) {
+		float fi = float(i);
+		float r1 = h21(vec2(fi + 1.0, s * 13.0 + 0.3));
+		float r2 = h21(vec2(fi + 7.0, s * 7.0 + 1.1));
+		float r3 = h21(vec2(fi + 3.0, s * 19.0 + 2.7));
+		vec2 ctr = vec2((r1 - 0.5) * w * 0.62, h * (0.64 + 0.2 * r2 - 0.04 * abs(r1 - 0.5) * 6.0));
+		vec2 r = vec2(w * (0.27 + 0.09 * r3), h * (0.12 + 0.045 * r2));
+		fill = max(fill, ell(p, ctr, r));
+	}
+	c = lay(c, sumi, cano);
+	vec3 bl = mix(blossom, paper, 0.35 + 0.25 * vn(p * 2.2 + s * 9.0));
+	c = lay(c, bl, fill);
+	c = lay(c, mix(bl, ai4, 0.55), fill * shade);
+	// blossom clusters: little paper rings and vermilion flowers
+	vec2 q = p * 3.4;
+	vec2 cell = floor(q);
+	vec2 f = fract(q) - 0.5;
+	float rnd = h21(cell + s * 31.0);
+	float fl = step(length(f + (h21(cell + 5.1) - 0.5) * 0.3), 0.15) * step(0.62, rnd);
+	c = lay(c, beni, fl * fill * step(0.86, h21(cell + 11.0)));
+	c = lay(c, paper, fl * fill * (1.0 - step(0.86, h21(cell + 11.0))));
+	return c;
+}
+
+// Passer-by (always standing, always facing the camera, flipped in the
+// direction of travel). s picks the kind: yukata, wagasa, tourist.
+vec4 walker(vec2 p, float w, float h, float s, float px) {
+	vec4 c = vec4(0.0);
+	float gait = sin(TIME * 5.0 + s * 40.0);
+	if (s < 0.34) {
+		// yukata: tapering robe with vertical stripes, vermilion obi, hair bun
+		float t = clamp(p.y / 1.12, 0.0, 1.0);
+		float rw = mix(0.3, 0.2, t);
+		float robe = step(abs(p.x), rw) * step(0.1, p.y) * step(p.y, 1.12);
+		c = lay(c, sumi, step(abs(p.x), rw + 0.05) * step(0.07, p.y) * step(p.y, 1.17));
+		vec3 cloth = mix(ai2, ai3, step(0.5, fract(p.x / 0.17 + 0.5)));
+		c = lay(c, cloth, robe);
+		c = lay(c, paper, robe * step(0.8, vn(p * 11.0 + s * 20.0)) * 0.9);
+		c = lay(c, sumi, rect(p, vec2(-rw - 0.05, 0.74), vec2(rw + 0.05, 0.95)));
+		c = lay(c, beni, rect(p, vec2(-rw, 0.77), vec2(rw, 0.92)));
+		c = lay(c, beni, rect(p, vec2(-rw - 0.14, 0.62), vec2(-rw + 0.02, 0.88))); // obi bow
+		// geta
+		c = lay(c, sumi, rect(p, vec2(-0.2, 0.0), vec2(-0.05, 0.1)) + rect(p, vec2(0.05, 0.0), vec2(0.2, 0.1)));
+		// arms and head
+		c = lay(c, sumi, rect(p, vec2(rw - 0.02, 0.62), vec2(rw + 0.1, 1.02)));
+		c = lay(c, cloth, rect(p, vec2(rw, 0.65), vec2(rw + 0.07, 1.0)));
+		c = lay(c, sumi, ell(p, vec2(0.0, 1.32), vec2(0.15, 0.17)));
+		c = lay(c, paper, ell(p, vec2(0.01, 1.31), vec2(0.115, 0.135)));
+		c = lay(c, sumi, ell(p, vec2(-0.03, 1.38), vec2(0.15, 0.13)) * step(1.34, p.y));
+		c = lay(c, sumi, ell(p, vec2(-0.06, 1.55), vec2(0.1, 0.1)));
+		c = lay(c, beni, ell(p, vec2(-0.1, 1.5), vec2(0.035, 0.035)));
+	} else if (s < 0.67) {
+		// wagasa: a person under a vermilion paper umbrella
+		float t = clamp(p.y / 1.15, 0.0, 1.0);
+		float rw = mix(0.27, 0.19, t);
+		float robe = step(abs(p.x), rw) * step(0.08, p.y) * step(p.y, 1.15);
+		c = lay(c, sumi, step(abs(p.x), rw + 0.05) * step(0.05, p.y) * step(p.y, 1.2));
+		c = lay(c, ai1, robe);
+		c = lay(c, ai3, robe * step(0.9, fract(p.y / 0.19)));
+		c = lay(c, paper, rect(p, vec2(-rw, 0.72), vec2(rw, 0.8)));
+		c = lay(c, sumi, rect(p, vec2(-0.18, 0.0), vec2(-0.03, 0.1)) + rect(p, vec2(0.03, 0.0), vec2(0.18, 0.1)));
+		c = lay(c, sumi, ell(p, vec2(0.0, 1.3), vec2(0.15, 0.17)));
+		c = lay(c, paper, ell(p, vec2(0.0, 1.29), vec2(0.115, 0.135)));
+		c = lay(c, sumi, ell(p, vec2(0.0, 1.37), vec2(0.13, 0.09)) * step(1.33, p.y));
+		// shaft and dome
+		c = lay(c, sumi, crect(p, 0.025, 0.95, 1.78));
+		float dome_o = step(1.5, p.y) * step(p.y, 1.5 + 0.34 * sqrt(max(0.0, 1.0 - pow(p.x / 0.7, 2.0)))) * step(abs(p.x), 0.72);
+		c = lay(c, sumi, dome_o);
+		float dome_i = step(1.54, p.y) * step(p.y, 1.5 + 0.3 * sqrt(max(0.0, 1.0 - pow(p.x / 0.64, 2.0)))) * step(abs(p.x), 0.64);
+		vec3 ribs = mix(beni, paper, step(0.8, fract(atan(p.x, p.y - 1.5) * 3.2)));
+		c = lay(c, ribs, dome_i);
+	} else {
+		// tourist with a backpack, cap and paper-white shirt
+		float legl = 0.05 * gait;
+		c = lay(c, sumi, rect(p, vec2(-0.17 + legl, 0.0), vec2(-0.02 + legl, 0.74)) + rect(p, vec2(0.02 - legl, 0.0), vec2(0.17 - legl, 0.74)));
+		c = lay(c, ai1, rect(p, vec2(-0.15 + legl, 0.04), vec2(-0.04 + legl, 0.72)) + rect(p, vec2(0.04 - legl, 0.04), vec2(0.15 - legl, 0.72)));
+		// backpack on the back (the side opposite to the walking direction)
+		c = key_rect(c, p, vec2(-0.42, 0.72), vec2(-0.14, 1.28), ai2);
+		c = lay(c, ai3, rect(p, vec2(-0.38, 0.8), vec2(-0.2, 0.95)));
+		c = lay(c, beni, rect(p, vec2(-0.4, 1.2), vec2(-0.16, 1.25)));
+		// shirt
+		c = key_rect(c, p, vec2(-0.2, 0.7), vec2(0.2, 1.2), paper);
+		c = lay(c, ai3, rect(p, vec2(-0.2, 0.9), vec2(0.2, 0.96)));
+		c = lay(c, sumi, rect(p, vec2(0.17, 0.72), vec2(0.27, 1.12)));
+		c = lay(c, paper, rect(p, vec2(0.18, 0.74), vec2(0.25, 1.1)));
+		// head, cap
+		c = lay(c, sumi, ell(p, vec2(0.02, 1.38), vec2(0.15, 0.17)));
+		c = lay(c, paper, ell(p, vec2(0.03, 1.37), vec2(0.115, 0.135)));
+		c = lay(c, sumi, ell(p, vec2(0.0, 1.47), vec2(0.17, 0.12)) * step(1.43, p.y));
+		c = lay(c, ai2, ell(p, vec2(0.0, 1.47), vec2(0.14, 0.09)) * step(1.45, p.y));
+		c = lay(c, sumi, rect(p, vec2(0.04, 1.42), vec2(0.3, 1.47)));
+	}
+	return c;
+}
+
 void fragment() {
 	float kind = v_kind > 99.5 ? v_kind - 100.0 : v_kind;
 	float w = v_dim.x;
 	float h = v_dim.y;
 	float s = v_dim.z;
 	vec2 p = vec2((UV.x - 0.5) * w, (1.0 - UV.y) * h);
+	if (kind > 21.5) {
+		p.x = mix(p.x, -p.x, v_flip);
+	}
 	// pixel footprint in metres, once, in uniform control flow
 	vec2 pw2 = fwidth(p);
 	float px = max(pw2.x, pw2.y);
@@ -514,7 +651,9 @@ void fragment() {
 	else if (kind < 17.5) c = tower(p, w, h);
 	else if (kind < 18.5) c = mountains(p, w, h, s);
 	else if (kind < 19.5) c = mist(p, w, h);
-	else c = figure(p, w, h, s);
+	else if (kind < 20.5) c = figure(p, w, h, s);
+	else if (kind < 21.5) c = sakura(p, w, h, s, px);
+	else c = walker(p, w, h, s, px);
 	if (c.a < 0.5) {
 		discard;
 	}

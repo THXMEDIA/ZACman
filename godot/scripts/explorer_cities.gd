@@ -14,7 +14,8 @@ extends RefCounted
 ##   metro_script  the subway sign node (setup(pos) / update(delta, now))
 ##   traffic       "manhattan" = Manhattan's word traffic and pedestrians,
 ##                 "tokyo" = rain, wire cars, passers-by and the scramble
-##                 crossing (tokyo_life.gd), "" = none
+##                 crossing (tokyo_life.gd), "kyoto" = slow passers-by
+##                   (kyoto_life.gd), "" = none
 ##   exit_text     level-clear banner subtitle when the player takes the exit
 ##   exit_title    banner title (explorer cities have no "level clear")
 ##   metro_radius  how close to the exit node triggers it (m)
@@ -48,7 +49,7 @@ static func get_city(id: String) -> Dictionary:
 				"id": "kyoto", "theme": "kyoto", "label": "KYOTO",
 				"maze_script": "res://scripts/kyoto_maze.gd", "seed": 1765,
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/kyoto_exit.gd",
-				"traffic": "", "exit_text": "Umblättern – los zum Speedrun!",
+				"traffic": "kyoto", "exit_text": "Umblättern – los zum Speedrun!",
 				"exit_title": "NÄCHSTE SEITE: SPEEDRUN", "metro_radius": 1.2,
 				"siren": false,
 				"intro_hint": "Die Stadt klappt beim Laufen auf. Ruhiger: Esc → Effekte reduzieren",
