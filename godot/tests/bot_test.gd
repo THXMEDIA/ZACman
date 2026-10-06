@@ -53,6 +53,7 @@ func _ready() -> void:
 	await _run_chat_vote_checks()
 	await _run_review_fix_checks()
 	await _run_movement_checks()
+	await _run_split_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -2121,6 +2122,28 @@ func _run_review_fix_checks() -> void:
 
 
 ## Bewegungs-Paket (ZAP-5): Kehrtwende und Dash.
+func _run_split_checks() -> void:
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("splits: none at level start", main.level_splits.is_empty() and not main.hud.is_split_visible())
+	main._check_splits(100, 10)
+	_check("splits: nothing below 25 %", main.level_splits.is_empty())
+	main._check_splits(100, 26)
+	_check("splits: 25 % recorded and shown", main.level_splits.size() == 1 and main.hud.is_split_visible())
+	main._check_splits(100, 30)
+	_check("splits: a mark is recorded only once", main.level_splits.size() == 1)
+	main._check_splits(100, 80)
+	_check("splits: later call records the next mark only", main.level_splits.size() == 2)
+	main._check_splits(100, 80)
+	main._check_splits(100, 99)
+	_check("splits: at most three marks", main.level_splits.size() == 3)
+	main._check_splits(100, 100)
+	_check("splits: no fourth mark", main.level_splits.size() == 3)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("splits: reset on a new level start", main.level_splits.is_empty() and not main.hud.is_split_visible())
+
+
 func _run_movement_checks() -> void:
 	main.begin_game("klassik-1")
 	await get_tree().process_frame

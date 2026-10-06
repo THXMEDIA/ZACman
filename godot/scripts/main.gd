@@ -149,6 +149,9 @@ var fruit_spawned := false
 var now := 0.0
 var real_now := 0.0
 var level_start_real := 0.0
+## Zwischenzeiten (ZAP-8): split times at Speedrun.SPLIT_MARKS of the pellets.
+var level_splits: Array = []
+var _best_splits: Array = []
 ## true once the Twitch chat had a hand in the current level (a !power/!fruit
 ## took effect, or the chat shifted the rabbit's good/bad ratio); the level's
 ## time then goes to the "chat" board, never to woche/chaos (Levels.BOARDS).
@@ -563,6 +566,9 @@ func start_level(level: Dictionary) -> void:
 	hud.set_lives(lives)
 	_refresh_board_hud()
 	level_start_real = real_now
+	level_splits = []
+	_best_splits = []
+	hud.hide_split()
 
 
 ## `forced_level_id` ("" = random) lets tests and a future level picker start
@@ -1437,7 +1443,7 @@ func level_complete_sequence() -> void:
 	var week := board_week_label()
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
-	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week)
+	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week, level_splits if level_splits.size() == Speedrun.SPLIT_MARKS.size() else [])
 	var player_name: String = versus.player_name() if versus != null and versus.active else Leaderboard.DEFAULT_PLAYER_NAME
 	Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
 	played_ids.append(cleared_id)
@@ -1685,6 +1691,25 @@ func _add_score(points: int) -> void:
 	score += points
 
 
+## Records a split once per mark and shows it against the best run's split.
+## Solo only (the versus clock is run by versus); never in Explorer.
+func _check_splits(total: int, eaten: int) -> void:
+	if playing_explorer or total <= 0 or (versus != null and versus.active):
+		return
+	var idx := level_splits.size()
+	if idx >= Speedrun.SPLIT_MARKS.size():
+		return
+	if float(eaten) / float(total) < Speedrun.SPLIT_MARKS[idx]:
+		return
+	var t := real_now - level_start_real
+	if idx == 0:
+		_best_splits = Speedrun.best_splits_for(level_id, board_id(), run_mode())
+	level_splits.append(t)
+	var has_best := _best_splits.size() == Speedrun.SPLIT_MARKS.size()
+	var d: float = t - float(_best_splits[idx]) if has_best else 0.0
+	hud.show_split(int(round(Speedrun.SPLIT_MARKS[idx] * 100.0)), t, d, has_best)
+
+
 func _check_pickups() -> void:
 	var result: Dictionary = maze_view.consume_at(player.global_position, now)
 
@@ -1719,6 +1744,7 @@ func _check_pickups() -> void:
 
 	var total: int = maze_view.total_pickups()
 	var eaten: int = total - maze_view.remaining_pickups()
+	_check_splits(total, eaten)
 	if not fruit_spawned and total > 0 and eaten >= int(total * 0.4):
 		fruit_spawned = true
 		maze_view.spawn_fruit(now)

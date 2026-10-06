@@ -379,6 +379,52 @@ func _initialize() -> void:
 		failures += 1
 		print("FAIL a newer-version save must not be overwritten")
 
+	# --- ZAP-8: split times ------------------------------------------
+	var san = speedrun_script.sanitize_splits
+	var split_cases := [
+		[[10.0, 20.0, 30.0], 40.0, true],
+		[[10.0, 20.0], 40.0, false],
+		[[10.0, 10.0, 30.0], 40.0, true],
+		[[30.0, 20.0, 10.0], 40.0, false],
+		[[10.0, 20.0, 50.0], 40.0, false],
+		[[0.0, 20.0, 30.0], 40.0, false],
+		[[10.0, 20.0, "x"], 40.0, false],
+		[[], 40.0, false],
+	]
+	for c in split_cases:
+		checks += 1
+		var got_ok: bool = san.call(c[0], c[1]).size() == 3
+		if got_ok != c[2]:
+			failures += 1
+			print("FAIL sanitize_splits(%s, %s) accepted=%s, expected %s" % [c[0], c[1], got_ok, c[2]])
+	DirAccess.remove_absolute(SAVE_PATH) # the previous test left a future-version file
+	var sp = speedrun_script.new()
+	sp.record_level_time("klassik-2", 60.0, "woche", "solo", "", [14.0, 30.0, 47.0])
+	checks += 1
+	if sp.best_splits_for("klassik-2", "woche", "solo") != [14.0, 30.0, 47.0]:
+		failures += 1
+		print("FAIL splits of a new best should be stored")
+	sp.record_level_time("klassik-2", 70.0, "woche", "solo", "", [20.0, 40.0, 60.0])
+	checks += 1
+	if sp.best_splits_for("klassik-2", "woche", "solo") != [14.0, 30.0, 47.0]:
+		failures += 1
+		print("FAIL a slower run must not replace the best splits")
+	sp.record_level_time("klassik-2", 55.0, "woche", "solo", "", [])
+	checks += 1
+	if not sp.best_splits_for("klassik-2", "woche", "solo").is_empty():
+		failures += 1
+		print("FAIL a new best without splits must not keep stale splits")
+	sp.record_level_time("klassik-2", 50.0, "woche", "solo", "", [12.0, 25.0, 40.0])
+	var sp2 = speedrun_script.new()
+	checks += 1
+	if sp2.best_splits_for("klassik-2", "woche", "solo") != [12.0, 25.0, 40.0]:
+		failures += 1
+		print("FAIL splits should survive a save/load round trip")
+	checks += 1
+	if sp2.best_splits_for("klassik-3", "woche", "solo") != []:
+		failures += 1
+		print("FAIL a board without a run has no splits")
+
 	# --- QA-W6: real save untouched; test folder cleaned up --------------
 	checks += 1
 	if not SaveIsolation.end(real_saves):

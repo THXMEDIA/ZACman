@@ -23,6 +23,9 @@ const SAVE_FILE := "zapmaniac_speedrun.json"
 const SAVE_VERSION := 4
 ## Suffix of archived boards from before the Bewegungs-Paket (rules version 1).
 const RULES1_SUFFIX := "|regel1"
+## Zwischenzeiten: at these shares of the pellets eaten the HUD compares the
+## current time with the best run's (docs/design/bewegungspaket.md, ZAP-8).
+const SPLIT_MARKS := [0.25, 0.5, 0.75]
 
 const LevelsScript := preload("res://scripts/levels.gd")
 const SavePathsScript := preload("res://scripts/save_paths.gd")
@@ -93,7 +96,7 @@ func best_entry(level_id: String, board: String = LevelsScript.BOARD_WEEK, mode:
 ## Only a solo run on the weekly board (Levels.BADGE_BOARDS) can earn the
 ## badge — with or without a rabbit condition. An invalid key (unknown
 ## level, board or mode; Code-W8) records nothing.
-func record_level_time(level_id: String, elapsed_seconds: float, board: String = LevelsScript.BOARD_WEEK, mode: String = "solo", week: String = "") -> Dictionary:
+func record_level_time(level_id: String, elapsed_seconds: float, board: String = LevelsScript.BOARD_WEEK, mode: String = "solo", week: String = "", splits: Array = []) -> Dictionary:
 	_load()
 	var key := LevelsScript.board_key(level_id, board, mode)
 	var target := target_for(level_id)
@@ -108,6 +111,9 @@ func record_level_time(level_id: String, elapsed_seconds: float, board: String =
 	var is_new_best := previous_best < 0.0 or elapsed_seconds < previous_best
 	if is_new_best:
 		best_times[key] = {"time": elapsed_seconds, "week": week if board == LevelsScript.BOARD_WEEK else ""}
+		var clean := sanitize_splits(splits, elapsed_seconds)
+		if not clean.is_empty():
+			best_times[key]["splits"] = clean
 
 	var beat_target := elapsed_seconds <= target
 	var newly_unlocked := false
@@ -125,6 +131,32 @@ func record_level_time(level_id: String, elapsed_seconds: float, board: String =
 		"target": target,
 		"newly_unlocked_bonus": newly_unlocked,
 	}
+
+
+## The split times (seconds at 25 / 50 / 75 % of the pellets) of the best run
+## on this board, [] if there are none (older save, or a run without splits).
+func best_splits_for(level_id: String, board: String = LevelsScript.BOARD_WEEK, mode: String = "solo") -> Array:
+	_load()
+	var key := LevelsScript.board_key(level_id, board, mode)
+	if not best_times.has(key):
+		return []
+	var e = best_times[key]
+	return e.get("splits", []).duplicate() if typeof(e) == TYPE_DICTIONARY else []
+
+
+## Exactly SPLIT_MARKS.size() numbers, each > 0, ascending and not after
+## `total` — otherwise [] (a split list is all or nothing).
+static func sanitize_splits(raw, total: float) -> Array:
+	if typeof(raw) != TYPE_ARRAY or raw.size() != SPLIT_MARKS.size():
+		return []
+	var out: Array = []
+	var last := 0.0
+	for v in raw:
+		if (typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT) or not (float(v) > 0.0) or float(v) < last or float(v) > total + 0.001:
+			return []
+		out.append(float(v))
+		last = float(v)
+	return out
 
 
 func is_bonus_unlocked() -> bool:
@@ -253,7 +285,11 @@ static func sanitize_entry(v) -> Dictionary:
 	if typeof(v) != TYPE_DICTIONARY or not is_valid_time(v.get("time")):
 		return {}
 	var week = v.get("week", "")
-	return {"time": float(v.time), "week": week if typeof(week) == TYPE_STRING else ""}
+	var e := {"time": float(v.time), "week": week if typeof(week) == TYPE_STRING else ""}
+	var sp := sanitize_splits(v.get("splits"), float(v.time))
+	if not sp.is_empty():
+		e["splits"] = sp
+	return e
 
 
 ## Turns the "best_times" of a save of `version` into

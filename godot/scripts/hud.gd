@@ -163,6 +163,10 @@ var start_intro_skip_label: Label
 ## UX-W7: after the intro, until the first step.
 var clock_hint: Control
 var clock_hint_label: Label
+var split_box: Control
+var split_label: Label
+var _split_left := 0.0
+const SPLIT_SHOW_S := 3.5
 const CLOCK_HINT_TEXT := "Die Uhr startet mit deinem ersten Schritt"
 ## Explorer exits drawn on the minimap (cells), see set_minimap_exits.
 var minimap_exit_cells: Array = []
@@ -233,6 +237,7 @@ func _ready() -> void:
 	_build_condition_card()
 	_build_start_intro()
 	_build_clock_hint()
+	_build_split_box()
 	_build_hint_box()
 	versus_ui = load("res://scripts/versus_ui.gd").new()
 	add_child(versus_ui)
@@ -1355,6 +1360,58 @@ func _build_clock_hint() -> void:
 	panel.add_child(clock_hint_label)
 
 
+## Split box: small panel at the top centre, shown for SPLIT_SHOW_S after a
+## 25/50/75 % mark. Static text, no animation (reduce-effects safe).
+func _build_split_box() -> void:
+	split_box = Control.new()
+	split_box.name = "SplitBox"
+	split_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	split_box.offset_top = 56
+	split_box.offset_bottom = 90
+	split_box.offset_left = -170
+	split_box.offset_right = 170
+	split_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split_box.visible = false
+	add_child(split_box)
+	var panel := PanelContainer.new()
+	var sb := _panel_style()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.7)
+	sb.border_color = Color(RABBIT_WHITE, 0.3)
+	sb.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	split_box.add_child(panel)
+	split_label = Label.new()
+	split_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	split_label.add_theme_font_size_override("font_size", 17)
+	split_label.add_theme_color_override("font_color", RABBIT_WHITE)
+	panel.add_child(split_label)
+
+
+## pct: 25/50/75; time: seconds; delta: seconds vs best (negative = faster),
+## has_best false = no comparison available.
+func show_split(pct: int, time: float, delta: float, has_best: bool) -> void:
+	var t := Speedrun.format_time(time)
+	if not has_best:
+		split_label.text = "%d %%  %s" % [pct, t]
+		split_label.add_theme_color_override("font_color", RABBIT_WHITE)
+	else:
+		var sign_s := "−" if delta < 0.0 else "+"
+		split_label.text = "%d %%  %s  %s%.1f s" % [pct, t, sign_s, absf(delta)]
+		split_label.add_theme_color_override("font_color", COND_GOOD if delta < 0.0 else DANGER)
+	_split_left = SPLIT_SHOW_S
+	split_box.visible = true
+
+
+func hide_split() -> void:
+	_split_left = 0.0
+	split_box.visible = false
+
+
+func is_split_visible() -> bool:
+	return split_box.visible
+
+
 func show_clock_hint(on: bool) -> void:
 	if on:
 		clock_hint_label.text = CLOCK_HINT_TEXT
@@ -1439,6 +1496,10 @@ func _process(delta: float) -> void:
 		if not paused_now:
 			_hint_left -= delta
 		hint_box.visible = _hint_left > 0.0 and not paused_now
+	if _split_left > 0.0:
+		if not paused_now:
+			_split_left -= delta
+		split_box.visible = _split_left > 0.0
 	if not paused_now:
 		_mm_t += delta
 
