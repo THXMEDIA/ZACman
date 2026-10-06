@@ -270,6 +270,8 @@ var metro_stations: Array = [] # Array[MetroStation] — Manhattan only
 var tokyo_life: Node3D = null
 ## Amsterdam: card passers-by and bicycles (amsterdam_life.gd); harmless soft push.
 var amsterdam_life: Node3D = null
+## Kyoto: the slow passers-by (kyoto_life.gd); null in every other level.
+var kyoto_life: Node3D = null
 var obstacle_root: Node3D
 var world_env: WorldEnvironment
 
@@ -651,6 +653,8 @@ func start_explorer_level(city_id: String) -> void:
 		_spawn_tokyo_life(int(city.seed))
 	elif city.traffic == "amsterdam":
 		_spawn_amsterdam_life(int(city.seed))
+	elif city.traffic == "kyoto":
+		_spawn_kyoto_life(int(city.seed))
 	_spawn_metro_stations(metro_cells, city.metro_script)
 	_apply_scenery_comfort()
 	var sr = maze_view.scenery_root
@@ -739,6 +743,8 @@ func _apply_scenery_comfort() -> void:
 	for m in metro_stations:
 		if is_instance_valid(m) and m.has_method("set_reduce_fx"):
 			m.set_reduce_fx(reduce_fx)
+	if kyoto_life != null:
+		kyoto_life.set_comfort(reduce_fx)
 
 
 func _clear_explorer_obstacles() -> void:
@@ -757,6 +763,10 @@ func _clear_explorer_obstacles() -> void:
 	if amsterdam_life != null:
 		amsterdam_life.queue_free()
 		amsterdam_life = null
+	if kyoto_life != null:
+		kyoto_life.queue_free()
+		kyoto_life = null
+
 
 
 ## Amsterdam: card passers-by and bicycles as one node of two MultiMeshes
@@ -769,6 +779,7 @@ func _spawn_amsterdam_life(level_seed: int) -> void:
 	amsterdam_life.set_comfort(reduce_fx)
 
 
+
 ## Tokyo (M2): rain, cars, passers-by and the scramble crossing as one node
 ## of six MultiMeshes (tokyo_life.gd), seeded with the city's level seed.
 func _spawn_tokyo_life(level_seed: int) -> void:
@@ -778,6 +789,15 @@ func _spawn_tokyo_life(level_seed: int) -> void:
 	tokyo_life.setup(maze_view, level_seed)
 	tokyo_life.set_comfort(reduce_rain, reduce_fx)
 	tokyo_life.walk_started.connect(_on_tokyo_walk_started)
+
+
+## Kyoto: slow paper passers-by in the lanes (one MultiMesh, kyoto_life.gd).
+func _spawn_kyoto_life(level_seed: int) -> void:
+	kyoto_life = Node3D.new()
+	kyoto_life.set_script(load("res://scripts/kyoto_life.gd"))
+	obstacle_root.add_child(kyoto_life)
+	kyoto_life.setup(maze_view, level_seed)
+	kyoto_life.set_comfort(reduce_fx)
 
 
 ## The scramble's "All Walk" begins: the synthetic crossing tone.
@@ -941,6 +961,10 @@ func _check_explorer_obstacles() -> void:
 		var apv: Vector2 = amsterdam_life.push_for(player.global_position)
 		player.global_position.x += apv.x
 		player.global_position.z += apv.y
+	if kyoto_life != null:
+		# Kyoto: the same soft push, a hair wider than the figure's card body.
+		for i in kyoto_life.walker_count():
+			_push_player_away_from(kyoto_life.walker_position(i), kyoto_life.WALKER_RADIUS)
 
 
 ## Proximity check: stepping close enough to a metro station's sign is the
@@ -1570,6 +1594,8 @@ func _process(delta: float) -> void:
 			arles_sr.update_life(delta, player.global_position)
 		if amsterdam_life != null:
 			amsterdam_life.update(delta)
+		if kyoto_life != null:
+			kyoto_life.update(delta, player.global_position, player.camera.global_position)
 
 	# Pickups are checked before the obstacle push so a taxi/pedestrian that
 	# happens to be passing over the player's exact cell this frame can

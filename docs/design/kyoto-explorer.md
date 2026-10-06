@@ -46,13 +46,20 @@ Aufgeklappte Seitentür mit grünem Licht vor der Kiyomizu-Bühne, grüne Lichtf
 
 - Statische Draw Calls: Wand-MultiMesh, Boden, Karten-MultiMesh, Himmel (≤ 6, Test). Keine Lichter, kein Glow, kein SSR.
 - Der Falt-Abstand wird im Vertex-Shader pro Karte aus `MODEL_MATRIX` und Kameraposition berechnet; die MultiMesh hat eine feste große AABB.
-- Kein Verkehr, keine Passanten mit Bewegung; Figuren stehen in Hauseingängen (keine Kollision nötig).
+- Kein Verkehr. Figuren stehen in Hauseingängen (keine Kollision nötig). Hinzu kommen seit der Hardware-Abnahme (06.10.2026) Kirschblütenbäume und langsame Passanten, siehe unten.
+
+### Kirschblüte und Passanten (Hardware-Abnahme 06.10.2026)
+
+- **Kirschblütenbäume** (`K_SAKURA`, `kyoto_scenery.gd`: `tree_cards`): Karten im selben Druck (Tuschestamm mit Gabel, Blütenwolken in einem blassen Zinnober-auf-Papier-Ton `KyotoStyle.BLOSSOM`, Schattenseite in Blau, einzelne Zinnoberblüten). Entlang der Fassaden vor den Häusern (Shijo, Hanamikoji, Seitengassen), hinter Tempelmauern (Torii-Gasse, Pagodenblock) höher, mit Krone über der Mauer. Größe, Spiegelung, Neigung (nur hinter Mauern) und Lage kommen aus dem Level-Seed (eigener Zufallsstrom `seed ^ TREE_SEED_XOR`, die Häuser bleiben wie sie waren). Sie falten wie die Häuser, haben keine Kollision, decken keine Hauseingangsfigur ab.
+- **Blütenblätter** (`kyoto_petal.gdshader`): bis zu 240 Blätter in einem MultiMesh, Animation nur im Vertex-Shader (0,1 Zyklen/s, 0,2 Drehungen/s, kein Flackern), Ein- und Ausblenden über die Größe. „Effekte reduzieren“ blendet sie aus.
+- **Passanten** (`kyoto_life.gd`, Traffic `"kyoto"`): 19 Papierfiguren (Yukata, Wagasa-Schirm, Tourist mit Rucksack, keine Maiko) gehen mit 0,7–1,1 m/s Gassen hin und her oder einen Rundweg (Shijo Ost, Ninenzaka Süd, Seitengasse, Hanamikoji). Ein MultiMesh, Karten drehen sich (nur Gierwinkel) zur Kamera und spiegeln sich in Gehrichtung, keine Allokation pro Frame. Harmlos wie in Tokyo: kein Leben-Verlust, nur der sanfte Schubs (Radius 0,4 m); die Wege halten 1,4–2,5 m Abstand zu den Fassaden der 6 m breiten Gassen (Test misst die freie Gasse). Die Kamera wird nie berührt. „Effekte reduzieren“: die Passanten stehen still.
+- Draw Calls: Kyoto insgesamt 7 plus Ausgang (Wände, Boden, Karten, Himmel, Blütenblätter, Passanten, Kugeln).
 
 ## Tests
 
-- `godot/tests/test_kyoto.gd` (55 Checks, u. a. liegende Karten bleiben auf ihrem Block, Route über Hanamikoji, Kollisionshöhe der gebauten Boxen, Geländer, Intro, Half-Float-Grenzen): Raster, Erreichbarkeit, Spuren, Karten auf der Kollisionskante, Wahrzeichen, Determinismus, Budget, Komfort, Palette, Ausgang.
+- `godot/tests/test_kyoto.gd` (94 Checks, u. a. Bäume und Passanten (Determinismus, Lage, freie Gasse, Budget, keine Allokation), liegende Karten bleiben auf ihrem Block, Route über Hanamikoji, Kollisionshöhe der gebauten Boxen, Geländer, Intro, Half-Float-Grenzen): Raster, Erreichbarkeit, Spuren, Karten auf der Kollisionskante, Wahrzeichen, Determinismus, Budget, Komfort, Palette, Ausgang.
 - `godot/tests/bot_test.gd`: Start über den KYOTO-Button, Komfort-Schalter, Ausgang → Speedrun, Theme-Reset.
-- Screenshots: `tools/qa/qa_kyoto_shots.gd` (k1–k10).
+- Screenshots: `tools/qa/qa_kyoto_shots.gd` (k1–k18, k16–k18: Bäume, Passanten, reduziert).
 
 ## Rechte (publishing-manager, 04.10.2026 – keine Rechtsberatung)
 

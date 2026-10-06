@@ -10,6 +10,9 @@ extends RefCounted
 ##     the shrine gate, the pagoda (twice, behind the temple walls), the
 ##     Kiyomizu stage, the Kennin-ji gate, the Inari shrine
 ##   - a tunnel of torii in the torii lane, a few figures in doorways
+##   - cherry trees (K_SAKURA): printed cards along the facades, tall ones
+##     rising behind temple walls; a few petals fall from them (own
+##     MultiMesh, vertex-shader animation, hidden with reduced effects)
 ##   - backdrop that never folds: the Higashiyama hills, Kyoto Tower, mist bands
 ## Cards stand on the facade line (the collision edge) and fold back onto the
 ## block with distance. Variation comes from the level seed only.
@@ -20,6 +23,7 @@ const Style := preload("res://scripts/kyoto_style.gd")
 const CARD_SHADER := preload("res://shaders/kyoto_card.gdshader")
 const SKY_SHADER := preload("res://shaders/kyoto_sky.gdshader")
 const RootScript := preload("res://scripts/kyoto_popup_root.gd")
+const PETAL_SHADER := preload("res://shaders/kyoto_petal.gdshader")
 
 const CELL := 2.0
 const CARD_BASE_Y := 0.07 # on top of the printed block plan
@@ -36,6 +40,24 @@ const TORII_POST_HALF := 0.22
 const TORII_LANE_X0 := 1.0 # west end of the lane (col 1)
 const TORII_LANE_X1 := 43.0 # where it meets Hanamikoji (col 22)
 const TORII_LANE_HALF := 3.0
+
+## Cherry trees: spacing along a facade run per street (m), the share kept,
+## and the offset in front of the facade line (a hair in front of the houses).
+## Own random stream (seed ^ TREE_SEED_XOR): the houses do not change.
+const TREE_SEED_XOR := 0x5A4B
+const TREE_SPACING := {"shijo": 11.0, "hanamikoji": 9.5, "hanamikoji_nord": 9.5, "torii_gasse": 7.0}
+const TREE_SPACING_DEFAULT := 10.0
+const TREE_KEEP := 0.8
+const TREE_OUT := 0.08
+const TREE_BEHIND_WALL := 1.3 # temple trees stand this far inside the block
+const TREE_MIN_RUN := 5.0
+## Petals: per tree, at most PETAL_MAX in all (one MultiMesh, no CPU work).
+const PETALS_PER_TREE := 3
+const PETAL_MAX := 240
+## Fall rate (cycles/s) and tumble (turns per fall): the turn rate is
+## FALL_SPEED * TUMBLE ~ 0.2 Hz, far below 3 Hz.
+const PETAL_FALL_SPEED := 0.1
+const PETAL_TUMBLE := 2.0
 
 ## Street id -> house kind and height range.
 const STREET_LOOK := {
@@ -108,6 +130,17 @@ static func block_depth(maze, pos: Vector3, n: Vector3) -> float:
 			return maxf(0.6, d - 0.45)
 		d += 0.25
 	return 30.0
+
+
+## Doorway figures: [position (y 0), facing normal].
+static func figure_spots() -> Array:
+	return [
+		[Vector3(21.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 19.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(21.5 * CELL, 0, 27.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 34.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(42.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(45.5 * CELL, 0, 38.0 * CELL), Vector3(-1, 0, 0)],
+		[Vector3(42.5 * CELL, 0, 19.0 * CELL), Vector3(1, 0, 0)], [Vector3(14.0 * CELL, 0, 7.5 * CELL), Vector3(0, 0, 1)],
+		[Vector3(31.0 * CELL, 0, 12.5 * CELL), Vector3(0, 0, -1)], [Vector3(8.0 * CELL, 0, 19.5 * CELL), Vector3(0, 0, 1)],
+	]
 
 
 ## All cards of the city as plain data (tests check them without a renderer).
@@ -203,13 +236,7 @@ static func cards(maze, seed: int) -> Array:
 		out.append(card(Vector3(c * CELL, CARD_BASE_Y, TORII_Z), Vector3(1, 0, 0), 5.8, 5.3, Style.K_TORII, 0.5, block_depth_torii()))
 
 	# ---- figures in doorways (Hanamikoji, Ninenzaka, Shijo) ----
-	var spots := [
-		[Vector3(21.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 19.0 * CELL), Vector3(-1, 0, 0)],
-		[Vector3(21.5 * CELL, 0, 27.0 * CELL), Vector3(1, 0, 0)], [Vector3(24.5 * CELL, 0, 34.0 * CELL), Vector3(-1, 0, 0)],
-		[Vector3(42.5 * CELL, 0, 16.0 * CELL), Vector3(1, 0, 0)], [Vector3(45.5 * CELL, 0, 38.0 * CELL), Vector3(-1, 0, 0)],
-		[Vector3(42.5 * CELL, 0, 19.0 * CELL), Vector3(1, 0, 0)], [Vector3(14.0 * CELL, 0, 7.5 * CELL), Vector3(0, 0, 1)],
-		[Vector3(31.0 * CELL, 0, 12.5 * CELL), Vector3(0, 0, -1)], [Vector3(8.0 * CELL, 0, 19.5 * CELL), Vector3(0, 0, 1)],
-	]
+	var spots := figure_spots()
 	for sp in spots:
 		var p: Vector3 = sp[0] + sp[1] * 0.05
 		p.y = CARD_BASE_Y
@@ -229,6 +256,112 @@ static func cards(maze, seed: int) -> Array:
 		[Vector3(-95, 7, 70), Vector3(1, 0, 0)], [Vector3(70, 7, 150), Vector3(0, 0, -1)]]
 	for m in mists:
 		out.append(card(m[0], m[1], rng.randf_range(60.0, 90.0), 2.6, Style.K_MIST + nf, rng.randf()))
+	out.append_array(tree_cards(maze, seed))
+	return out
+
+
+## Cherry trees as plain card data (own random stream, deterministic per
+## seed). In front of house rows they stand on the facade line like the
+## houses; along temple walls (Torii lane, the pagoda's temple block) they
+## stand behind the wall and show their crowns above it. They never stand
+## across a street end (the card is kept inside its run) or over a doorway
+## figure.
+static func tree_cards(maze, seed: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed ^ TREE_SEED_XOR
+	var spots := figure_spots()
+	var out: Array = []
+	for run in TokyoScenery.facade_runs(maze):
+		var a: Vector3 = run.a
+		var b: Vector3 = run.b
+		var n: Vector3 = run.n
+		var mid := (a + b) * 0.5
+		var out_cell := cell_of(mid + n * 1.0)
+		var wall_cell := cell_of(mid - n * 1.0)
+		if not in_map(maze, out_cell) or maze.grid[out_cell.x][out_cell.y] != 0:
+			continue
+		var lm := KyotoMazeScript.landmark_block_at(wall_cell.x, wall_cell.y)
+		var temple := false
+		if not lm.is_empty():
+			if lm.id == "pagoda":
+				temple = true
+			elif Vector2(n.x, n.z).is_equal_approx(lm.face):
+				continue
+		var street := KyotoMazeScript.street_at(out_cell.x, out_cell.y)
+		var sid: String = street.get("id", "")
+		if sid == "torii_gasse":
+			temple = true
+		var length := a.distance_to(b)
+		if length < TREE_MIN_RUN:
+			continue
+		var spacing: float = TREE_SPACING.get(sid, TREE_SPACING_DEFAULT)
+		var count := maxi(1, int(round(length / spacing)))
+		var dir := (b - a).normalized()
+		for i in count:
+			var keep := rng.randf() < TREE_KEEP
+			var w := rng.randf_range(3.8, 5.2) if temple else rng.randf_range(2.8, 4.0)
+			var h := rng.randf_range(6.6, 8.6) if temple else rng.randf_range(4.4, 5.8)
+			var jitter := rng.randf_range(-1.0, 1.0)
+			var s := rng.randf()
+			var lo := w * 0.5 + 0.15
+			var hi := length - w * 0.5 - 0.15
+			if not keep or hi < lo:
+				continue
+			var t := clampf((float(i) + 0.5) / float(count) * length + jitter, lo, hi)
+			var pos := a + dir * t + n * TREE_OUT
+			pos.y = CARD_BASE_Y
+			if temple:
+				pos -= n * (TREE_BEHIND_WALL + TREE_OUT)
+				var bc := cell_of(pos)
+				if not in_map(maze, bc) or maze.grid[bc.x][bc.y] != 1:
+					continue
+			var near_figure := false
+			for sp in spots:
+				if Vector2(pos.x - sp[0].x, pos.z - sp[0].z).length() < 0.5 * w + 0.4:
+					near_figure = true
+			if near_figure:
+				continue
+			# temple trees stand a little askew behind their wall (the wall hides
+			# the turned edges); trees on the facade line stay square to it
+			var tn := n
+			var turn := rng.randf_range(-0.16, 0.16)
+			if temple:
+				var turned := n.rotated(Vector3.UP, turn)
+				if lies_on_block(maze, pos, turned, w, h, block_depth(maze, pos, turned)):
+					tn = turned
+			out.append(card(pos, tn, w, h, Style.K_SAKURA, s, block_depth(maze, pos, tn)))
+	return out
+
+
+## Whether a card folded flat (it lies back against its normal `n` by
+## min(h, fold_len)) keeps its centre and both side edges on wall cells.
+static func lies_on_block(maze, pos: Vector3, n: Vector3, w: float, h: float, fold_len: float) -> bool:
+	var right := Vector3(n.z, 0.0, -n.x)
+	var lie := minf(h, fold_len)
+	for e in [Vector3.ZERO, right * w * 0.45, -right * w * 0.45]:
+		var tip := cell_of(pos + e - n * lie)
+		if not in_map(maze, tip) or maze.grid[tip.x][tip.y] == 0:
+			return false
+	return true
+
+
+## Petal start points: from each tree's crown, in front of the card.
+## Returns [{pos, phase, rate}], at most PETAL_MAX, deterministic.
+static func petal_spots(trees: Array, seed: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed ^ TREE_SEED_XOR ^ 0x1234
+	var out: Array = []
+	for t in trees:
+		if t.kind != Style.K_SAKURA:
+			continue
+		var n := Vector3(sin(t.yaw), 0.0, cos(t.yaw))
+		var right := Vector3(n.z, 0.0, -n.x)
+		for k in PETALS_PER_TREE:
+			if out.size() >= PETAL_MAX:
+				return out
+			var p: Vector3 = t.pos + right * rng.randf_range(-0.4, 0.4) * t.w + n * rng.randf_range(0.2, 1.4)
+			p.y = t.h * rng.randf_range(0.62, 0.92)
+			out.append({"pos": p, "phase": rng.randf(), "rate": rng.randf()})
 	return out
 
 
@@ -265,6 +398,7 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	mat.set_shader_parameter("paper", Style.PAPER)
 	mat.set_shader_parameter("sumi", Style.SUMI)
 	mat.set_shader_parameter("beni", Style.BENI)
+	mat.set_shader_parameter("blossom", Style.BLOSSOM)
 	mat.set_shader_parameter("fold_near", Style.FOLD_NEAR)
 	mat.set_shader_parameter("fold_far", Style.FOLD_FAR)
 	mat.set_shader_parameter("fold_max", Style.FOLD_MAX)
@@ -276,6 +410,38 @@ static func build(maze, _city_theme, seed: int) -> Node3D:
 	root.add_child(mmi)
 	root.card_material = mat
 	root.card_count = list.size()
+
+	# ---- falling petals: one MultiMesh, animated in the vertex shader ----
+	var spots := petal_spots(list, seed)
+	var petal_quad := QuadMesh.new()
+	petal_quad.size = Vector2(1.0, 1.0)
+	var pmm := MultiMesh.new()
+	pmm.transform_format = MultiMesh.TRANSFORM_3D
+	pmm.use_custom_data = true
+	pmm.mesh = petal_quad
+	pmm.instance_count = spots.size()
+	for i in spots.size():
+		pmm.set_instance_transform(i, Transform3D(Basis(), spots[i].pos))
+		pmm.set_instance_custom_data(i, Color(spots[i].phase, spots[i].rate, 0.0, 0.0))
+	pmm.custom_aabb = AABB(Vector3(-20.0, -2.0, -20.0), Vector3(150.0, 14.0, 130.0))
+	var pmat := ShaderMaterial.new()
+	pmat.shader = PETAL_SHADER
+	pmat.set_shader_parameter("petal", Style.BLOSSOM)
+	pmat.set_shader_parameter("edge", Style.BENI)
+	pmat.set_shader_parameter("fall_speed", PETAL_FALL_SPEED)
+	pmat.set_shader_parameter("tumble", PETAL_TUMBLE)
+	var petals := MultiMeshInstance3D.new()
+	petals.name = "Petals"
+	petals.multimesh = pmm
+	petals.material_override = pmat
+	petals.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(petals)
+	root.petals = petals
+	root.petal_count = spots.size()
+	root.tree_count = 0
+	for c in list:
+		if c.kind == Style.K_SAKURA:
+			root.tree_count += 1
 
 	var rails := StaticBody3D.new()
 	rails.name = "ToriiRails"

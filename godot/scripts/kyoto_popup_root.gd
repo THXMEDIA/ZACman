@@ -1,7 +1,7 @@
 extends Node3D
 ## Root node of the Kyoto pop-up city (kyoto_scenery.gd builds it). Main
 ## forwards the "Effekte reduzieren" setting here: with it on, every card
-## stands (no folding at all). On level start the book opens: every card lies
+## stands (no folding at all) and the falling petals are hidden. On level start the book opens: every card lies
 ## flat and they stand up near to far within INTRO_S (start_intro, game-design
 ## review W1) — the camera is never touched; skipped with reduced effects.
 
@@ -10,12 +10,17 @@ const INTRO_S := 1.8
 
 var card_material: ShaderMaterial = null
 var card_count := 0
+var tree_count := 0
+var petal_count := 0
+var petals: MultiMeshInstance3D = null # falling blossom petals (own draw call)
 var _fold := true
 var _intro_t := -1.0 # < 0: no intro running
 
 
 func set_reduce_fx(on: bool) -> void:
 	_fold = not on
+	if petals != null:
+		petals.visible = not on # no falling petals with reduced effects
 	if on:
 		_end_intro()
 	if card_material != null:
