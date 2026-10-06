@@ -22,6 +22,10 @@
 #   a14_westermarkt_becher.png  Westermarkt nach Süden: Straße endet an der Schnittkante, Becher mit Bleistift
 #   a15_tram_tuer.png       Bahnsteig: offene Tram-Tür mit Innenlicht und grünem Bodenfleck
 #   a16_hinweis_reduziert.png   Start mit „Effekte reduzieren“: Ziel-Hinweis oben mittig
+#   a17_passanten.png       Pappfiguren (Passanten) am Kai, aus der Straßenmitte
+#   a18_rad.png             Radfahrer (Pappfigur auf dem Rad) beim Vorbeifahren
+#   a17_passanten.png       Pappfiguren (Passanten) am Kai, aus der Straßenmitte
+#   a18_rad.png             Radfahrer (Pappfigur auf dem Rad) beim Vorbeifahren
 extends SceneTree
 
 var main: Node
@@ -123,7 +127,56 @@ func _plan() -> void:
 		_steps.append({"wait": 30, "do": func():
 			_shot("a16_hinweis_reduziert.png")
 			main.set_reduce_fx(false)})
+	# card people and bicycles (amsterdam_life.gd): the camera stands on the
+	# middle of the street (the pin line) and looks at a figure
+	if _wanted(only, "a17_passanten.png"):
+		_steps.append({"wait": 2, "do": func():
+			main.amsterdam_life.advance(23.0)
+			_face_figure(false)})
+		_steps.append({"wait": 24, "do": func(): _shot("a17_passanten.png")})
+	if _wanted(only, "a18_rad.png"):
+		_steps.append({"wait": 2, "do": func():
+			main.amsterdam_life.advance(11.0)
+			_face_figure(true)})
+		_steps.append({"wait": 24, "do": func(): _shot("a18_rad.png")})
 	_steps.append({"wait": 2, "do": func(): quit()})
+
+
+## Stand on the centre line of the street that holds `target`, 3.5 m along it
+## from the target, and look at it.
+func _look_from_street(target: Vector3, back: float) -> void:
+	var rects: Array = load("res://scripts/amsterdam_life.gd").lane_rects()
+	var best := Vector3(target.x, 0.0, target.z + 3.0)
+	var best_d := 1e9
+	for r in rects:
+		var ew: bool = r.axis == "ew"
+		var along: float = target.x if ew else target.z
+		var across: float = target.z if ew else target.x
+		if along < r.a0 or along > r.a1 or absf(across - r.centre) > r.hw:
+			continue
+		var d := absf(across - r.centre)
+		if d < best_d:
+			best_d = d
+			var a2: float = clampf(along - 3.5 - back, r.a0 + 1.0, r.a1 - 1.0)
+			best = Vector3(a2, 0.0, r.centre) if ew else Vector3(r.centre, 0.0, a2)
+	var dx := target.x - best.x
+	var dz := target.z - best.z
+	_pose(best.x, best.z, atan2(-dx, -dz), -0.04)
+
+
+func _face_figure(rider: bool) -> void:
+	var life = main.amsterdam_life
+	var n: int = life.rider_count() if rider else life.walker_count()
+	var start: Vector2 = life.start_pos()
+	for i in n:
+		var p: Vector3 = life.rider_position(i) if rider else life.walker_position(i)
+		if not rider and not life.walker_moving(i):
+			continue
+		if Vector2(p.x, p.z).distance_to(start) < 12.0 or Vector2(p.x, p.z).distance_to(life.exit_pos()) < 12.0:
+			continue
+		_look_from_street(p, 0.0)
+		return
+	_look_from_street(life.walker_position(0), 0.0)
 
 
 

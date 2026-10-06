@@ -29,6 +29,17 @@ void vertex() {
 	lp = VERTEX * bs;
 	ln = NORMAL;
 	vdist = length((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz - CAMERA_POSITION_WORLD);
+	// Hair-thin boards (cutter overruns: 3.5 cm x 1 cm) are sub-pixel from a
+	// few metres on and flicker in motion: their cross-section shrinks away
+	// between 6 and 10 m (a line, not a board: the second thinnest axis is
+	// under 5 cm).
+	float s_lo = min(bs.x, min(bs.y, bs.z));
+	float s_hi = max(bs.x, max(bs.y, bs.z));
+	float s_mid = bs.x + bs.y + bs.z - s_lo - s_hi;
+	if (s_mid < 0.05) {
+		float keep = 1.0 - smoothstep(6.0, 10.0, vdist);
+		VERTEX *= mix(vec3(keep), vec3(1.0), step(vec3(0.05), bs));
+	}
 }
 
 void fragment() {
@@ -61,30 +72,36 @@ void fragment() {
 		bool tu = abs(dot(au, thin)) > 0.5;
 		float v = (tu ? q.x / hs.x : q.y / hs.y) * 0.5 + 0.5;
 		float u = tu ? q.y : q.x;
-		float paper = flute_mask(u, v, far);
+		float ff = min(far, pitch_fade(fwidth(u)));
+		float paper = flute_mask(u, v, ff, fwidth(v));
 		kraft_face(vec2(u, v * 0.4) + off, far, c, nxy, r);
 		c *= bri;
 		float w = 0.5 + 0.32 * sin(u * 6.2831853 / pitch);
-		float occ = smoothstep(0.0, 0.32, abs(v - w));
+		float occ = mix(0.5, smoothstep(0.0, 0.32, abs(v - w)), ff);
 		c = mix(c * 0.12 * (1.6 - occ), c * vec3(1.10, 1.07, 1.02), paper);
-		float slope = cos(u * 6.2831853 / pitch) * paper * far;
+		float slope = cos(u * 6.2831853 / pitch) * paper * ff;
 		if (tu) nxy = vec2(nxy.x, nxy.y - slope * 0.5); else nxy = vec2(nxy.x - slope * 0.5, nxy.y);
 		r = 0.93;
 		AO = mix(0.45, 1.0, paper);
 		AO_LIGHT_AFFECT = 0.5;
 	} else {
+		float fpx = max(fwidth(q.x), fwidth(q.y)); // metres per pixel on this face
+		float rf = min(far, pitch_fade(fpx));
 		kraft_face(q + off, far, c, nxy, r);
 		c *= bri * vec3(1.0 + 0.04 * (h11(seed * 3.1) - 0.5), 1.0, 1.0 - 0.05 * (h11(seed * 5.3) - 0.5));
 		// washboard: the flutes inside show through the liner
 		float ribs = sin(q.x * 6.2831853 / pitch);
-		c *= 1.0 - 0.03 * ribs * far;
-		nxy.x += cos(q.x * 6.2831853 / pitch) * rib_amp * far;
+		c *= 1.0 - 0.03 * ribs * rf;
+		nxy.x += cos(q.x * 6.2831853 / pitch) * rib_amp * rf;
 		// worn, slightly lighter cut corners and a dark joint line
 		vec2 ed = hs - abs(q);
 		float e = min(ed.x, ed.y);
 		float wear = (1.0 - smoothstep(0.0, 0.05 + 0.05 * vn(q * 6.0 + seed), e)) * (0.5 + 0.5 * vn(q * 3.0 + seed));
+		// the worn band is 5-10 cm wide: resolved only while it covers a few
+		// pixels, else it outlines every board with a shimmering line
+		wear *= 1.0 - smoothstep(0.012, 0.035, fpx);
 		c = mix(c, c * vec3(1.15, 1.12, 1.08) + 0.02, wear * 0.7);
-		AO = mix(0.7, 1.0, smoothstep(0.0, 0.25, e));
+		AO = mix(1.0, mix(0.7, 1.0, smoothstep(0.0, 0.25, e)), 1.0 - smoothstep(0.03, 0.08, fpx));
 		AO_LIGHT_AFFECT = 0.3;
 		// tape over a board joint, near one end of the board
 		if (tape_on) {

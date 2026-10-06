@@ -43,6 +43,15 @@ const SKY_KNEE := 0.45
 const SKY_MAX := 0.7
 const MINIMAP_WATER := Color("4b5559") # slate canals on the minimap (not blue)
 
+## The little card people and bicycles (amsterdam_figures.gd, amsterdam_life.gd):
+## printed paper in muted, warm colours - no blue (pins), no green (exit), no
+## saturated yellow (pencil), none brighter than the cream of the white paint.
+const FOLK_COATS := [Color("e2dac8"), Color("b4694a"), Color("a77a46"), Color("a5645d"),
+	Color("5a4132"), Color("8b8174"), Color("c7bfb0"), Color("8e4a32")]
+const FOLK_SKIN := [Color("e8c9a5"), Color("d1a47a"), Color("a8744f"), Color("7a5039")]
+const FOLK_BIKES := [Color("2a2724"), Color("5e2a26"), Color("d8cfba"), Color("8e4a32"),
+	Color("4d4a2c"), Color("4a3426"), Color("7b7771"), Color("a8664a")]
+
 ## Lights (golden hour, Kelvin as colour).
 const SUN_COLOR := Color(1.0, 0.70, 0.42) # ~2900 K
 const LAMP_COLOR := Color(1.0, 0.66, 0.36) # ~2700 K

@@ -44,6 +44,7 @@ void fragment() {
 	vec2 dpx = dFdx(p);
 	vec2 dpy = dFdy(p);
 	float aa = max(fwidth(p.x), fwidth(p.y));
+	float fwx = fwidth(p.x);
 	ivec2 ci = ivec2(floor(p / cell + 0.5));
 	float k = kind_at(ci);
 	if (k > 0.88) discard; // canal: the water lies below
@@ -52,10 +53,12 @@ void fragment() {
 	kraft_face_grad(p, dpx, dpy, far, c, nxy, r);
 	// the plate is a little lighter than the boards of the houses
 	c *= 1.06;
-	// washboard of the flutes inside the plate (running along z)
+	// washboard of the flutes inside the plate (running along z); resolved
+	// only while a pitch covers enough pixels (shimmer in motion)
+	float rf = min(far, pitch_fade(fwx));
 	float ribs = sin(p.x * 6.2831853 / pitch);
-	c *= 1.0 - 0.025 * ribs * far;
-	nxy.x += cos(p.x * 6.2831853 / pitch) * 0.12 * far;
+	c *= 1.0 - 0.025 * ribs * rf;
+	nxy.x += cos(p.x * 6.2831853 / pitch) * 0.12 * rf;
 	vec2 f = p / cell + 0.5 - vec2(ci); // 0..1 inside the cell
 
 	if (k > 0.12 && k < 0.62) {

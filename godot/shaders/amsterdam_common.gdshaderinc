@@ -51,15 +51,31 @@ void kraft_face(vec2 p, float far, out vec3 c, out vec2 nxy, out float r) {
 	r = mix(0.86, texture(foto_rgh, p / foto_m).r, 0.5);
 }
 
+// How much of a pattern that repeats at the flute pitch is still resolved,
+// from its footprint on screen (fp: metres per pixel along the pattern). A
+// pitch of 0.7 m stays fully drawn above 9 px per pitch and has faded to its
+// mean below 4.5 px, whatever the distance, resolution or field of view
+// (moire / shimmering at the edges in motion, Abnahme 06.10.). The distance
+// fades (far_flat) stay on top of it.
+float pitch_fade(float fp) {
+	return 1.0 - smoothstep(pitch / 9.0, pitch / 4.5, fp);
+}
+
 // Liner-flute-liner pattern of a cut edge: v 0..1 across the board, u along
-// the edge (m). Returns the paper mask (1 = paper, 0 = open cavity).
-float flute_mask(float u, float v, float far) {
+// the edge (m). Returns the paper mask (1 = paper, 0 = open cavity). `f` is
+// how much of the pattern is resolved (min of the distance fade and
+// pitch_fade(fwidth(u))), `fv` = fwidth(v): the thin lines (the wave sheet is
+// 1.4-2.8 cm wide on a 40 cm edge, a liner 4.4 cm) are filtered with the
+// pixel footprint instead of being point-sampled, which made every window
+// reveal and every cut edge crawl in motion.
+float flute_mask(float u, float v, float f, float fv) {
 	float lin = 0.11;
+	float a = fv * 1.5;
 	float w = 0.5 + (0.5 - lin - 0.07) * sin(u * 6.2831853 / pitch);
 	float d = abs(v - w);
-	float flute = 1.0 - smoothstep(0.035, 0.07, d);
-	float inl = step(v, lin) + step(1.0 - lin, v);
+	float flute = 1.0 - smoothstep(0.035 - a, 0.07 + a, d);
+	float inl = (1.0 - smoothstep(lin - a, lin + a, v)) + smoothstep(1.0 - lin - a, 1.0 - lin + a, v);
 	float paper = clamp(flute + inl, 0.0, 1.0);
 	// far away: the mean of the pattern (no moire)
-	return mix(0.62, paper, far);
+	return mix(0.62, paper, f);
 }

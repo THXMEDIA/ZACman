@@ -54,6 +54,27 @@ Amsterdam ist ein Architekturmodell aus Wellpappe im Maßstab 1:100, erlebt auf 
 
 Grün gestrichene Papp-Tram (generisch, keine Betreiberfarben oder Logos) an einer Haltestelle am Amstel-Ostufer, mit Innenlicht (hellste Fläche am Wegende, grünes Licht auf dem Bahnsteig), dazu eine **Riesen-Stecknadel mit grüner Papierfahne** 24 m hoch über den Dächern (ungenebelt). **Einstieg (UX W-B):** offene Doppeltür (1,2 m, Flügel nach innen geklappt, Trittstufe, Wagenboden) in der Bahnsteigseite genau in der Achse der letzten Nadel; dahinter eine helle Lichtfläche, davor ein weicher, heller Bodenfleck im Ausgangsgrün (`amsterdam_spot.gdshader`); die Auslösung liegt mittig vor der Tür. **Farbe in der Sonne (QA K2):** die grüne Farbe wird im Panel-Shader etwas dunkler aufgetragen und leuchtet mit 32 % `#00B894` (`EXIT_EMIT`), damit die tiefe Sonne sie nicht ausbleicht – der Farbwert `#00B894` selbst bleibt (Inhaber). Puls 0,5 Hz; „Effekte reduzieren“ hält ihn an. Auslöseradius 1,3 m; ab 12 m einmal „Grüne Tram: einsteigen in den Speedrun“ (GD W6, mehr als 2 s vor dem Ziel; verschwindet, wenn das Banner kommt). Banner „NÄCHSTE HALTESTELLE: SPEEDRUN“ / „Einsteigen – los zum Speedrun!“. Einmaliger Start-Hinweis **„Folge den blauen Nadeln zur grünen Tram“** – auch mit „Effekte reduzieren“ (`intro_hint_always`, QA W1); „Pappmodell 1:100“ steht jetzt in der Stadtbeschreibung auf dem Startscreen („Amsterdam – Pappmodell 1:100 im Abendlicht, ruhig“).
 
+## Passanten und Fahrräder (`amsterdam_life.gd`, `amsterdam_figures.gd`, `amsterdam_folk.gdshader`)
+
+Abnahme 06.10.2026: Die Stadt lebt ein wenig, im Stil des Modells. Kleine **Pappfiguren** (flache Ausschnitte aus Karton mit Kraft-Schnittkante, bedruckt in gedeckten, warmen Farben aus `AmsterdamStyle.FOLK_*`: kein Blau der Nadeln, kein Grün des Ausgangs, nichts heller als das Weiß der Brücke) und **Radfahrer** (Pappfigur auf Fahrrad mit Rädern, Rahmen, Sattel, Pedalen).
+
+- **Zahlen:** 36 Passanten (14 % Kinder, kleiner), 16 Radfahrer auf 7 Fahrschleifen (Rechtecke über zwei Brücken, Haarnadeln entlang der langen Straßen), bis 14 abgestellte Räder an Brückengeländern und Baumstämmen am Kai.
+- **Draw Calls:** zwei MultiMeshes (Passanten, Räder), der statische Aufbau bleibt ≤ 9. Gangart, Pedale und Felgenmarke laufen im Shader aus der Phase (zurückgelegte Strecke) – kein `TIME`, nichts wird pro Frame angelegt (Test zählt Objekte, Ressourcen, Knoten, Speicher).
+- **Spuren:** Die Nadeln laufen in der Straßenmitte. Radfahrer fahren rechts 1,3 m daneben (Kurven gerundet, Haarnadel-Spitzen zwischen den Nadeln), Passanten gehen 0,8 m vor Bordstein oder Fassade in Stücken von 6–16 m (ein Mensch je Stück, Pause und Wende am Ende), 1,2 m Abstand zu Bäumen und Rädern, 5 m zum Start, 7 m zum Ausgang, nie auf der Mittellinie einer kreuzenden Straße. Einzelzellen-Durchgänge (2 m) bleiben leer.
+- **Harmlos:** Kein Lebensverlust. Höchstens der weiche Schubs (`push_for()`, ≤ 0,5 m je Frame, Passanten r 0,35, Räder r 0,4, geparkte Räder als Kapsel r 0,3); Kamera und Maus bleiben unberührt. Passanten ≤ 1,3 m/s, Räder ≤ 4 m/s (Spieler 5,06 m/s), keine Bewegung ab 3 Hz (Test `max_motion_hz`).
+- **„Effekte reduzieren“:** Alles steht still, aufrecht (`set_comfort(true)`), wie in den anderen Städten.
+- **Deterministisch:** reine Funktion aus Level-Seed und Zeit.
+
+## Kantenflimmern an Hausrändern (Abnahme 06.10.2026)
+
+Ursachen (MSAA 4x und FXAA liefen bereits) und Abhilfen:
+
+- **Z-Fighting:** deckungsgleiche Flächen an Brandmauern (Seitenbrett lief durch die Fassadenplatte), Kirchen-Stirnwänden und Eckhaus-Seitenfronten, Fensterkreuz auf Fensterlaibung, Brückengeländer an den Pfosten. Die Bretter sind jetzt um die Plattendicke zurückgesetzt bzw. verkürzt; gemessene Überlappungen gleichgerichteter, ebenengleicher Flächen 2008 → 275 (Rest verdeckt oder winzig).
+- **Hochfrequente Muster, die mit der Entfernung nicht ausblenden:** Wellen-Rillen der Schnittkanten (`flute_mask`, jetzt per `fwidth` analytisch geglättet), Wellen-Raster in Panel-, Ausschnitt- und Kai-Shader (`pitch_fade`: blendet nach Pixelfußabdruck zur gemittelten Fläche aus), Verschleiß, Verschattung und Papier-Rauheit sowie die Rippen im Boden (nach Fußabdruck ausgeblendet).
+- **Haarfeine Bretter:** im Vertex-Shader zwischen 6 und 10 m Abstand zusammengezogen.
+- **Nicht angefasst:** Mipmaps der Fotoebene (sind an), Schatten-Bias (Sonne mit Winkelgröße 0 und Blur, kein Akne im Test sichtbar), Kameranahebene 0,05.
+- **Offen für die Hardware-Abnahme:** SSR-Flackern auf dem Lackwasser und Schatten-Schimmer in den Wellenhöhlen bei Forward+ lassen sich in der Sandbox (nur Compatibility) nicht prüfen.
+
 ## Technik und Budget
 
 - **Draw Calls (statisch, Test ≤ 9):** Boden (Grundplatte), Platten-MultiMesh, Ausschnitt-Mesh, Kaimauer-Wellen, Wasser, Schneidematte, Tisch, Tischdinge (ein Mesh mit Vertexfarben), Leim-MultiMesh. Die Wand-MultiMesh ist reine Physik (`CityTheme.walls_visible = false`). Dazu Kugeln (eine MultiMesh) und der Ausgang (Tram-MultiMesh, Innenlicht, Fahne, Nadelkopf).
@@ -81,7 +102,8 @@ Ohne Import (frischer Checkout, Tests) lädt `AmsterdamStyle.tex()` die Rohdatei
 
 - `godot/tests/test_amsterdam.gd` (117 Checks; neu nach den Reviews: Hauptweg dicht/Abstecher gepunktet, Blickpunkt je Ast-Ende und kein Ende mit Tram-Blick über das Wasser, Westermarkt endet an der Schnittkante auf dem Becher, Becher/Bleistift über den Dächern, Schatten nur Sonne mit Winkelgröße 0 und zwei Splits, zweiter Aufbau mit denselben Mesh-Instanzen und < 50 ms, Kaimauer indiziert, Platten-Puffer, Tram-Tür/Lichtfläche/Bodenfleck/Emission, Textur-Import und Rohdatei-Regel, HDRI ohne Blendfleck; bisher: Raster geschlossen, Erreichbarkeit, Grachten nicht begehbar, Brücken mit Wasser seitlich, Route an Damrak-Häusern, Westerkerk und über die Magere Brug (einzige Querung), Startachse auf den Turm, deterministische Spuren und Pflicht-Äste, nichts Sichtbares in der begehbaren Fläche unter Augenhöhe (lesbare Kollisionskante), Häuser füllen jede Fassadenlinie, Eckhäuser mit zweiter Fassade, vier Giebeltypen, tanzende Häuser, Fenster mit dunklem Raum, Modellbau-Spuren, Turm als höchster Punkt, weiße Krone, weiße Magere Brug, Wellenkante auf jeder Platte/Wasser-Grenze, Budget (Draw Calls, Platten, Vertices, Lichter, Schatten), Kollisionshöhe der gebauten Boxen, Baum-Blöcke, Komfort, Theme/Registry, Minimap-Kontrast, Exklusivfarben Blau/Grün, Ausgang (Tram hinter der Kante, Fahne, Puls, Effekte reduzieren), Textur- und Lizenzdateien).
 - `godot/tests/bot_test.gd`: Start über den AMSTERDAM-Button, Ziel-Hinweis auch mit „Effekte reduzieren“ (Kyoto ohne), Ausgang auf der Minimap, Himmel und Lichter, „Effekte reduzieren“ stoppt den Puls, Ausgangshinweis ab 12 m und weg mit dem Banner, Tram → Speedrun, Theme-Reset (Farb-Hintergrund, `env.sky == null`, keine Sonne/Lampe, kein SSAO/Adjustment), Minimap-Pfeil im Speedrun wieder cyan; dazu Hinweisbox (mittig, ≤ 560 px, oberes Drittel, wartet in der Pause), Startscreen-Beschreibungen, Regen-Schalter nur in Tokyo.
-- Screenshots: `tools/qa/qa_amsterdam_shots.gd` (a1–a16 und a1b; neu: a1b Startscreen mit Fokus-Beschreibung, a11 Raum ohne Blendfleck, a14 Westermarkt mit Becher, a15 Tram-Tür, a16 Hinweis mit „Effekte reduzieren“; die Totale a8 mit eigener QA-Kamera, die Spielkamera bleibt unberührt; `ONLY=a6,a8` rendert einzelne Bilder).
+- `test_amsterdam.gd` prüft zusätzlich (`_check_life`): Figuren vorhanden, deterministisch, zwei MultiMeshes, Spuren frei über 4 Minuten (offener Boden, Abstand zu Nadeln, Start, Ausgang), keine Allokation in 600 Frames, langsam, weicher Schubs, „Effekte reduzieren“ friert ein, Palette.
+- Screenshots: `tools/qa/qa_amsterdam_shots.gd` (a1–a18 und a1b; neu: a17 Passanten, a18 Radfahrer; neu: a1b Startscreen mit Fokus-Beschreibung, a11 Raum ohne Blendfleck, a14 Westermarkt mit Becher, a15 Tram-Tür, a16 Hinweis mit „Effekte reduzieren“; die Totale a8 mit eigener QA-Kamera, die Spielkamera bleibt unberührt; `ONLY=a6,a8` rendert einzelne Bilder).
 
 ## Rechte (Kurzfassung, keine Rechtsberatung)
 
@@ -104,5 +126,5 @@ Westerkerk (1638), Magere-Brug-Gestalt (heutige Brücke 1934 in historischer For
   - gemeinsame Helfer statt Kopien (Code W7; z. B. `dotted_trails()` steht in Amsterdam und Arles)
   - das unfertig wirkende Modell am Amstel-Ostufer
   - Tanzende Häuser schiefer, Steiger am Wasser (K5/N1)
-  - Passanten in Hauseingängen (GD N3)
+  - Passanten in Hauseingängen (GD N3; Passanten gehen jetzt auf den Kaispuren)
   - Test auf das Volumen der Kollisionsboxen (UX N-F)

@@ -21,7 +21,11 @@ void vertex() {
 }
 
 void fragment() {
+	// footprints in uniform control flow (derivatives)
+	float fu = fwidth(UV.x);
+	float fv = fwidth(UV.y);
 	float far = 1.0 - smoothstep(far_flat * 0.5, far_flat, vdist);
+	far = min(far, pitch_fade(fu));
 	vec3 c; vec2 nxy; float r;
 	float bri = mix(0.82, 1.08, vcol.r);
 	vec2 off = vec2(vcol.g * 71.0, vcol.g * 37.0);
@@ -30,13 +34,15 @@ void fragment() {
 	if (vcol.a > 0.5) {
 		float u = UV.x;
 		float v = UV.y;
-		float paper = flute_mask(u, v, far);
+		float paper = flute_mask(u, v, far, fv);
 		kraft_face(vec2(u, v * 0.4) + off, far, c, nxy, r);
 		c *= bri;
 		float w = 0.5 + 0.32 * sin(u * 6.2831853 / pitch);
-		float occ = smoothstep(0.0, 0.32, abs(v - w));
+		float occ = mix(0.5, smoothstep(0.0, 0.32, abs(v - w)), far);
 		c = mix(c * 0.12 * (1.6 - occ), c * vec3(1.10, 1.07, 1.02), paper);
-		c *= 0.92 + 0.12 * vn(vec2(u * 40.0, v * 4.0));
+		// paper tooth along the edge: 2.5 cm cells, only where a cell covers
+		// several pixels (else it is pure noise and crawls on every gable)
+		c *= mix(0.98, 0.92 + 0.12 * vn(vec2(u * 40.0, v * 4.0)), 1.0 - smoothstep(0.004, 0.012, fu));
 		NORMAL_MAP = vec3(0.5, 0.5 + 0.25 * (w - v) * (1.0 - paper) * far, 1.0);
 		ROUGHNESS = 0.93;
 		AO = mix(0.45, 1.0, paper);

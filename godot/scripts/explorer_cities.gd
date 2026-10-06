@@ -14,7 +14,8 @@ extends RefCounted
 ##   metro_script  the subway sign node (setup(pos) / update(delta, now))
 ##   traffic       "manhattan" = Manhattan's word traffic and pedestrians,
 ##                 "tokyo" = rain, wire cars, passers-by and the scramble
-##                 crossing (tokyo_life.gd), "" = none
+##                 crossing (tokyo_life.gd), "amsterdam" = card passers-by and
+##                 bicycles (amsterdam_life.gd), "" = none
 ##   exit_text     level-clear banner subtitle when the player takes the exit
 ##   exit_title    banner title (explorer cities have no "level clear")
 ##   metro_radius  how close to the exit node triggers it (m)
@@ -66,7 +67,7 @@ static func get_city(id: String) -> Dictionary:
 				"id": "amsterdam", "theme": "amsterdam", "label": "AMSTERDAM",
 				"maze_script": "res://scripts/amsterdam_maze.gd", "seed": 2121,
 				"metro": "maze", "metro_count": 1, "metro_script": "res://scripts/amsterdam_exit.gd",
-				"traffic": "", "exit_text": "Einsteigen – los zum Speedrun!",
+				"traffic": "amsterdam", "exit_text": "Einsteigen – los zum Speedrun!",
 				"exit_title": "NÄCHSTE HALTESTELLE: SPEEDRUN", "metro_radius": 1.3,
 				"siren": false,
 				"intro_hint": "Folge den blauen Nadeln zur grünen Tram", "intro_hint_always": true,
