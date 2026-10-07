@@ -139,6 +139,14 @@ func _initialize() -> void:
 	_write(st_path, "{\"version\": 2, \"reduce_fx\": true, \"chaos\": true}")
 	var st3 := SettingsScript.load_settings()
 	_check("settings: a version-2 file loads, comfort values at their defaults", st3.reduce_fx and st3.chaos and is_equal_approx(st3.fov, 72.0) and is_equal_approx(st3.mouse_sens, 1.0) and SavePathsScript.corrupt_backups(st_path).is_empty())
+	_check("settings v5: map mode defaults to Voll when the file has none", st3.map_mode == SettingsScript.MAP_FULL)
+	SettingsScript.save_settings({"map_mode": 1})
+	_check("settings v5: map mode Lokal round trip", SettingsScript.load_settings().map_mode == SettingsScript.MAP_LOCAL)
+	SettingsScript.save_settings({"map_mode": 9})
+	_check("settings v5: map mode clamped to Aus", SettingsScript.load_settings().map_mode == SettingsScript.MAP_OFF)
+	_write(st_path, "{\"version\": 5, \"map_mode\": \"x\"}")
+	_check("settings v5: a wrong-typed map mode falls back to Voll and keeps a backup", SettingsScript.load_settings().map_mode == SettingsScript.MAP_FULL and not SavePathsScript.corrupt_backups(st_path).is_empty())
+	_remove_backups(st_path)
 	DirAccess.remove_absolute(st_path)
 
 	# ---- backup names never collide --------------------------------------------

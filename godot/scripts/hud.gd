@@ -19,6 +19,7 @@ signal reduce_rain_toggled(on: bool)
 ## UX-K1 comfort block: field of view (degrees) and mouse sensitivity (factor).
 signal fov_changed(value: float)
 signal mouse_sens_changed(value: float)
+signal map_mode_changed(mode: int)
 signal chaos_toggled(on: bool)
 signal twitch_toggled(is_enabled: bool, channel: String)
 signal versus_pressed
@@ -129,6 +130,12 @@ var current_week := Vector2i(0, 0)
 var reduce_fx_start: CheckBox
 var reduce_fx_pause: CheckBox
 var reduce_rain_start: CheckBox
+## ZAP-6: map mode selectors (start + pause) and the compass strip.
+var map_mode_boxes: Array = []
+var map_mode := 0
+var _minimap_on := true
+var compass: Control
+const LOCAL_RADIUS := 4 # cells around the player in the Lokal mode
 var reduce_rain_pause: CheckBox
 ## UX-K1 comfort sliders, one pair on the start screen, one in the pause.
 var fov_sliders: Array = []
@@ -238,6 +245,7 @@ func _ready() -> void:
 	_build_start_intro()
 	_build_clock_hint()
 	_build_split_box()
+	_build_compass()
 	_build_hint_box()
 	versus_ui = load("res://scripts/versus_ui.gd").new()
 	add_child(versus_ui)
@@ -342,6 +350,7 @@ func _make_chip(parent: Control, label_text: String, value_text: String) -> Labe
 ## or the game over.
 func set_game_hud_visible(on: bool) -> void:
 	game_hud.visible = on
+	_refresh_map_mode()
 	if not on:
 		power_wrap.visible = false
 		condition_card.visible = false
@@ -358,8 +367,8 @@ func _build_power_timer() -> void:
 	power_wrap.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	power_wrap.offset_left = -80
 	power_wrap.offset_right = 80
-	power_wrap.offset_top = 14
-	power_wrap.offset_bottom = 48
+	power_wrap.offset_top = 46 # below the compass strip (ZAP-6)
+	power_wrap.offset_bottom = 80
 	power_wrap.visible = false
 	add_child(power_wrap)
 	var panel := PanelContainer.new()
@@ -393,6 +402,7 @@ func _build_power_timer() -> void:
 ## Manhattan has no clock, score, lives or best time: hide those chips.
 func set_explorer_hud(is_explorer: bool) -> void:
 	_explorer_hud = is_explorer
+	_refresh_map_mode()
 	if not is_explorer:
 		hide_hint()
 	for chip in timed_chips:
@@ -681,8 +691,8 @@ func _build_comfort_block() -> Control:
 	row.add_theme_constant_override("separation", 14)
 	col.add_child(row)
 	var cb := CheckBox.new()
-	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen)"
-	cb.tooltip_text = "Ruhigere Looks, kein Kippen. Kyoto: die Häuser klappen nicht auf."
+	cb.text = "Effekte reduzieren"
+	cb.tooltip_text = "Ruhigere Looks, kein Kippen (Kippbild). Kyoto: die Häuser klappen nicht auf."
 	cb.add_theme_font_size_override("font_size", TEXT_PX)
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
 	row.add_child(cb)
@@ -703,6 +713,22 @@ func _build_comfort_block() -> Control:
 		if not _comfort_syncing:
 			mouse_sens_changed.emit(v))
 	sens_sliders.append(sens_s)
+	var map_l := Label.new()
+	map_l.text = "Karte"
+	map_l.add_theme_font_size_override("font_size", TEXT_PX)
+	map_l.add_theme_color_override("font_color", RABBIT_WHITE)
+	row.add_child(map_l)
+	var map_ob := OptionButton.new()
+	map_ob.add_item("Voll", SettingsScript.MAP_FULL)
+	map_ob.add_item("Lokal", SettingsScript.MAP_LOCAL)
+	map_ob.add_item("Aus", SettingsScript.MAP_OFF)
+	map_ob.add_theme_font_size_override("font_size", TEXT_PX)
+	map_ob.tooltip_text = "Voll: ganzes Labyrinth. Lokal: nur ca. 4 Zellen um dich. Aus: keine Karte. Lokal und Aus zeigen oben einen Kompass."
+	map_ob.item_selected.connect(func(idx: int):
+		if not _comfort_syncing:
+			map_mode_changed.emit(map_ob.get_item_id(idx)))
+	row.add_child(map_ob)
+	map_mode_boxes.append(map_ob)
 	set_comfort(SettingsScript.FOV_DEFAULT, 1.0)
 	return panel
 
@@ -733,6 +759,31 @@ func _comfort_slider(parent: Control, text: String, lo: float, hi: float, step: 
 	row.add_child(v)
 	value_labels.append(v)
 	return s
+
+
+## Map mode on both selectors (no re-emit) and on the live minimap/compass.
+func set_map_mode(mode: int) -> void:
+	map_mode = clampi(mode, SettingsScript.MAP_FULL, SettingsScript.MAP_OFF)
+	_comfort_syncing = true
+	for ob in map_mode_boxes:
+		ob.select(ob.get_item_index(map_mode))
+	_comfort_syncing = false
+	_refresh_map_mode()
+
+
+## The effective mode: explorer cities always show the full map (it is their
+## signpost to the exit, and they are untimed).
+func effective_map_mode() -> int:
+	return SettingsScript.MAP_FULL if _explorer_hud else map_mode
+
+
+func _refresh_map_mode() -> void:
+	var m := effective_map_mode()
+	minimap.visible = _minimap_on and m != SettingsScript.MAP_OFF
+	if compass != null:
+		compass.visible = _minimap_on and m != SettingsScript.MAP_FULL and game_hud != null and game_hud.visible
+		compass.queue_redraw()
+	minimap.queue_redraw()
 
 
 ## Shows the stored comfort values on both blocks without re-emitting.
@@ -1360,14 +1411,64 @@ func _build_clock_hint() -> void:
 	panel.add_child(clock_hint_label)
 
 
+## Compass strip (ZAP-6): shown in the Lokal and Aus map modes. Pure readout
+## of the player's own heading — the camera is never touched. N = maze up
+## (the minimap's up), O = east. Bearing = -yaw (see _minimap_arrow).
+const COMPASS_W := 280.0
+const COMPASS_H := 30.0
+const COMPASS_FOV := PI * 0.9 # visible span of the strip, radians
+const COMPASS_MARKS := [["N", 0.0], ["NO", 0.7853982], ["O", 1.5707963], ["SO", 2.3561945], ["S", 3.1415927], ["SW", 3.9269908], ["W", 4.712389], ["NW", 5.4977871]]
+
+
+func _build_compass() -> void:
+	compass = Control.new()
+	compass.name = "Compass"
+	compass.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	compass.offset_left = -COMPASS_W * 0.5
+	compass.offset_right = COMPASS_W * 0.5
+	compass.offset_top = 8
+	compass.offset_bottom = 8 + COMPASS_H
+	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	compass.clip_contents = true
+	compass.visible = false
+	compass.draw.connect(_draw_compass)
+	add_child(compass)
+
+
+func compass_bearing() -> float:
+	var yaw: float = minimap_player.yaw if minimap_player != null and "yaw" in minimap_player else 0.0
+	return -yaw
+
+
+func _draw_compass() -> void:
+	compass.draw_rect(Rect2(0, 0, COMPASS_W, COMPASS_H), Color(0, 0, 0, 0.6))
+	var font := ThemeDB.fallback_font
+	var bearing := compass_bearing()
+	var px_per_rad := COMPASS_W / COMPASS_FOV
+	for m in COMPASS_MARKS:
+		var d := wrapf(float(m[1]) - bearing + PI, 0.0, TAU) - PI
+		var x := COMPASS_W * 0.5 + d * px_per_rad
+		if x < -20.0 or x > COMPASS_W + 20.0:
+			continue
+		var cardinal: bool = String(m[0]).length() == 1
+		var col := ACCENT if m[0] == "N" else RABBIT_WHITE
+		if not cardinal:
+			col = Color(RABBIT_WHITE, 0.55)
+		var fs := 19 if cardinal else 13
+		var tw := font.get_string_size(m[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		compass.draw_string(font, Vector2(x - tw * 0.5, COMPASS_H - 8.0), m[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	compass.draw_line(Vector2(COMPASS_W * 0.5, 0), Vector2(COMPASS_W * 0.5, 5), PELLET_COLOR, 2.0)
+	compass.draw_rect(Rect2(0, 0, COMPASS_W, COMPASS_H), Color(ACCENT, 0.35), false, 1.0)
+
+
 ## Split box: small panel at the top centre, shown for SPLIT_SHOW_S after a
 ## 25/50/75 % mark. Static text, no animation (reduce-effects safe).
 func _build_split_box() -> void:
 	split_box = Control.new()
 	split_box.name = "SplitBox"
 	split_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	split_box.offset_top = 56
-	split_box.offset_bottom = 90
+	split_box.offset_top = 88
+	split_box.offset_bottom = 122
 	split_box.offset_left = -170
 	split_box.offset_right = 170
 	split_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1854,7 +1955,8 @@ func set_best_time(seconds: float, week_text: String = "") -> void:
 ## Main, drawn via _draw().
 ## Stromausfall switches the minimap off for its duration.
 func set_minimap_visible(on: bool) -> void:
-	minimap.visible = on
+	_minimap_on = on
+	_refresh_map_mode()
 
 
 func set_minimap_exits(cells: Array) -> void:
@@ -1868,6 +1970,8 @@ func update_minimap(maze, player: Node3D, enemies: Array, frightened: bool, maze
 	minimap_frightened = frightened
 	minimap_maze_view = maze_view
 	minimap.queue_redraw()
+	if compass != null and compass.visible:
+		compass.queue_redraw()
 
 
 ## The static layer of the minimap (background, walls, water) as a texture,
@@ -1911,6 +2015,15 @@ func _draw_minimap() -> void:
 	var power_col: Color = ct.power_color if ct != null else Color(1.0, 0.365, 0.635)
 	var frightened_col: Color = ct.minimap_frightened_color if ct != null else Color(0.35, 0.82, 1.0)
 	var pellet_rim: Color = ct.minimap_pellet_outline if ct != null else Color(0, 0, 0, 0)
+	# Lokal (ZAP-6): the same drawing, magnified so that LOCAL_RADIUS cells
+	# around the player fill the box (not rotating; clipped to the box).
+	var local := effective_map_mode() == SettingsScript.MAP_LOCAL and minimap_player != null
+	minimap.clip_contents = local
+	if local:
+		var z: float = float(minimap_maze.cols) / float(2 * LOCAL_RADIUS + 1)
+		var pc_px := Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy)
+		minimap.draw_rect(Rect2(Vector2.ZERO, size), Color(0.008, 0.012, 0.039, 0.55))
+		minimap.draw_set_transform(size * 0.5 - pc_px * z, 0.0, Vector2(z, z))
 	# static layer: background, walls, canals (Amsterdam) / quay (Arles)
 	minimap.draw_texture_rect(minimap_static_texture(), Rect2(Vector2.ZERO, size), false)
 	if minimap_maze_view != null:
@@ -1961,6 +2074,8 @@ func _draw_minimap() -> void:
 			minimap.draw_colored_polygon(arrow, MINIMAP_PLAYER_EXPLORER)
 		else:
 			minimap.draw_colored_polygon(arrow, ACCENT)
+	if local:
+		minimap.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## The exit marker: a dark-rimmed ring (outer radius EXIT_GLYPH_R, ~10 px
