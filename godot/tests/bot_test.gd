@@ -54,6 +54,7 @@ func _ready() -> void:
 	await _run_review_fix_checks()
 	await _run_movement_checks()
 	await _run_split_checks()
+	await _run_map_mode_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -2122,6 +2123,35 @@ func _run_review_fix_checks() -> void:
 
 
 ## Bewegungs-Paket (ZAP-5): Kehrtwende und Dash.
+func _run_map_mode_checks() -> void:
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var hud = main.hud
+	main.set_map_mode(0)
+	_check("map: Voll shows the minimap and no compass", hud.minimap.visible and not hud.compass.visible)
+	main.set_map_mode(1)
+	_check("map: Lokal shows minimap and compass", hud.minimap.visible and hud.compass.visible)
+	main.set_map_mode(2)
+	_check("map: Aus hides the minimap, shows the compass", not hud.minimap.visible and hud.compass.visible)
+	hud.set_minimap_visible(false)
+	_check("map: Stromausfall hides the compass too", not hud.compass.visible)
+	hud.set_minimap_visible(true)
+	_check("map: the compass comes back after the blackout", hud.compass.visible)
+	hud.set_explorer_hud(true)
+	_check("map: explorer cities always show the full map", hud.effective_map_mode() == 0 and hud.minimap.visible and not hud.compass.visible)
+	hud.set_explorer_hud(false)
+	main.player.yaw = PI * 0.5
+	_check("map: compass bearing is -yaw (facing west at yaw 90 deg)", is_equal_approx(hud.compass_bearing(), -PI * 0.5))
+	main.set_map_mode(1)
+	var saved := SettingsScript.load_settings()
+	_check("map: the mode is stored in the settings", saved.map_mode == 1)
+	main.set_map_mode(0)
+	for ob in hud.map_mode_boxes:
+		_check("map: both selectors follow", ob.get_selected_id() == 0)
+	main.player.yaw = 0.0
+
+
 func _run_split_checks() -> void:
 	main.begin_game("klassik-1")
 	await get_tree().process_frame

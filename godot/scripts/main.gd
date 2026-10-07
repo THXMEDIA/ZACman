@@ -248,6 +248,8 @@ var rabbit_week_override := Vector2i(0, 0)
 var reduce_fx := false
 ## "Regen reduzieren" (comfort block, Tokyo M2): fewer, dimmer rain drops.
 var reduce_rain := false
+## Minimap mode: SettingsScript.MAP_FULL / MAP_LOCAL / MAP_OFF (ZAP-6).
+var map_mode := 0
 ## Chaos mode (spec 2.5, start screen switch, persisted via Settings): real
 ## randomness for every rabbit, own board "chaos".
 var chaos_mode := false
@@ -290,6 +292,7 @@ func _ready() -> void:
 	chaos_mode = settings.chaos
 	fov = settings.fov
 	mouse_sens = settings.mouse_sens
+	map_mode = int(settings.map_mode)
 	_build_environment()
 	_build_player()
 	_apply_comfort()
@@ -308,6 +311,7 @@ func _ready() -> void:
 	hud.set_reduce_rain(reduce_rain)
 	hud.set_chaos_mode(chaos_mode)
 	hud.set_comfort(fov, mouse_sens)
+	hud.set_map_mode(map_mode)
 	hud.set_game_hud_visible(false)
 	hud.show_only(hud.start_panel)
 	versus = VersusControllerScript.new()
@@ -486,6 +490,7 @@ func _build_hud() -> void:
 	hud.reduce_rain_toggled.connect(set_reduce_rain)
 	hud.fov_changed.connect(set_fov)
 	hud.mouse_sens_changed.connect(set_mouse_sens)
+	hud.map_mode_changed.connect(set_map_mode)
 	hud.chaos_toggled.connect(set_chaos_mode)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
 	Twitch.chat_command.connect(_on_twitch_command)
@@ -1116,8 +1121,15 @@ func set_chaos_mode(on: bool) -> void:
 	hud.set_chaos_mode(on)
 
 
+## Map mode (comfort block, ZAP-6): stored right away, applies at once.
+func set_map_mode(mode: int) -> void:
+	map_mode = clampi(mode, SettingsScript.MAP_FULL, SettingsScript.MAP_OFF)
+	_save_settings()
+	hud.set_map_mode(map_mode)
+
+
 func _save_settings() -> void:
-	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
+	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens, "map_mode": map_mode})
 
 
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
