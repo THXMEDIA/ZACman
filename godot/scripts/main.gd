@@ -151,6 +151,9 @@ var real_now := 0.0
 var level_start_real := 0.0
 ## Zwischenzeiten (ZAP-8): split times at Speedrun.SPLIT_MARKS of the pellets.
 var level_splits: Array = []
+## Training (ZAP-6/ZAP-2): one chosen level, repeated; full map, nothing is
+## recorded (no board, no best time, no high score).
+var training_mode := false
 var _best_splits: Array = []
 ## true once the Twitch chat had a hand in the current level (a !power/!fruit
 ## took effect, or the chat shifted the rabbit's good/bad ratio); the level's
@@ -248,8 +251,6 @@ var rabbit_week_override := Vector2i(0, 0)
 var reduce_fx := false
 ## "Regen reduzieren" (comfort block, Tokyo M2): fewer, dimmer rain drops.
 var reduce_rain := false
-## Minimap mode: SettingsScript.MAP_FULL / MAP_LOCAL / MAP_OFF (ZAP-6).
-var map_mode := 0
 ## Chaos mode (spec 2.5, start screen switch, persisted via Settings): real
 ## randomness for every rabbit, own board "chaos".
 var chaos_mode := false
@@ -292,7 +293,6 @@ func _ready() -> void:
 	chaos_mode = settings.chaos
 	fov = settings.fov
 	mouse_sens = settings.mouse_sens
-	map_mode = int(settings.map_mode)
 	_build_environment()
 	_build_player()
 	_apply_comfort()
@@ -311,7 +311,6 @@ func _ready() -> void:
 	hud.set_reduce_rain(reduce_rain)
 	hud.set_chaos_mode(chaos_mode)
 	hud.set_comfort(fov, mouse_sens)
-	hud.set_map_mode(map_mode)
 	hud.set_game_hud_visible(false)
 	hud.show_only(hud.start_panel)
 	versus = VersusControllerScript.new()
@@ -481,6 +480,7 @@ func _build_hud() -> void:
 	hud.set_script(load("res://scripts/hud.gd"))
 	add_child(hud)
 	hud.start_pressed.connect(_on_start_pressed)
+	hud.training_pressed.connect(begin_training)
 	hud.resume_pressed.connect(_on_resume_pressed)
 	hud.restart_pressed.connect(_on_restart_pressed)
 	hud.explorer_pressed.connect(_on_explorer_pressed)
@@ -490,7 +490,6 @@ func _build_hud() -> void:
 	hud.reduce_rain_toggled.connect(set_reduce_rain)
 	hud.fov_changed.connect(set_fov)
 	hud.mouse_sens_changed.connect(set_mouse_sens)
-	hud.map_mode_changed.connect(set_map_mode)
 	hud.chaos_toggled.connect(set_chaos_mode)
 	hud.twitch_toggled.connect(_on_twitch_toggled)
 	Twitch.chat_command.connect(_on_twitch_command)
@@ -521,6 +520,8 @@ func start_level(level: Dictionary) -> void:
 	# The rabbit's position follows the level seed (deterministic per level).
 	maze_view.build(maze, start_cell, "normal", [], [], level.seed, level.get("look", ""))
 	hud.set_explorer_hud(false)
+	# Map by run type: Training = Voll, timed runs (Speedrun, Versus) = Lokal.
+	hud.set_map_mode(SettingsScript.MAP_FULL if training_mode else SettingsScript.MAP_LOCAL)
 	hud.set_minimap_visible(true)
 	hud.set_game_hud_visible(true)
 	_apply_theme_environment("normal")
@@ -578,8 +579,9 @@ func start_level(level: Dictionary) -> void:
 
 ## `forced_level_id` ("" = random) lets tests and a future level picker start
 ## on a specific level; normal runs start on a random level of the pool.
-func begin_game(forced_level_id: String = "") -> void:
+func begin_game(forced_level_id: String = "", training: bool = false) -> void:
 	Sfx.stop_all()
+	training_mode = training
 	score = 0
 	lives = 3
 	playing_explorer = false
@@ -609,6 +611,15 @@ func begin_game(forced_level_id: String = "") -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
+## Training on one level (start screen TRAINING): full map, repeated after
+## every clear, nothing recorded.
+func begin_training(level_id: String) -> void:
+	if LevelsScript.by_id(level_id).is_empty():
+		push_warning("begin_training: unknown level id '%s'" % level_id)
+		return
+	begin_game(level_id, true)
+
+
 ## ---------------- Explorer cities (Manhattan, Tokyo) ----------------
 ## Untimed hub levels: no clock, no score, no high score, no completion, no
 ## ghosts, no rabbit. The pellets are only signposts that lead to the subway,
@@ -624,6 +635,7 @@ func start_explorer_level(city_id: String) -> void:
 		city_id = "manhattan"
 		city = ExplorerCitiesScript.get_city(city_id)
 	explorer_city_id = city_id
+	training_mode = false
 	_end_condition(false)
 	var mm = load(city.maze_script).new()
 	maze = mm.generate()
@@ -1121,15 +1133,8 @@ func set_chaos_mode(on: bool) -> void:
 	hud.set_chaos_mode(on)
 
 
-## Map mode (comfort block, ZAP-6): stored right away, applies at once.
-func set_map_mode(mode: int) -> void:
-	map_mode = clampi(mode, SettingsScript.MAP_FULL, SettingsScript.MAP_OFF)
-	_save_settings()
-	hud.set_map_mode(map_mode)
-
-
 func _save_settings() -> void:
-	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens, "map_mode": map_mode})
+	SettingsScript.save_settings({"reduce_fx": reduce_fx, "reduce_rain": reduce_rain, "chaos": chaos_mode, "fov": fov, "mouse_sens": mouse_sens})
 
 
 ## ---------------- speedrun start: intro and hold (spec 2.1) ----------------
@@ -1300,7 +1305,7 @@ func _refresh_board_hud() -> void:
 		return
 	var board := board_id()
 	hud.current_week = rabbit_week
-	hud.set_board_badge(board, WhiteRabbitScript.week_display(WhiteRabbitScript.week_label(rabbit_week), rabbit_week))
+	hud.set_board_badge("training" if training_mode else board, WhiteRabbitScript.week_display(WhiteRabbitScript.week_label(rabbit_week), rabbit_week))
 	var best: Dictionary = Speedrun.best_entry(level_id, board, run_mode())
 	var week_text := ""
 	if board == LevelsScript.BOARD_WEEK and not best.is_empty():
@@ -1367,8 +1372,8 @@ func end_game() -> void:
 	Sfx.stop_all()
 	# Code-W8 Teil 1 (Entscheidung Studio Head): a run the chat helped never
 	# becomes the high score.
-	var chat_blocked := run_chat_assisted and score > high_score
-	if score > high_score and not run_chat_assisted:
+	var chat_blocked := run_chat_assisted and score > high_score and not training_mode
+	if score > high_score and not run_chat_assisted and not training_mode:
 		high_score = score
 		_save_highscore(high_score)
 	var level_display = _explorer_city().get("label", "EXPLORER") if playing_explorer else level_index + 1
@@ -1455,12 +1460,18 @@ func level_complete_sequence() -> void:
 	var week := board_week_label()
 	var cleared_id := level_id
 	var cleared_name: String = current_level.name
-	var result := Speedrun.record_level_time(cleared_id, elapsed, board, mode, week, level_splits if level_splits.size() == Speedrun.SPLIT_MARKS.size() else [])
+	# Training records nothing: no best time, no bonus unlock, no board entry.
+	var result := {"is_new_best": false, "previous_best": -1.0, "beat_target": false, "target": Speedrun.target_for(cleared_id), "newly_unlocked_bonus": false}
+	if not training_mode:
+		result = Speedrun.record_level_time(cleared_id, elapsed, board, mode, week, level_splits if level_splits.size() == Speedrun.SPLIT_MARKS.size() else [])
 	var player_name: String = versus.player_name() if versus != null and versus.active else Leaderboard.DEFAULT_PLAYER_NAME
-	Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
+	if not training_mode:
+		Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
-	if board != LevelsScript.BOARD_WEEK:
+	if training_mode:
+		subtitle += "  ·  Training, zählt nicht"
+	elif board != LevelsScript.BOARD_WEEK:
 		subtitle += "  ·  %s-Bestenliste" % LevelsScript.BOARD_LABELS[board]
 	if result.newly_unlocked_bonus:
 		subtitle += "  ·  ZIELZEIT GESCHAFFT!"
@@ -1482,6 +1493,9 @@ func level_complete_sequence() -> void:
 	if token != _run_token:
 		return # the player went to the menu or a new run started meanwhile
 	hud.show_levelclear(false)
+	if training_mode:
+		begin_training(cleared_id) # same level again, fresh run
+		return
 	next_level()
 	running = true
 	Sfx.set_siren(true, false)
@@ -1505,6 +1519,8 @@ func _on_restart_pressed() -> void:
 	hud.hide_all_panels()
 	if playing_explorer:
 		begin_explorer_game(explorer_city_id)
+	elif training_mode and level_id != "":
+		begin_training(level_id)
 	else:
 		begin_game()
 
@@ -1584,6 +1600,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			hud.close_leaderboard()
 		elif hud.controls_panel.visible:
 			hud.close_controls()
+		elif hud.training_panel.visible:
+			hud.close_training()
 		elif hud.is_menu_confirm_open():
 			hud.cancel_menu_confirm()
 		else:

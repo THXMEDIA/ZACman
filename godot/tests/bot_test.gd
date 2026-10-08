@@ -2128,28 +2128,49 @@ func _run_map_mode_checks() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var hud = main.hud
-	main.set_map_mode(0)
+	_check("map: a Speedrun uses the local map (minimap + compass)", not main.training_mode and hud.effective_map_mode() == 1 and hud.minimap.visible and hud.compass.visible)
+	hud.set_map_mode(0)
 	_check("map: Voll shows the minimap and no compass", hud.minimap.visible and not hud.compass.visible)
-	main.set_map_mode(1)
-	_check("map: Lokal shows minimap and compass", hud.minimap.visible and hud.compass.visible)
-	main.set_map_mode(2)
+	hud.set_map_mode(2)
 	_check("map: Aus hides the minimap, shows the compass", not hud.minimap.visible and hud.compass.visible)
+	hud.set_map_mode(1)
 	hud.set_minimap_visible(false)
-	_check("map: Stromausfall hides the compass too", not hud.compass.visible)
+	_check("map: Stromausfall hides minimap and compass", not hud.minimap.visible and not hud.compass.visible)
 	hud.set_minimap_visible(true)
-	_check("map: the compass comes back after the blackout", hud.compass.visible)
+	_check("map: both come back after the blackout", hud.minimap.visible and hud.compass.visible)
 	hud.set_explorer_hud(true)
 	_check("map: explorer cities always show the full map", hud.effective_map_mode() == 0 and hud.minimap.visible and not hud.compass.visible)
 	hud.set_explorer_hud(false)
 	main.player.yaw = PI * 0.5
 	_check("map: compass bearing is -yaw (facing west at yaw 90 deg)", is_equal_approx(hud.compass_bearing(), -PI * 0.5))
-	main.set_map_mode(1)
-	var saved := SettingsScript.load_settings()
-	_check("map: the mode is stored in the settings", saved.map_mode == 1)
-	main.set_map_mode(0)
-	for ob in hud.map_mode_boxes:
-		_check("map: both selectors follow", ob.get_selected_id() == 0)
 	main.player.yaw = 0.0
+
+	# ---- Training: full map, nothing recorded ----
+	var best_before: float = Speedrun.best_for("klassik-1")
+	var top_before: int = Leaderboard.get_top("klassik-1", "woche", 50).size()
+	main.begin_training("klassik-1")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("training: flag set, full map, no compass", main.training_mode and hud.effective_map_mode() == 0 and hud.minimap.visible and not hud.compass.visible)
+	_check("training: the level is the chosen one", main.level_id == "klassik-1")
+	_check("training: the board badge says TRAINING", hud.board_label.text == "TRAINING")
+	main.level_start_real = main.real_now - 61.0
+	main.level_complete_sequence()
+	_check("training: a cleared level records no best time", is_equal_approx(Speedrun.best_for("klassik-1"), best_before))
+	_check("training: a cleared level makes no Bestenlisten entry", Leaderboard.get_top("klassik-1", "woche", 50).size() == top_before)
+	var hs_before: int = main.high_score
+	main.score = hs_before + 1000
+	main.end_game()
+	_check("training: no high score from a training run", main.high_score == hs_before)
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("training: a new Speedrun leaves training mode and is local again", not main.training_mode and hud.effective_map_mode() == 1)
+	_check("training: picker lists every level of the pool", hud.training_buttons.size() == LevelsScript.POOL.size())
+	hud.show_training()
+	_check("training: the picker panel opens and closes", hud.training_panel.visible and not hud.start_panel.visible)
+	hud.close_training()
+	_check("training: ZURÜCK returns to the start screen", hud.start_panel.visible and not hud.training_panel.visible)
+	hud.hide_all_panels()
 
 
 func _run_split_checks() -> void:

@@ -88,7 +88,7 @@ func _initialize() -> void:
 
 	# --- written file: version 4, boards, atomic --------------------------
 	var saved = _read_json(lb.save_path())
-	_check("a written save is {version: 4, boards: {...}}", typeof(saved) == TYPE_DICTIONARY and saved.get("version", 0) == lb_script.SAVE_VERSION and lb_script.SAVE_VERSION == 4 and typeof(saved.get("boards")) == TYPE_DICTIONARY, str(saved).left(120))
+	_check("a written save is {version: 5, boards: {...}}", typeof(saved) == TYPE_DICTIONARY and saved.get("version", 0) == lb_script.SAVE_VERSION and lb_script.SAVE_VERSION == 5 and typeof(saved.get("boards")) == TYPE_DICTIONARY, str(saved).left(120))
 	_check("the atomic write leaves no .tmp file", not FileAccess.file_exists(lb.save_path() + ".tmp"))
 
 	# --- migration v1 (before the level pool, top-level boards) -----------
@@ -136,7 +136,7 @@ func _initialize() -> void:
 	m2.submit_time("klassik-1", "woche", 125.0, "Neu", "solo", "2026-W40")
 	m2.free()
 	var after = _read_json(lb.save_path())
-	_check("v2 -> v4: file rewritten as version 4 with the archive", after.get("version") == 4 and typeof(after.get("archive")) == TYPE_DICTIONARY and after.archive.size() == archived.size() + 3, str(after).left(160))
+	_check("v2 -> v4: file rewritten as version 4 with the archive", after.get("version") == 5 and typeof(after.get("archive")) == TYPE_DICTIONARY and after.archive.size() == archived.size() + 3, str(after).left(160))
 
 	# --- round trip: v4 load + save changes nothing --------------------------
 	var rt1 = lb_script.new()
@@ -147,7 +147,7 @@ func _initialize() -> void:
 	rt1.free()
 	var rt2 = lb_script.new()
 	rt2.reload()
-	_check("v4 round trip keeps boards and archive", rt2._boards == boards1 and rt2.archive == arch1 and rt2.loaded_version == 4)
+	_check("v4 round trip keeps boards and archive", rt2._boards == boards1 and rt2.archive == arch1 and rt2.loaded_version == 5)
 	_check("v4 round trip keeps the week of an entry", rt2.get_top("klassik-1", "woche")[0].week == "2026-W40")
 	rt2.free()
 
@@ -159,11 +159,19 @@ func _initialize() -> void:
 	_check("v3 file: the board is archived as |regel1 and nothing is live", v3f.get_top("klassik-1", "woche").is_empty() and v3f.archive.has("klassik-1|woche|solo" + rs) and v3f.archive["klassik-1|woche|solo" + rs][0].name == "Old")
 	v3f.submit_time("klassik-1", "woche", 90.0, "Neu", "solo", "2026-W41")
 	var v3_after = _read_json(lb.save_path())
-	_check("v3 file: rewritten as version 4 with archive and the new board", v3_after.get("version") == 4 and v3_after.archive.has("klassik-1|woche|solo" + rs) and v3_after.boards.has("klassik-1|woche|solo"))
+	_check("v3 file: rewritten as version 4 with archive and the new board", v3_after.get("version") == 5 and v3_after.archive.has("klassik-1|woche|solo" + rs) and v3_after.boards.has("klassik-1|woche|solo"))
 	v3f.free()
 
-	# --- v4 with an unknown key: archived; dirty entries dropped -----------
+	# --- a v4 file (rules version 2, full map): archived as |regel2 ---------
 	_write(lb.save_path(), JSON.stringify({"version": 4, "boards": {
+		"klassik-1|woche|solo": [{"name": "Dash", "time": 100.0, "week": "2026-W41"}],
+	}}))
+	var v4f = lb_script.new()
+	_check("v4 file: archived as |regel2, nothing live", v4f.get_top("klassik-1", "woche").is_empty() and v4f.archive.has("klassik-1|woche|solo" + lb_script.RULES2_SUFFIX) and v4f.archive["klassik-1|woche|solo" + lb_script.RULES2_SUFFIX][0].name == "Dash")
+	v4f.free()
+
+	# --- v5 with an unknown key: archived; dirty entries dropped -----------
+	_write(lb.save_path(), JSON.stringify({"version": 5, "boards": {
 		"klassik-1|woche|solo": [
 			{"name": "Ok", "time": 90.0, "week": "2026-W40"},
 			{"name": "NoTime"},
@@ -221,7 +229,7 @@ func _initialize() -> void:
 	lm.reload()
 	var ct2: Array = lm.get_top("klassik-1", "woche")
 	_check("cond and date survive save and load", ct2.size() == 4 and ct2[0].cond == "matrix" and ct2[1].cond == "" and ct2[0].date == "2026-10-03", str(ct2))
-	_write(lm.save_path(), JSON.stringify({"version": 4, "boards": {"klassik-2|woche|solo": [{"name": "Player", "time": 100.0, "week": "2026-W39"}]}}))
+	_write(lm.save_path(), JSON.stringify({"version": 5, "boards": {"klassik-2|woche|solo": [{"name": "Player", "time": 100.0, "week": "2026-W39"}]}}))
 	lm.reload()
 	var old_e: Dictionary = lm.get_top("klassik-2", "woche")[0]
 	_check("an older entry without cond/date loads as unknown", old_e.cond == "?" and old_e.date == "", str(old_e))

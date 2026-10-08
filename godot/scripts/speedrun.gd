@@ -20,9 +20,12 @@ const SAVE_FILE := "zapmaniac_speedrun.json"
 ##      level, 06.10.2026). Times set without them are not comparable, so on
 ##      the first load every best time of an older file moves to the archive
 ##      under "<key>|regel1" (kept, never shown). Everything else as in 3.
-const SAVE_VERSION := 4
+const SAVE_VERSION := 5
 ## Suffix of archived boards from before the Bewegungs-Paket (rules version 1).
 const RULES1_SUFFIX := "|regel1"
+## Rules version 3 (Speedrun with the local map only): runs of a version-4
+## file (Dash + Kehrtwende, full map) are archived with this suffix.
+const RULES2_SUFFIX := "|regel2"
 ## Zwischenzeiten: at these shares of the pellets eaten the HUD compares the
 ## current time with the best run's (docs/design/bewegungspaket.md, ZAP-8).
 const SPLIT_MARKS := [0.25, 0.5, 0.75]
@@ -347,5 +350,12 @@ static func migrate_best_times(raw: Dictionary, version: int) -> Dictionary:
 			var t: float = float(out[k].time)
 			if not arch.has(ak) or t < float(arch[ak]):
 				arch[ak] = t
+		out = {}
+	elif version < 5:
+		for k in out.keys():
+			var ak2: String = str(k) + RULES2_SUFFIX
+			var t2: float = float(out[k].time)
+			if not arch.has(ak2) or t2 < float(arch[ak2]):
+				arch[ak2] = t2
 		out = {}
 	return {"best_times": out, "archive": arch, "dropped": dropped}

@@ -91,7 +91,7 @@ func _initialize() -> void:
 	_remove_backups(sr_path)
 
 	# ---- Speedrun: wrong types inside a valid file ---------------------------
-	var typed_text := JSON.stringify({"version": 4, "best_times": {"klassik-1|woche|solo": {"time": "schnell", "week": 5}, "klassik-2|woche|solo": {"time": 140.0, "week": "2026-W40"}}, "bonus_unlocked": "ja"})
+	var typed_text := JSON.stringify({"version": 5, "best_times": {"klassik-1|woche|solo": {"time": "schnell", "week": 5}, "klassik-2|woche|solo": {"time": 140.0, "week": "2026-W40"}}, "bonus_unlocked": "ja"})
 	_write(sr_path, typed_text)
 	sr.reload()
 	_check("speedrun: wrong-typed values -> backup of the original", _backup_ok(sr_path, typed_text) == "", _backup_ok(sr_path, typed_text))
@@ -110,7 +110,7 @@ func _initialize() -> void:
 	lb.reload()
 	_check("leaderboard: an unparseable save is kept", _backup_ok(lb_path, "[1, 2, 3") == "")
 	_remove_backups(lb_path)
-	var lb_typed := JSON.stringify({"version": 4, "boards": {"klassik-1|woche|solo": [{"name": "Player", "time": 120.0, "week": "2026-W40"}, {"name": 7, "time": 99.0}, "kaputt"]}})
+	var lb_typed := JSON.stringify({"version": 5, "boards": {"klassik-1|woche|solo": [{"name": "Player", "time": 120.0, "week": "2026-W40"}, {"name": 7, "time": 99.0}, "kaputt"]}})
 	_write(lb_path, lb_typed)
 	lb.reload()
 	_check("leaderboard: wrong-typed entries -> backup of the original", _backup_ok(lb_path, lb_typed) == "", _backup_ok(lb_path, lb_typed))
@@ -139,13 +139,6 @@ func _initialize() -> void:
 	_write(st_path, "{\"version\": 2, \"reduce_fx\": true, \"chaos\": true}")
 	var st3 := SettingsScript.load_settings()
 	_check("settings: a version-2 file loads, comfort values at their defaults", st3.reduce_fx and st3.chaos and is_equal_approx(st3.fov, 72.0) and is_equal_approx(st3.mouse_sens, 1.0) and SavePathsScript.corrupt_backups(st_path).is_empty())
-	_check("settings v5: map mode defaults to Voll when the file has none", st3.map_mode == SettingsScript.MAP_FULL)
-	SettingsScript.save_settings({"map_mode": 1})
-	_check("settings v5: map mode Lokal round trip", SettingsScript.load_settings().map_mode == SettingsScript.MAP_LOCAL)
-	SettingsScript.save_settings({"map_mode": 9})
-	_check("settings v5: map mode clamped to Aus", SettingsScript.load_settings().map_mode == SettingsScript.MAP_OFF)
-	_write(st_path, "{\"version\": 5, \"map_mode\": \"x\"}")
-	_check("settings v5: a wrong-typed map mode falls back to Voll and keeps a backup", SettingsScript.load_settings().map_mode == SettingsScript.MAP_FULL and not SavePathsScript.corrupt_backups(st_path).is_empty())
 	_remove_backups(st_path)
 	DirAccess.remove_absolute(st_path)
 
