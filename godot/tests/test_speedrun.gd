@@ -259,7 +259,7 @@ func _initialize() -> void:
 	var rt = JSON.parse_string(rt_file.get_as_text())
 	rt_file.close()
 	checks += 1
-	if rt.get("version") != 4 or typeof(rt.get("archive")) != TYPE_DICTIONARY or rt.archive.size() != arch_keys.size() + 3:
+	if rt.get("version") != speedrun_script.SAVE_VERSION or typeof(rt.get("archive")) != TYPE_DICTIONARY or rt.archive.size() != arch_keys.size() + 3:
 		failures += 1
 		print("FAIL the migrated file should be version 4 and keep the archive: %s" % str(rt).left(200))
 	# round trip: load the v3 file, save it again: nothing changes
@@ -274,7 +274,7 @@ func _initialize() -> void:
 	var rt2 = speedrun_script.new()
 	rt2.reload() # best_times/archive are read directly below: load first
 	checks += 1
-	if rt2.best_times != times1 or rt2.archive != arch1 or rt2.loaded_version != 4:
+	if rt2.best_times != times1 or rt2.archive != arch1 or rt2.loaded_version != speedrun_script.SAVE_VERSION:
 		failures += 1
 		print("FAIL v4 round trip changed the data: %s vs %s" % [rt2.best_times, times1])
 	rt2.free()
@@ -303,16 +303,29 @@ func _initialize() -> void:
 		print("FAIL v3 load should archive the boards as |regel1, type-check entries and keep the archive: %s / %s" % [v3.best_times, v3.archive])
 	v3.free()
 
-	# a v4 file keeps its live boards (the new rules' times count)
+	# Rules version 3 (local map in the Speedrun): a v4 file's boards are
+	# archived as |regel2, nothing stays live.
 	_write(SAVE_PATH, JSON.stringify({"version": 4, "best_times": {
+		"klassik-1|woche|solo": {"time": 88.0, "week": "2026-W41", "splits": [20.0, 40.0, 60.0]},
+	}, "archive": {"klassik-1|woche|solo" + rsuf: 99.0}}))
+	var v4a = speedrun_script.new()
+	v4a.reload()
+	checks += 1
+	if v4a.best_for("klassik-1") != -1.0 or v4a.best_times.size() != 0 or v4a.archive.get("klassik-1|woche|solo" + speedrun_script.RULES2_SUFFIX) != 88.0 or v4a.archive.get("klassik-1|woche|solo" + rsuf) != 99.0:
+		failures += 1
+		print("FAIL a v4 file should be archived as |regel2 (old archive kept): %s / %s" % [v4a.best_times, v4a.archive])
+	v4a.free()
+
+	# a v5 file keeps its live boards (the current rules' times count)
+	_write(SAVE_PATH, JSON.stringify({"version": 5, "best_times": {
 		"klassik-1|woche|solo": {"time": 88.0, "week": "2026-W41"},
 	}, "archive": {"klassik-1|woche|solo" + rsuf: 99.0}}))
 	var v4 = speedrun_script.new()
 	v4.reload()
 	checks += 1
-	if v4.best_for("klassik-1") != 88.0 or v4.archive.get("klassik-1|woche|solo" + rsuf) != 99.0 or v4.loaded_version != 4:
+	if v4.best_for("klassik-1") != 88.0 or v4.archive.get("klassik-1|woche|solo" + rsuf) != 99.0 or v4.loaded_version != 5:
 		failures += 1
-		print("FAIL a v4 file keeps live boards and its archive: %s / %s" % [v4.best_times, v4.archive])
+		print("FAIL a v5 file keeps live boards and its archive: %s / %s" % [v4.best_times, v4.archive])
 	v4.free()
 
 	# --- Code-W3: version field and type checks ---------------------------

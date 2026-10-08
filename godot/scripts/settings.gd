@@ -17,9 +17,9 @@ const SavePathsScript := preload("res://scripts/save_paths.gd")
 const SAVE_FILE := "zapmaniac_settings.json"
 ## 1: {"version", "reduce_fx"}; 2: plus "chaos"; 3: plus "fov" and
 ## "mouse_sens" (UX-K1 comfort block); 4: plus "reduce_rain" ("Regen
-## reduzieren", Tokyo M2); 5: plus "map_mode" (ZAP-6: 0 Voll, 1 Lokal, 2 Aus).
-## A missing field keeps its default, so older files load unchanged.
-const SAVE_VERSION := 5
+## reduzieren", Tokyo M2). A missing field keeps its default, so older files
+## load unchanged.
+const SAVE_VERSION := 4
 ## Field of view (degrees) and mouse sensitivity (factor) — ranges of the
 ## sliders in the comfort block.
 const FOV_MIN := 60.0
@@ -27,16 +27,14 @@ const FOV_MAX := 100.0
 const FOV_DEFAULT := 72.0
 const SENS_MIN := 0.3
 const SENS_MAX := 3.0
-## Map mode of the minimap: Voll = whole maze (default), Lokal = only a window
-## of +-LOCAL_RADIUS cells around the player, Aus = no map (a compass strip
-## replaces it in the last two).
+## Map modes of the minimap (not a stored setting: the run type decides —
+## Training = Voll, Speedrun/Versus = Lokal, Explorer = Voll).
 const MAP_FULL := 0
 const MAP_LOCAL := 1
 const MAP_OFF := 2
-const DEFAULTS := {"reduce_fx": false, "reduce_rain": false, "chaos": false, "fov": FOV_DEFAULT, "mouse_sens": 1.0, "map_mode": MAP_FULL}
+const DEFAULTS := {"reduce_fx": false, "reduce_rain": false, "chaos": false, "fov": FOV_DEFAULT, "mouse_sens": 1.0}
 const BOOL_FIELDS := ["reduce_fx", "reduce_rain", "chaos"]
-const RANGES := {"fov": [FOV_MIN, FOV_MAX], "mouse_sens": [SENS_MIN, SENS_MAX], "map_mode": [0.0, 2.0]}
-const INT_FIELDS := ["map_mode"]
+const RANGES := {"fov": [FOV_MIN, FOV_MAX], "mouse_sens": [SENS_MIN, SENS_MAX]}
 
 
 static func save_path() -> String:
@@ -73,8 +71,6 @@ static func load_settings() -> Dictionary:
 		else:
 			if (typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT) and not is_nan(float(v)) and not is_inf(float(v)):
 				out[k] = clampf(float(v), RANGES[k][0], RANGES[k][1])
-				if k in INT_FIELDS:
-					out[k] = int(roundf(out[k]))
 			else:
 				broken = true
 	if broken:
@@ -90,6 +86,4 @@ static func save_settings(values: Dictionary) -> void:
 			payload[k] = bool(values.get(k, DEFAULTS[k]))
 		else:
 			payload[k] = clampf(float(values.get(k, DEFAULTS[k])), RANGES[k][0], RANGES[k][1])
-			if k in INT_FIELDS:
-				payload[k] = int(roundf(payload[k]))
 	SavePathsScript.write_atomic(save_path(), JSON.stringify(payload))

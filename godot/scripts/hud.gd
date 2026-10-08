@@ -19,10 +19,10 @@ signal reduce_rain_toggled(on: bool)
 ## UX-K1 comfort block: field of view (degrees) and mouse sensitivity (factor).
 signal fov_changed(value: float)
 signal mouse_sens_changed(value: float)
-signal map_mode_changed(mode: int)
 signal chaos_toggled(on: bool)
 signal twitch_toggled(is_enabled: bool, channel: String)
 signal versus_pressed
+signal training_pressed(level_id: String)
 
 const BG := Color(0.035, 0.055, 0.11, 0.86)
 const BORDER := Color(0.31, 0.66, 1.0, 0.35)
@@ -36,7 +36,7 @@ const COND_BAD := Color("ff3cc8")
 const RABBIT_WHITE := Color("f2f2ed")
 ## Board badge colors (spec 2.5): the weekly board neutral, Chaos amber,
 ## Chat violet (Twitch-ish) — none of them the good/bad condition colors.
-const BOARD_COLORS := {"woche": Color(1.0, 0.82, 0.4), "chaos": Color("ffa41f"), "chat": Color("b78cff")}
+const BOARD_COLORS := {"woche": Color(1.0, 0.82, 0.4), "chaos": Color("ffa41f"), "chat": Color("b78cff"), "training": Color("7fd8ff")}
 const MUTED := Color(0.56, 0.64, 0.78)
 ## Kippbild with "Effekte reduzieren" (UX-K1): the world does not tip, a thin
 ## frame in the complement palette's light cyan shows the manipulation.
@@ -109,6 +109,9 @@ var chaos_start: CheckBox
 var leaderboard_panel: PanelContainer
 ## EINSTELLUNGEN / STEUERUNG: explains every key (start screen and pause menu).
 var controls_panel: PanelContainer
+var training_panel: PanelContainer
+var training_buttons: Dictionary = {} # level id -> Button
+var training_return_panel: Control
 var controls_return_panel: Control = null
 var settings_btn: Button
 var controls_pause_btn: Button
@@ -131,7 +134,6 @@ var reduce_fx_start: CheckBox
 var reduce_fx_pause: CheckBox
 var reduce_rain_start: CheckBox
 ## ZAP-6: map mode selectors (start + pause) and the compass strip.
-var map_mode_boxes: Array = []
 var map_mode := 0
 var _minimap_on := true
 var compass: Control
@@ -240,6 +242,7 @@ func _ready() -> void:
 	_build_gameover_panel()
 	_build_leaderboard_panel()
 	_build_controls_panel()
+	_build_training_panel()
 	_build_levelclear_label()
 	_build_condition_card()
 	_build_start_intro()
@@ -599,11 +602,16 @@ func _build_start_panel() -> void:
 	btn.size_flags_stretch_ratio = 2.0
 	btn.pressed.connect(func(): start_pressed.emit())
 	run_row.add_child(btn)
+	var training_btn := _make_button("TRAINING")
+	training_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	training_btn.tooltip_text = "Ein Level üben: volle Karte, nichts wird gewertet."
+	training_btn.pressed.connect(func(): show_training())
+	run_row.add_child(training_btn)
 	var vs_btn := _make_button("VERSUS")
 	vs_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vs_btn.pressed.connect(func(): versus_pressed.emit())
 	run_row.add_child(vs_btn)
-	box.add_child(_subtitle_label("Speedrun: zufälliges Level, Zeitjagd, in jedem Level ein weißes Kaninchen – gut oder schlecht. Versus: zu zweit übers Netz, gleiche Level, schnellere Zeit gewinnt."))
+	box.add_child(_subtitle_label("Speedrun: zufälliges Level, Zeitjagd mit lokaler Karte. Training: ein Level üben, volle Karte, ungewertet. Versus: zu zweit übers Netz."))
 	var lb_row := HBoxContainer.new()
 	lb_row.add_theme_constant_override("separation", 10)
 	box.add_child(lb_row)
@@ -691,7 +699,7 @@ func _build_comfort_block() -> Control:
 	row.add_theme_constant_override("separation", 14)
 	col.add_child(row)
 	var cb := CheckBox.new()
-	cb.text = "Effekte reduzieren"
+	cb.text = "Effekte reduzieren (ruhigere Looks, kein Kippen)"
 	cb.tooltip_text = "Ruhigere Looks, kein Kippen (Kippbild). Kyoto: die Häuser klappen nicht auf."
 	cb.add_theme_font_size_override("font_size", TEXT_PX)
 	cb.toggled.connect(func(pressed: bool): reduce_fx_toggled.emit(pressed))
@@ -713,22 +721,6 @@ func _build_comfort_block() -> Control:
 		if not _comfort_syncing:
 			mouse_sens_changed.emit(v))
 	sens_sliders.append(sens_s)
-	var map_l := Label.new()
-	map_l.text = "Karte"
-	map_l.add_theme_font_size_override("font_size", TEXT_PX)
-	map_l.add_theme_color_override("font_color", RABBIT_WHITE)
-	row.add_child(map_l)
-	var map_ob := OptionButton.new()
-	map_ob.add_item("Voll", SettingsScript.MAP_FULL)
-	map_ob.add_item("Lokal", SettingsScript.MAP_LOCAL)
-	map_ob.add_item("Aus", SettingsScript.MAP_OFF)
-	map_ob.add_theme_font_size_override("font_size", TEXT_PX)
-	map_ob.tooltip_text = "Voll: ganzes Labyrinth. Lokal: nur ca. 4 Zellen um dich. Aus: keine Karte. Lokal und Aus zeigen oben einen Kompass."
-	map_ob.item_selected.connect(func(idx: int):
-		if not _comfort_syncing:
-			map_mode_changed.emit(map_ob.get_item_id(idx)))
-	row.add_child(map_ob)
-	map_mode_boxes.append(map_ob)
 	set_comfort(SettingsScript.FOV_DEFAULT, 1.0)
 	return panel
 
@@ -764,10 +756,6 @@ func _comfort_slider(parent: Control, text: String, lo: float, hi: float, step: 
 ## Map mode on both selectors (no re-emit) and on the live minimap/compass.
 func set_map_mode(mode: int) -> void:
 	map_mode = clampi(mode, SettingsScript.MAP_FULL, SettingsScript.MAP_OFF)
-	_comfort_syncing = true
-	for ob in map_mode_boxes:
-		ob.select(ob.get_item_index(map_mode))
-	_comfort_syncing = false
 	_refresh_map_mode()
 
 
@@ -1080,7 +1068,7 @@ func _build_controls_panel() -> void:
 	box.add_child(_subtitle_label("DASH-LADUNGEN", 16))
 	box.add_child(_subtitle_label("Du startest jedes Level mit 1 Ladung, mehr als 2 gehen nicht. Eine neue Ladung gibt es nur, wenn du einen verängstigten Geist frisst oder die Frucht erwischst, nie über die Zeit. Steht eine Wand direkt davor, startet der Dash nicht und kostet nichts. Der Chip DASH oben links zeigt die Ladungen."))
 	box.add_child(_subtitle_label("SPEEDRUN", 16))
-	box.add_child(_subtitle_label("Die Zeit läuft bis zur letzten Kugel. Dash und Kehrtwende gelten in allen Speedrun-Leveln für alle gleich. In den Explorer-Städten gibt es nur die Kehrtwende. Mit diesen Regeln (Regelversion 2) starten die Bestenlisten neu, frühere Zeiten bleiben im Archiv der Spieldatei erhalten."))
+	box.add_child(_subtitle_label("Die Zeit läuft bis zur letzten Kugel. Dash und Kehrtwende gelten in allen Speedrun-Leveln für alle gleich. In den Explorer-Städten gibt es nur die Kehrtwende. Die Karte zeigt im Speedrun nur die Umgebung (lokal), dazu gibt es oben einen Kompass. Mit diesen Regeln (Regelversion 3) starten die Bestenlisten neu, frühere Zeiten bleiben im Archiv der Spieldatei erhalten. Zum Üben gibt es TRAINING mit voller Karte, das nichts wertet."))
 	box.add_child(_subtitle_label("KOMFORT", 16))
 	box.add_child(_subtitle_label("Sichtfeld, Mausempfindlichkeit und „Effekte reduzieren“ stehen oben im Startbildschirm und im Pausemenü."))
 	var back := _make_button("ZURÜCK  (Esc)")
@@ -1096,6 +1084,41 @@ func show_controls(from: Control = null) -> void:
 
 func close_controls() -> void:
 	show_only(controls_return_panel if controls_return_panel != null else start_panel)
+
+
+## Training picker: one button per level of the pool with its best time;
+## pressing one starts a training run on it (full map, nothing recorded).
+func _build_training_panel() -> void:
+	training_panel = _overlay_panel()
+	training_panel.visible = false
+	var box: VBoxContainer = training_panel.get_child(0)
+	box.add_theme_constant_override("separation", 10)
+	box.add_child(_title_label("TRAINING"))
+	box.add_child(_subtitle_label("Wähle ein Level. Du siehst die ganze Karte. Die Zeit läuft mit, zählt aber für keine Bestenliste und keine Bestzeit. Nach jedem Durchlauf geht es im selben Level weiter. Die Zwischenzeiten vergleichen sich mit deiner echten Bestzeit."))
+	training_buttons.clear()
+	for lv in LevelsScript.POOL:
+		var lid: String = lv.id
+		var b := _make_button(lv.name)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(func(): training_pressed.emit(lid))
+		box.add_child(b)
+		training_buttons[lid] = b
+	var back := _make_button("ZURÜCK  (Esc)")
+	back.pressed.connect(close_training)
+	box.add_child(back)
+
+
+func show_training(from: Control = null) -> void:
+	training_return_panel = from if from != null else start_panel
+	for lid in training_buttons:
+		var best := Speedrun.best_for(lid)
+		var nm: String = LevelsScript.by_id(lid).name
+		training_buttons[lid].text = nm if best < 0.0 else "%s   ·   Bestzeit %s" % [nm, Speedrun.format_time(best)]
+	show_only(training_panel)
+
+
+func close_training() -> void:
+	show_only(training_return_panel if training_return_panel != null else start_panel)
 
 
 ## Opens the Bestenliste. `from` = the panel ZURÜCK / Esc return to (default:
@@ -1863,7 +1886,7 @@ func _panel_box(panel: PanelContainer) -> VBoxContainer:
 
 
 func show_only(panel: Control) -> void:
-	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel, controls_panel]:
+	for p in [start_panel, pause_panel, gameover_panel, leaderboard_panel, controls_panel, training_panel]:
 		p.visible = p == panel
 	if versus_ui != null:
 		versus_ui.lobby.visible = versus_ui.lobby == panel
@@ -1875,6 +1898,7 @@ func hide_all_panels() -> void:
 	gameover_panel.visible = false
 	leaderboard_panel.visible = false
 	controls_panel.visible = false
+	training_panel.visible = false
 	if versus_ui != null:
 		versus_ui.lobby.visible = false
 
