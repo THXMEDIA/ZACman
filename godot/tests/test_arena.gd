@@ -258,6 +258,31 @@ func _test_player_body() -> void:
 	_check("player: back to walls only", p.collision_mask == 2)
 	p.queue_free()
 
+	# the real opponent body: it must stop a walking player although it was
+	# MOVED after it entered the tree (a kinematic body ignores its parent's moves)
+	var w = load("res://scripts/arena_world.gd").new()
+	root.add_child(w)
+	w._build_figure()
+	var pl = PlayerScript.new()
+	root.add_child(pl)
+	pl.global_position = Vector3(10, 1.25, 10)
+	pl.set_opponent_solid(true)
+	await physics_frame
+	w.place_opponent(Vector2i(4, 5)) # 2 m ahead (forward is -z), moved after entering the tree
+	pl.move_input = Vector2(0, 1)
+	for i in 90:
+		await physics_frame
+		await process_frame
+	var gap: float = absf(pl.global_position.z - w.figure.position.z)
+	_check("the player is stopped by the opponent (gap %.2f m)" % gap, gap > 0.6 and gap < 0.9, str(pl.global_position))
+	w.place_opponent(Vector2i(4, 8)) # he steps aside (teleport)
+	for i in 60:
+		await physics_frame
+		await process_frame
+	_check("... and walks on when he stepped aside", pl.global_position.z < 6.0, str(pl.global_position))
+	w.queue_free()
+	pl.queue_free()
+
 
 ## ---- the messages --------------------------------------------------------------------
 

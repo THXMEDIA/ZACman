@@ -31,7 +31,16 @@ var opp_name := "Gegner"
 
 var figure: Node3D
 var body: AnimatableBody3D
+var body_shape: CollisionShape3D
 var name_label: Label3D
+var _mi: MeshInstance3D
+var _visor: MeshInstance3D
+var _light: OmniLight3D
+var _capsule: CapsuleMesh
+var _shape: CylinderShape3D
+## Height of the player's eye above the floor: the figure is as tall as that,
+## so he stands as tall as the one who looks through those eyes.
+var height := 2.5
 var _target := Vector3.ZERO
 var _target_yaw := 0.0
 var _has_pos := false
@@ -60,13 +69,12 @@ func _build_figure() -> void:
 	mat.emission_enabled = true
 	mat.emission = OPP_COLOR
 	mat.emission_energy_multiplier = 0.9
-	var capsule := CapsuleMesh.new()
-	capsule.radius = 0.3
-	capsule.height = 1.5
+	_capsule = CapsuleMesh.new()
+	_capsule.radius = 0.3
 	var mi := MeshInstance3D.new()
-	mi.mesh = capsule
+	mi.mesh = _capsule
 	mi.material_override = mat
-	mi.position = Vector3(0, 0.8, 0)
+	_mi = mi
 	figure.add_child(mi)
 	# a visor on the front (-Z, where the player looks at yaw 0) shows his facing
 	var visor := MeshInstance3D.new()
@@ -79,35 +87,49 @@ func _build_figure() -> void:
 	vmat.emission = Color(1, 1, 1)
 	vmat.emission_energy_multiplier = 0.6
 	visor.material_override = vmat
-	visor.position = Vector3(0, 1.3, -0.26)
+	_visor = visor
 	figure.add_child(visor)
 	var light := OmniLight3D.new()
 	light.light_color = OPP_COLOR
 	light.omni_range = 3.0
 	light.light_energy = 0.6
-	light.position = Vector3(0, 1.0, 0)
+	_light = light
 	figure.add_child(light)
 	name_label = Label3D.new()
 	name_label.text = opp_name
 	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	name_label.pixel_size = 0.008
-	name_label.font_size = 56
+	name_label.fixed_size = true # the same size on screen at any distance
+	name_label.pixel_size = 0.0009
+	name_label.font_size = 64
 	name_label.modulate = OPP_COLOR
-	name_label.outline_size = 12
-	name_label.position = Vector3(0, 2.05, 0)
+	name_label.outline_size = 14
 	figure.add_child(name_label)
 	# the solid body: layer 3 (value 4), the player's mask sees it (player_controller)
 	body = AnimatableBody3D.new()
 	body.collision_layer = 4
 	body.collision_mask = 0
-	var shape := CylinderShape3D.new()
-	shape.radius = BODY_RADIUS
-	shape.height = 2.0
+	body.sync_to_physics = false # moved from _process: a synced body would be reset by the physics frame
+	_shape = CylinderShape3D.new()
+	_shape.radius = BODY_RADIUS
 	var cs := CollisionShape3D.new()
-	cs.shape = shape
+	cs.shape = _shape
+	body_shape = cs
 	body.add_child(cs)
-	body.position = Vector3(0, 1.0, 0)
-	figure.add_child(body)
+	# NOT a child of the figure: a kinematic body only follows its OWN transform
+	# changes, never its parent's (the player walked through the opponent)
+	add_child(body)
+	fit_height(height)
+
+
+## Sizes the figure, his name tag and his body to the eye height `h` (m).
+func fit_height(h: float) -> void:
+	height = h
+	_capsule.height = h
+	_mi.position = Vector3(0, h * 0.5, 0)
+	_visor.position = Vector3(0, h - 0.3, -0.26)
+	_light.position = Vector3(0, h * 0.5, 0)
+	name_label.position = Vector3(0, h + 0.45, 0)
+	_shape.height = h + 0.2
 
 
 ## ---- level setup (Main.start_level) ----------------------------------------------
@@ -123,6 +145,7 @@ func prepare_level() -> Vector2i:
 	maze_view.arena_split(0 if session.is_host else 1, OPP_COLOR, [b])
 	opp_name = session.opp_name
 	name_label.text = opp_name
+	fit_height(main.player.eye_h + main.player.camera.position.y) # where his eyes are
 	place_opponent(opp_start)
 	return my_start
 
@@ -133,12 +156,16 @@ func place_opponent(cell: Vector2i) -> void:
 	_has_pos = false
 	figure.position = _target
 	figure.visible = true
+	_sync_body()
 
 
 func set_active(on: bool) -> void:
 	figure.visible = on
-	body.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	# not process_mode DISABLED: a disabled body keeps a stale physics transform
+	# when it is enabled again (found in the screenshot test: the player walked
+	# through the opponent), so only its layer and shape are switched
 	body.collision_layer = 4 if on else 0
+	body_shape.set_deferred("disabled", not on)
 	main.player.set_opponent_solid(on)
 
 
@@ -150,6 +177,7 @@ func on_opponent_pos(x: float, z: float, yaw: float) -> void:
 	if not _has_pos:
 		_has_pos = true
 		figure.position = _target
+		_sync_body()
 
 
 func opponent_cell() -> Vector2i:
@@ -158,6 +186,10 @@ func opponent_cell() -> Vector2i:
 
 func on_opponent_ate(cell: Vector2i) -> void:
 	main.maze_view.arena_opp_ate(cell)
+
+
+func _sync_body() -> void:
+	body.position = figure.position + Vector3(0, height * 0.5, 0)
 
 
 func _process(delta: float) -> void:
@@ -169,6 +201,12 @@ func _process(delta: float) -> void:
 	else:
 		figure.position = figure.position.lerp(_target, 1.0 - exp(-delta * 14.0))
 	figure.rotation.y = lerp_angle(figure.rotation.y, _target_yaw, 1.0 - exp(-delta * 14.0))
+	_sync_body()
+	# the name tag steps aside when he is close (it would cover the view)
+	var cam: Camera3D = main.player.camera if main != null and main.player != null else null
+	if cam != null:
+		var dist := cam.global_position.distance_to(figure.global_position + Vector3(0, height * 0.5, 0))
+		name_label.modulate.a = clampf((dist - 2.0) / 2.0, 0.0, 1.0)
 
 
 ## Every frame of my running round (VersusController.tick): my position out.
