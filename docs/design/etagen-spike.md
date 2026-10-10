@@ -6,7 +6,7 @@
 - `scripts/etagen_spike.gd`: F4 im laufenden Speedrun- oder Training-Level baut über dem Level eine zweite, geisterfreie Etage (gleiche Größe, anderer Seed, Look „Riff“), 12 m höher, mit eigenen Kugeln.
 - Drei **Aufzugszellen** (in beiden Etagen offen, in 30/60/90 % Entfernung vom Start sortiert), gelber Pad-Marker mit Lichtstrahl. Betreten = Schnitt auf die andere Etage (nur die Spielerhöhe springt, Yaw und Pitch bleiben unberührt, E8e). Der Aufzug ist danach 1 s tot und erst wieder scharf, wenn man von allen Aufzugszellen heruntergetreten ist.
 - Nur die aktuelle Etage ist sichtbar; Minimap zeigt die aktuelle Etage, Chip „E1/E2“ unter der Karte. Geister bleiben in Etage 1 und können oben nicht treffen.
-- F4 noch einmal oder jeder Levelwechsel entfernt die zweite Etage. Tests: 12 Checks im BotTest (Aufzug, Schutz gegen Zurückspringen, Yaw/Pitch, Aufräumen).
+- F4 noch einmal oder jeder Levelwechsel entfernt die zweite Etage. Tests: 9 Checks im BotTest (Aufzug, Schutz gegen Zurückspringen, Yaw/Pitch, Aufräumen).
 
 ## Antworten auf die Spike-Fragen
 | Frage | Befund |
