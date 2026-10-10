@@ -61,6 +61,7 @@ func setup(main_node: Node) -> void:
 	main.add_child(arena)
 	arena.setup(main, session)
 	session.state_changed.connect(_on_state_changed)
+	session.mode_announced.connect(_on_mode_announced)
 	session.match_ready.connect(_on_match_ready)
 	session.round_started.connect(_on_round_started)
 	session.opponent_progress.connect(_on_opponent_progress)
@@ -90,7 +91,12 @@ func player_name() -> String:
 
 func _on_mode_changed(mode: String) -> void:
 	if session.is_host and not session.match_running():
-		session.mode = mode
+		session.set_mode(mode)
+
+
+## Client: the host's mode, shown in the lobby (UX K1).
+func _on_mode_announced(mode: String) -> void:
+	ui.set_mode(mode, true)
 
 
 func open_lobby() -> void:
@@ -124,7 +130,11 @@ func _on_state_changed(state: int, text: String) -> void:
 	var can_start: bool = state == SessionScript.State.READY and session.is_host and session.round_index < 0
 	if ui.lobby.visible:
 		ui.set_lobby_state(text, connected, can_start)
-		ui.set_mode_editable(session.is_host and session.round_index < 0)
+		if session.is_host:
+			ui.set_mode(session.mode)
+		elif state == SessionScript.State.IDLE:
+			ui.set_mode(session.mode)
+		ui.set_mode_editable(state == SessionScript.State.IDLE or (session.is_host and session.round_index < 0))
 		_update_duel_text()
 
 
@@ -186,6 +196,8 @@ func leave() -> void:
 	duel.active = false
 	Twitch.leave_extras()
 	hud.minimap_opponent_cell = Vector2i(-1, -1)
+	hud.minimap_opponent_yaw = NAN
+	ui.race_mode_tag = ""
 	hud.set_condition_card_top(CARD_TOP_SOLO)
 	if _saved_week_override.x >= 0:
 		main.rabbit_week_override = _saved_week_override
@@ -226,6 +238,8 @@ func _on_round_started(round: int, go_in: float) -> void:
 	# turns follow the match, not this machine (seeded before the level).
 	main.ai_rng.seed = hash("zapmaniac-ai|%d|%d" % [session.match_seed, round])
 	arena_mode = session.mode == SessionScript.MODE_ARENA
+	ui.race_mode_tag = "ARENA" if arena_mode else ""
+	hud.minimap_opponent_yaw = NAN
 	main.begin_game(session.current_level_id())
 	hud.set_level(round + 1) # the LEVEL chip shows the round (QA N4)
 	ui.set_race_visible(true)
@@ -305,6 +319,7 @@ func tick() -> void:
 		arena.send_my_position()
 		arena.send_ghost_state()
 		hud.minimap_opponent_cell = arena.opponent_cell()
+		hud.minimap_opponent_yaw = arena.opponent_yaw()
 	if session.tick_round(elapsed):
 		# my clock passed the opponent's time: this round is over for me
 		main.stop_run_for_versus()

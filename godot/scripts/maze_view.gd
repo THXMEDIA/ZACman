@@ -1052,18 +1052,46 @@ func remaining_pickups() -> int:
 
 ## ---- Arena: two sets of pellets in ONE maze ----------------------------------
 
-## The fixed rule that splits the pellets between the two players, the same on
-## both machines: a chessboard over 2×2 blocks of cells ((r/2 + c/2) odd/even),
-## so both have to walk the same streets. Both sets are balanced to differ by
-## at most one pellet (the surplus ones of the larger set move over, from the
-## end of the list). `free_cells` (the second start cell) carry no pellet.
+## The fixed rule that splits the pickups between the two players, the same on
+## both machines. The mazes are mirror-symmetric (MazeGen), the two players
+## start on mirrored cells, so the split mirrors too (game design K1): on the
+## left half a chessboard over 2x2 blocks ((r/2 + c/2) odd/even) — both have to
+## walk the same streets — and every pellet's mirror cell (r, cols-1-c) goes to
+## the other player; the middle column alternates by row. Then both sets are
+## mirror images: same count, same distances. A pellet without a mirror (an
+## asymmetric breakthrough) falls back to the chessboard, and the sets are
+## balanced to differ by at most one at the end (surplus from the list's end).
+## Power pellets: left half host (0), right half client (1), middle alternating.
 ## Returns {pellets: [owner per pellet], power: [owner per power pellet]}.
-static func arena_owners(pellets: Array, powers: Array) -> Dictionary:
+static func arena_owners(pellets: Array, powers: Array, cols: int = -1) -> Dictionary:
+	var index := {}
+	for k in pellets.size():
+		index[pellets[k]] = k
 	var po: Array = []
+	po.resize(pellets.size())
+	po.fill(-1)
+	var mid_toggle := 0
+	for k in pellets.size():
+		if po[k] >= 0:
+			continue
+		var cell: Vector2i = pellets[k]
+		var board: int = ((cell.x >> 1) + (cell.y >> 1)) & 1
+		if cols <= 0:
+			po[k] = board
+			continue
+		var mc := cols - 1 - cell.y
+		if mc == cell.y:
+			po[k] = mid_toggle
+			mid_toggle = 1 - mid_toggle
+			continue
+		var left: bool = cell.y < mc
+		var own: int = board if left else 1 - (((cell.x >> 1) + (mc >> 1)) & 1)
+		po[k] = own
+		var mirror := Vector2i(cell.x, mc)
+		if index.has(mirror) and po[index[mirror]] < 0:
+			po[index[mirror]] = 1 - own
 	var n := [0, 0]
-	for cell in pellets:
-		var o: int = ((cell.x >> 1) + (cell.y >> 1)) & 1
-		po.append(o)
+	for o in po:
 		n[o] += 1
 	var big: int = 0 if n[0] >= n[1] else 1
 	var i := po.size() - 1
@@ -1074,8 +1102,18 @@ static func arena_owners(pellets: Array, powers: Array) -> Dictionary:
 			n[1 - big] += 1
 		i -= 1
 	var pw: Array = []
+	var pmid := 0
 	for k in powers.size():
-		pw.append(k & 1)
+		var pc: Vector2i = powers[k]
+		if cols <= 0:
+			pw.append(k & 1)
+		elif pc.y * 2 < cols - 1:
+			pw.append(0)
+		elif pc.y * 2 > cols - 1:
+			pw.append(1)
+		else:
+			pw.append(pmid)
+			pmid = 1 - pmid
 	return {"pellets": po, "power": pw}
 
 
@@ -1092,12 +1130,20 @@ func arena_split(side: int, opp_color: Color, free_cells: Array = []) -> void:
 			var fi: int = _pellet_index[cell]
 			pellet_alive[fi] = false
 			_hide_pellet(fi)
-	var owners := arena_owners(pellet_cells, power_cells)
-	pellet_owner = owners.pellets
+	# split only the pellets that remain (the freed start cell is nobody's)
+	var kept: Array = []
+	var kept_idx: Array = []
+	for i in pellet_cells.size():
+		if pellet_alive[i]:
+			kept.append(pellet_cells[i])
+			kept_idx.append(i)
+	var owners := arena_owners(kept, power_cells, maze.cols)
+	pellet_owner = []
+	pellet_owner.resize(pellet_cells.size())
+	pellet_owner.fill(-1) # nobody's: the pellet is gone
+	for k in kept.size():
+		pellet_owner[kept_idx[k]] = owners.pellets[k]
 	power_owner = owners.power
-	for cell in free_cells:
-		if _pellet_index.has(cell):
-			pellet_owner[_pellet_index[cell]] = -1 # nobody's: the pellet is gone
 
 	var opp_mat: Material = _tinted_copy(pellet_material, opp_color)
 	opp_pellet_multimesh = MultiMesh.new()
@@ -1108,7 +1154,7 @@ func arena_split(side: int, opp_color: Color, free_cells: Array = []) -> void:
 		var p := pellet_position(i)
 		var mine: bool = pellet_owner[i] == side
 		var visible_opp: bool = (not mine) and pellet_alive[i]
-		opp_pellet_multimesh.set_instance_transform(i, Transform3D(Basis() if visible_opp else Basis().scaled(Vector3.ZERO), p))
+		opp_pellet_multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * (OPP_PELLET_SCALE if visible_opp else 0.0)), p))
 		if not mine:
 			_hide_pellet(i) # out of my own set's instances
 	opp_pellet_mmi = MultiMeshInstance3D.new()
@@ -1125,15 +1171,22 @@ func arena_split(side: int, opp_color: Color, free_cells: Array = []) -> void:
 
 ## A copy of a pickup material in another colour (a StandardMaterial3D or the
 ## theme's pellet shader with its `col` parameter).
+## What I can not eat must not glow like food (UX K3): the opponent's pellets
+## are smaller and dimmer.
+const OPP_PELLET_SCALE := 0.6
+const OPP_GLOW := 0.35
+
+
 static func _tinted_copy(m: Material, color: Color) -> Material:
 	if m is ShaderMaterial:
 		var sm: ShaderMaterial = m.duplicate()
-		sm.set_shader_parameter("col", color)
+		sm.set_shader_parameter("col", color * Color(0.75, 0.75, 0.75, 1.0))
 		return sm
 	var out: StandardMaterial3D = (m as StandardMaterial3D).duplicate() if m is StandardMaterial3D else StandardMaterial3D.new()
 	out.albedo_color = color
 	out.emission_enabled = true
 	out.emission = color
+	out.emission_energy_multiplier = maxf(out.emission_energy_multiplier * OPP_GLOW, 0.2)
 	return out
 
 
@@ -1151,24 +1204,29 @@ func _arena_count(total: bool) -> int:
 
 ## The opponent ate the pickup in `cell`: it disappears from his set. Only
 ## pickups of HIS set count (a hostile client can not make my pellets vanish).
-## Returns true when something was removed.
+## Returns true when something was removed (see arena_opp_ate_kind).
 func arena_opp_ate(cell: Vector2i) -> bool:
+	return arena_opp_ate_kind(cell) != ""
+
+
+## Like arena_opp_ate: "pellet", "power" or "" (nothing of his there).
+func arena_opp_ate_kind(cell: Vector2i) -> String:
 	if arena_side < 0:
-		return false
+		return ""
 	if _pellet_index.has(cell):
 		var i: int = _pellet_index[cell]
-		if pellet_owner[i] != arena_side and pellet_alive[i]:
+		if pellet_owner[i] >= 0 and pellet_owner[i] != arena_side and pellet_alive[i]:
 			pellet_alive[i] = false
 			var p := pellet_position(i)
 			opp_pellet_multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), p))
-			return true
-		return false
+			return "pellet"
+		return ""
 	for k in power_cells.size():
 		if power_cells[k] == cell and power_owner[k] != arena_side and power_alive[k]:
 			power_alive[k] = false
 			power_nodes[k].visible = false
-			return true
-	return false
+			return "power"
+	return ""
 
 
 ## The rabbit was taken by the opponent (one rabbit for both).
@@ -1178,9 +1236,14 @@ func arena_remove_rabbit() -> void:
 		rabbit_node.visible = false
 
 
-## Another open cell for the second player: the open room cell farthest from
-## `start` by walking distance (ties: first in scan order), outside the house.
+## The second player's start: the mirror cell of `start` (the mazes are
+## mirror-symmetric, game design K1). If that is not an open room cell (an
+## asymmetric maze), the open room cell farthest from `start` by walking
+## distance (ties: first in scan order), outside the house.
 static func arena_second_start(maze, start: Vector2i) -> Vector2i:
+	var mirror := Vector2i(start.x, maze.cols - 1 - start.y)
+	if mirror != start and MazeGen.cells_in_room(maze, false).has(mirror):
+		return mirror
 	var dist: Array = MazeGen.bfs(maze, start.x, start.y)
 	var best := start
 	var best_d := -1

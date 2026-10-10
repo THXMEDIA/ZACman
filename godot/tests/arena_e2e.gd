@@ -92,6 +92,9 @@ func _run() -> void:
 		return
 	_check("lobby shows the opponent", vs.ui.status_label.text.find("Alice" if role == "client" else "Bob") >= 0, vs.ui.status_label.text)
 	_check("start only for the host", vs.ui.start_btn.disabled == (role != "host"))
+	if role == "client":
+		await _wait(func(): return vs.ui.mode_btn.text.find("wählt der Host") >= 0, 300)
+		_check("the client's lobby shows the host's mode", vs.ui.mode_btn.text.find("wählt der Host") >= 0 and vs.ui.mode_btn.text.find("ARENA") >= 0 and vs.ui.mode_btn.disabled, vs.ui.mode_btn.text)
 
 	for r in 3:
 		if role == "host" and r == 0:
@@ -152,7 +155,7 @@ func _run() -> void:
 		_check("host wins the match 2:1", over[0][0] == (role == "host") and over[0][1] + over[0][2] == 3, str(over[0]))
 	var lb_key := "%s|woche|pvp" % vs.session.match_levels[0]
 	if role == "host":
-		_check("the host's round-1 time is on the pvp board", not root.get_node("Leaderboard").get_top(vs.session.match_levels[0], "woche", 10, "pvp").is_empty(), lb_key)
+		_check("Arena times go on no board (half the pellets, not comparable)", root.get_node("Leaderboard").get_top(vs.session.match_levels[0], "woche", 10, "pvp").is_empty(), lb_key)
 	await _frames(120)
 	vs.leave()
 	await _frames(5)

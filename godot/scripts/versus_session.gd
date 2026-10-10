@@ -25,7 +25,9 @@ extends Node
 ##   gh      {round, g:[[fr,fc,tr,tc,t,mode]…], f, gs}  host: the ghosts, ~10/s
 ##   ghit    {round, i}                          client: ghost i caught me (send it home)
 ##   gate    {round, i}                          client: I ate the frightened ghost i
-##   power   {round, gs}                         client: I ate a power pellet
+##   power   {round, gs}                         client: I ate a power pellet (only gs counts:
+##                                               the host opens the window on the `eat` of a power cell)
+##   mode    {mode}                              host: the chosen mode, in the lobby (UX K1)
 ## and `prog` carries `gs` (my ghost speed factor from a rabbit condition). The
 ## HOST simulates the ghosts (the nearest player is the target); every client
 ## decides its own lives (trust-based, like everything here).
@@ -64,6 +66,8 @@ signal opponent_pos(x: float, z: float, yaw: float)
 signal opponent_ate(cell: Vector2i)
 ## Arena, client: the host's ghosts. `list` = snapshots, `frightened` seconds left.
 signal ghosts_received(list: Array, frightened: float, gscale: float)
+## Client: the host chose this mode in the lobby.
+signal mode_announced(mode: String)
 ## Arena, host: the client's ghost events: "hit" (send ghost i home), "ate", "power".
 signal ghost_event(kind: String, index: int)
 signal opponent_rabbit(cond: String, good: bool, p: float)
@@ -94,7 +98,7 @@ const CHANNELS := 3
 const MODE_RACE := "race"
 const MODE_ARENA := "arena"
 const POS_INTERVAL_S := 1.0 / 15.0
-const GHOST_INTERVAL_S := 0.1
+const GHOST_INTERVAL_S := 0.05 # 20/s: a puppet waits at most this long at a cell edge (code review W4)
 const MIN_POS_GAP_S := 0.03
 const MAX_GHOSTS := 16
 const WORLD_LIMIT := 600.0
@@ -469,6 +473,13 @@ func _on_message(m: Dictionary) -> void:
 				return
 			opp_gscale = _num(m.get("gs"), 0.2, 3.0, opp_gscale)
 			ghost_event.emit("power", 0)
+		"mode":
+			if is_host or state != State.READY or round_open:
+				return
+			var mm := str(m.get("mode", ""))
+			if mm == MODE_ARENA or mm == MODE_RACE:
+				mode = mm
+				mode_announced.emit(mode)
 		"rabbit":
 			if r != round_index or not round_open:
 				return
@@ -549,6 +560,8 @@ func _finish_handshake() -> void:
 	_rematch_me = false
 	_rematch_opp = false
 	_set_state(State.READY, "Bereit: %s gegen %s" % [my_name, opp_name])
+	if is_host:
+		_send({"t": "mode", "mode": mode})
 	match_ready.emit()
 
 
@@ -608,6 +621,7 @@ func _open_round(r: int) -> void:
 	_death_decide_at = -1.0
 	_my_cond = ""
 	_opp_cond = ""
+	opp_gscale = 1.0 # no old Taschenuhr factor in the new round
 	round_open = true
 
 
@@ -634,6 +648,15 @@ func send_progress(frac: float, cell: Vector2i, lives: int, force: bool = false,
 	_send({"t": "prog", "round": round_index, "frac": snappedf(frac, 0.001), "r": cell.x, "c": cell.y, "lives": lives, "gs": snappedf(gscale, 0.01)}, CH_PROGRESS)
 
 
+## Host: choose the mode (lobby only); the client is told right away.
+func set_mode(m: String) -> void:
+	if not is_host or match_running():
+		return
+	mode = MODE_ARENA if m == MODE_ARENA else MODE_RACE
+	if state == State.READY:
+		_send({"t": "mode", "mode": mode})
+
+
 ## ---- Arena senders (see the header) -------------------------------------------
 
 func send_pos(x: float, z: float, yaw: float, force: bool = false) -> void:
@@ -648,6 +671,11 @@ func send_pos(x: float, z: float, yaw: float, force: bool = false) -> void:
 func send_eat(cell: Vector2i) -> void:
 	if mode == MODE_ARENA and round_open:
 		_send({"t": "eat", "round": round_index, "r": cell.x, "c": cell.y})
+
+
+## Host: a ghost snapshot is due (so the list is only built when it is sent).
+func ghosts_due() -> bool:
+	return mode == MODE_ARENA and is_host and round_open and _clock - _last_ghosts_sent >= GHOST_INTERVAL_S
 
 
 ## Host only: the ghosts' state for the client.

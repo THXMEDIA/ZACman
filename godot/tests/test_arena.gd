@@ -56,10 +56,13 @@ func _frames(n: int) -> void:
 
 
 func _run() -> void:
+	await process_frame # the root is only inside the tree after _initialize
 	_test_owners()
 	for level in Levels.POOL:
 		_test_level_split(level)
+	_test_colour()
 	_test_enemy_snapshot()
+	_test_targets_and_passing()
 	await _test_player_body()
 	await _test_session()
 	if failures == 0:
@@ -121,6 +124,7 @@ func _test_level_split(level: Dictionary) -> void:
 	var b: Vector2i = MazeViewScript.arena_second_start(maze, a)
 	_check("%s: second start differs, open, outside the house" % tag, b != a and _mg().is_open(maze, b.x, b.y) and not (b.x > maze.house.r0 and b.x < maze.house.r1 and b.y > maze.house.c0 and b.y < maze.house.c1))
 	_check("%s: second start is far (>= 10 steps)" % tag, int(_mg().bfs(maze, a.x, a.y)[b.x][b.y]) >= 10)
+	_check("%s: second start is the mirror cell" % tag, b == Vector2i(a.x, maze.cols - 1 - a.y), "%s %s" % [a, b])
 	var total_before: int = mv.total_pickups()
 	var pellets_before: int = mv.pellet_cells.size()
 	mv.arena_split(0, Color.ORANGE, [b])
@@ -131,7 +135,29 @@ func _test_level_split(level: Dictionary) -> void:
 			mine += 1
 		else:
 			theirs += 1
-	_check("%s: both sets about equal (%d / %d)" % [tag, mine, theirs], absi(mine - theirs) <= 2, "%d %d" % [mine, theirs])
+	_check("%s: both sets equal within one (%d / %d)" % [tag, mine, theirs], absi(mine - theirs) <= 1, "%d %d" % [mine, theirs])
+	var mirrored := 0
+	var broken := 0
+	for i in mv.pellet_cells.size():
+		var cl: Vector2i = mv.pellet_cells[i]
+		var mc := Vector2i(cl.x, maze.cols - 1 - cl.y)
+		if mc == cl or mv.pellet_owner[i] < 0 or not mv._pellet_index.has(mc):
+			continue
+		var mo: int = mv.pellet_owner[mv._pellet_index[mc]]
+		if mo < 0:
+			continue
+		mirrored += 1
+		if mo == mv.pellet_owner[i]:
+			broken += 1
+	_check("%s: every pellet's mirror belongs to the other player (%d pairs, %d not)" % [tag, mirrored, broken], mirrored > 50 and broken <= 2)
+	var pw_ok := true
+	for k in mv.power_cells.size():
+		var pc: Vector2i = mv.power_cells[k]
+		if pc.y * 2 < maze.cols - 1 and mv.power_owner[k] != 0:
+			pw_ok = false
+		if pc.y * 2 > maze.cols - 1 and mv.power_owner[k] != 1:
+			pw_ok = false
+	_check("%s: power pellets: left host, right client" % tag, pw_ok, str(mv.power_owner))
 	_check("%s: total_pickups counts only my set" % tag, mv.total_pickups() < total_before and mv.total_pickups() == mv.remaining_pickups())
 	_check("%s: the sets together are the level's pickups" % tag, mine + theirs + mv.power_cells.size() >= total_before - 1 and pellets_before == mv.pellet_cells.size())
 	# my pellets can be eaten, his can not
@@ -152,6 +178,12 @@ func _test_level_split(level: Dictionary) -> void:
 	var opp_cell: Vector2i = mv.pellet_cells[opp_i]
 	_check("%s: his eaten pellet disappears" % tag, mv.arena_opp_ate(opp_cell) and not mv.pellet_alive[opp_i])
 	_check("%s: ... only once" % tag, not mv.arena_opp_ate(opp_cell))
+	var opp_k := -1
+	for k in mv.power_cells.size():
+		if mv.power_owner[k] == 1:
+			opp_k = k
+	if opp_k >= 0:
+		_check("%s: his power pellet reports 'power'" % tag, mv.arena_opp_ate_kind(mv.power_cells[opp_k]) == "power" and not mv.power_alive[opp_k])
 	var my_cell: Vector2i = mv.pellet_cells[my_i + 1 if my_i + 1 < mv.pellet_cells.size() and mv.pellet_owner[my_i + 1] == 0 else my_i]
 	var alive_mine := 0
 	for i in mv.pellet_cells.size():
@@ -187,6 +219,39 @@ func _test_level_split(level: Dictionary) -> void:
 	var built3 := _build(level)
 	_check("%s: a rebuilt level has no Arena split" % tag, built3[0].arena_side == -1 and built3[0].total_pickups() == total_before)
 	built3[0].queue_free()
+
+
+## ---- the opponent colour --------------------------------------------------------
+
+static func _oklab(c: Color) -> Vector3:
+	var lin := func(x: float) -> float: return x / 12.92 if x <= 0.04045 else pow((x + 0.055) / 1.055, 2.4)
+	var r: float = lin.call(c.r)
+	var g: float = lin.call(c.g)
+	var b: float = lin.call(c.b)
+	var l := pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1.0 / 3.0)
+	var m := pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1.0 / 3.0)
+	var s := pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1.0 / 3.0)
+	return Vector3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)
+
+
+func _test_colour() -> void:
+	var opp: Color = load("res://scripts/versus_ui.gd").OPP_COLOR
+	var themes = load("res://scripts/city_themes.gd")
+	var hud_opp: Color = load("res://scripts/hud.gd").OPP_COLOR
+	_check("HUD and Versus UI use the same opponent colour", hud_opp.is_equal_approx(opp))
+	var never := {
+		"jaeger": themes.GHOST_JAEGER.color, "abfaenger": themes.GHOST_ABFAENGER.color,
+		"streuner": themes.GHOST_STREUNER.color, "lauerer": themes.GHOST_LAUERER.color,
+		"nachzuegler": themes.GHOST_NACHZUEGLER.color, "frightened": themes.GHOST_FRIGHTENED,
+		"pellet": themes.LOOK_PELLET, "rabbit": Color("f2f2ed"), "matrix": Color("00d94d"),
+		"player cyan": Color(0.2, 0.878, 1.0), "good": Color("3ce37a"), "bad": Color("ff3cc8"),
+	}
+	for k in never:
+		var d := _oklab(opp).distance_to(_oklab(never[k]))
+		_check("opponent colour is far from %s (OKLab %.3f)" % [k, d], d >= 0.18)
+	_check("opponent colour is bright on the dark maze", _oklab(opp).x >= 0.7)
 
 
 ## ---- the ghosts ------------------------------------------------------------------
@@ -233,6 +298,114 @@ func _test_enemy_snapshot() -> void:
 
 func Enemy_modes_ok(m: String) -> bool:
 	return EnemyScript.MODE_CODES.has(m)
+
+
+## ---- ghost targets, passing, plausibility (ArenaWorld on a stand-in Main) ----------
+
+class FakeMain extends Node3D:
+	var now := 0.0
+	var invuln_until := -1.0
+	var player = null
+	var enemies: Array = []
+	var maze = null
+	var versus = null
+	var running := true
+	var frightened_until := 0.0
+	var combo_count := 0
+	const FRIGHTENED_DURATION := 7.0
+
+
+class FakeGhost extends Node3D:
+	var target_r := 0
+	var target_c := 0
+	var mode := "chase"
+	var eaten_until := 0.0
+	var homed := 0
+	func send_to_house(_cell, _now, _delay) -> void:
+		homed += 1
+
+
+func _test_targets_and_passing() -> void:
+	var fm := FakeMain.new()
+	root.add_child(fm)
+	var sess = Session.new()
+	sess.is_host = true
+	root.add_child(sess)
+	var w = load("res://scripts/arena_world.gd").new()
+	fm.add_child(w)
+	w.main = fm
+	w.session = sess
+	w._build_figure()
+	w._house_cells = [Vector2i(9, 9)]
+	# targets: ghost 0 hunts the host, ghost 1 the client
+	w._target = Vector3(20 * 2.0, 0, 1 * 2.0) # client at cell (1, 20)
+	var g0 := FakeGhost.new()
+	var g1 := FakeGhost.new()
+	g0.target_r = 9
+	g0.target_c = 10
+	g1.target_r = 9
+	g1.target_c = 10
+	var host_cell := Vector2i(17, 1)
+	_check("ghost 0 hunts the host (home player)", w.target_for(g0, 0, host_cell) == host_cell)
+	_check("ghost 1 hunts the client (home player)", w.target_for(g1, 1, host_cell) == Vector2i(1, 20))
+	# the client stands right next to ghost 0: it switches ...
+	w._target = Vector3(10 * 2.0, 0, 9 * 2.0)
+	_check("ghost 0 switches to a clearly nearer client", w.target_for(g0, 0, host_cell) == Vector2i(9, 10))
+	# ... and holds that for a while even if the host comes nearer
+	_check("... and holds the switch", w.target_for(g0, 0, Vector2i(9, 11)) == Vector2i(9, 10))
+	fm.now = 3.0
+	w._target = Vector3(20 * 2.0, 0, 1 * 2.0)
+	_check("after the hold it can switch back", w.target_for(g0, 0, Vector2i(9, 11)) == Vector2i(9, 11))
+	# a client's 'hit' only counts near his position
+	fm.enemies = [g0]
+	g0.position = Vector3(100, 0, 100)
+	w.on_ghost_event("hit", 0)
+	_check("a 'hit' far from the client is refused", g0.homed == 0)
+	g0.position = Vector3(w._target.x + 1.0, 0, w._target.z)
+	w.on_ghost_event("hit", 0)
+	_check("a 'hit' near the client sends the ghost home", g0.homed == 1)
+	w.on_ghost_event("hit", 5)
+	_check("a 'hit' of an unknown ghost does nothing", g0.homed == 1)
+	g0.mode = "chase"
+	w.on_ghost_event("ate", 0)
+	_check("'ate' of a ghost that is not frightened is refused", g0.mode == "chase")
+	w.on_ghost_event("power", 0)
+	_check("'power' alone opens no window (only the eat of his power cell)", fm.frightened_until == 0.0)
+
+	# passing: overlap / standoff / respawn
+	var pl = PlayerScript.new()
+	fm.player = pl
+	root.add_child(pl)
+	pl.set_opponent_solid(true)
+	w.figure.visible = true
+	w.figure.position = Vector3(50, 0, 50)
+	pl.global_position = Vector3(50.2, 1.25, 50)
+	w._update_passable(0.016)
+	_check("overlapping the opponent: he is passable (no push without input)", pl.opponent_passable)
+	pl._refresh_mask()
+	_check("... the mask ignores him", pl.collision_mask == 2)
+	pl.global_position = Vector3(50.7, 1.25, 50)
+	w._update_passable(0.016)
+	_check("just touching: still solid", not pl.opponent_passable)
+	for i in 60:
+		w._clock += 0.016
+		w._update_passable(0.016)
+	_check("a short contact (1 s) keeps him solid", not pl.opponent_passable)
+	for i in 40:
+		w._clock += 0.016
+		w._update_passable(0.016)
+	_check("a standoff of 1.5 s makes him passable for a moment", pl.opponent_passable)
+	w._clock += 1.5
+	pl.global_position = Vector3(55, 1.25, 50)
+	w._update_passable(0.016)
+	_check("... and solid again afterwards", not pl.opponent_passable)
+	fm.invuln_until = fm.now + 1.0
+	w._update_passable(0.016)
+	_check("while invulnerable after a respawn he is passable", pl.opponent_passable)
+	pl.queue_free()
+	w.queue_free()
+	sess.queue_free()
+	fm.queue_free()
 
 
 ## ---- the solid opponent ------------------------------------------------------------
@@ -328,6 +501,20 @@ func _test_session() -> void:
 	_check("pair ready", ok)
 	_check("protocol is 3", Session.PROTOCOL == 3)
 	_check("the default mode is the Arena", host.mode == Session.MODE_ARENA)
+
+	# the lobby: the host's mode reaches the client before any round (UX K1)
+	var announced: Array = []
+	client.mode_announced.connect(func(m): announced.append(m))
+	host.set_mode(Session.MODE_RACE)
+	ok = await _wait(func(): return announced.size() >= 1)
+	_check("the client hears the host's mode in the lobby", ok and announced[-1] == Session.MODE_RACE and client.mode == Session.MODE_RACE)
+	client._on_message({"t": "mode", "mode": "banana"})
+	_check("an unknown mode is ignored", client.mode == Session.MODE_RACE)
+	var cm: String = client.mode
+	host._on_message({"t": "mode", "mode": "arena"})
+	_check("the host takes no mode from the client", host.mode == Session.MODE_RACE)
+	host.set_mode(Session.MODE_ARENA)
+	await _wait(func(): return client.mode == Session.MODE_ARENA)
 
 	# the round message carries the mode
 	host.mode = Session.MODE_RACE

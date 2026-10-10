@@ -1503,10 +1503,13 @@ func level_complete_sequence() -> void:
 	var cleared_name: String = current_level.name
 	# Training records nothing: no best time, no bonus unlock, no board entry.
 	var result := {"is_new_best": false, "previous_best": -1.0, "beat_target": false, "target": Speedrun.target_for(cleared_id), "newly_unlocked_bonus": false}
-	if not training_mode:
+	# Arena rounds record nothing either: half the pellets, not comparable with
+	# any board (code review K1).
+	var records: bool = not training_mode and not arena_on()
+	if records:
 		result = Speedrun.record_level_time(cleared_id, elapsed, board, mode, week, level_splits if level_splits.size() == Speedrun.SPLIT_MARKS.size() else [])
 	var player_name: String = versus.player_name() if versus != null and versus.active else Leaderboard.DEFAULT_PLAYER_NAME
-	if not training_mode:
+	if records:
 		Leaderboard.submit_time(cleared_id, board, elapsed, player_name, mode, week, level_condition_id)
 	played_ids.append(cleared_id)
 	var subtitle := "%s  ·  Zeit %s" % [cleared_name, Speedrun.format_time(elapsed)]
@@ -1667,7 +1670,11 @@ func _process(delta: float) -> void:
 	if versus != null and versus.active:
 		versus.tick()
 	_update_chat_hud()
-	if not (running and not paused) or start_hold:
+	# Arena: a pause stops nothing in the shared world (the host's ghosts must
+	# keep running for the opponent; QA/code review W1/W6). The clock runs on
+	# in every Versus anyway.
+	var world_runs: bool = running and (not paused or arena_on())
+	if not world_runs or start_hold:
 		if running and maze != null:
 			hud.update_minimap(maze, player, enemies, now < frightened_until, maze_view)
 		return

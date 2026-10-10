@@ -34,6 +34,8 @@ const DANGER := Color(1.0, 0.231, 0.365)
 const COND_GOOD := Color("3ce37a")
 const COND_BAD := Color("ff3cc8")
 const RABBIT_WHITE := Color("f2f2ed")
+## The opponent (Versus): VersusUI.OPP_COLOR, lilac.
+const OPP_COLOR := Color("dda6ff")
 ## Board badge colors (spec 2.5): the weekly board neutral, Chaos amber,
 ## Chat violet (Twitch-ish) — none of them the good/bad condition colors.
 const BOARD_COLORS := {"woche": Color(1.0, 0.82, 0.4), "chaos": Color("ffa41f"), "chat": Color("b78cff"), "training": Color("7fd8ff")}
@@ -81,6 +83,8 @@ var pause_confirm_yes: Button
 var versus_ui
 ## The Versus opponent's cell on the minimap (-1, -1 = none).
 var minimap_opponent_cell := Vector2i(-1, -1)
+## Arena: the opponent's facing (NAN = only a dot, mirror race).
+var minimap_opponent_yaw := NAN
 var pause_panel: PanelContainer
 var gameover_panel: PanelContainer
 var levelclear_panel: Control
@@ -2076,18 +2080,19 @@ func _draw_minimap() -> void:
 			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
 			if pellet_rim.a > 0.0: # Arles: a dark ring keeps the pellets readable
 				minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 1.6, pellet_rim)
-			var this_col := pellet_col
 			if minimap_maze_view.arena_side >= 0 and minimap_maze_view.pellet_owner[i] != minimap_maze_view.arena_side:
-				this_col = Color("ff9f1c") # the opponent's set (Arena): his orange
-			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, this_col)
+				# the opponent's set (Arena): a hollow ring in his colour, not food
+				minimap.draw_arc(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 1.0, 0.0, TAU, 8, OPP_COLOR, 0.6)
+				continue
+			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, pellet_col)
 		for i in minimap_maze_view.power_cells.size():
 			if not minimap_maze_view.power_alive[i]:
 				continue
 			var pw: Vector2i = minimap_maze_view.power_cells[i]
-			var pw_col := power_col
 			if minimap_maze_view.arena_side >= 0 and minimap_maze_view.power_owner[i] != minimap_maze_view.arena_side:
-				pw_col = Color("ff9f1c")
-			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, pw_col)
+				minimap.draw_arc(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, 0.0, TAU, 10, OPP_COLOR, 0.8)
+				continue
+			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, power_col)
 		# The white rabbit is visible on the minimap from the level start on
 		# (spec 2.2): a small rabbit-ear symbol (UX-W2) — two upright ears on
 		# a round head, rabbit white with a dark outline.
@@ -2111,8 +2116,15 @@ func _draw_minimap() -> void:
 	# Versus: the opponent's position in their own copy of the maze (E17).
 	if minimap_opponent_cell.x >= 0:
 		var oc := Vector2((minimap_opponent_cell.y + 0.5) * sx, (minimap_opponent_cell.x + 0.5) * sy)
-		minimap.draw_circle(oc, 4.2, Color(0, 0, 0))
-		minimap.draw_circle(oc, 3.2, Color("ff9f1c")) # VersusUI.OPP_COLOR, own orange (QA N2)
+		if is_nan(minimap_opponent_yaw):
+			minimap.draw_circle(oc, 4.2, Color(0, 0, 0))
+			minimap.draw_circle(oc, 3.2, OPP_COLOR) # VersusUI.OPP_COLOR (QA N2)
+		else:
+			# Arena: an arrow like mine (players = arrows, ghosts = circles, UX K2)
+			var oarrow := _minimap_arrow(oc, minimap_opponent_yaw)
+			for rim in Geometry2D.offset_polygon(oarrow, 1.2, Geometry2D.JOIN_MITER):
+				minimap.draw_colored_polygon(rim, Color(0, 0, 0))
+			minimap.draw_colored_polygon(oarrow, OPP_COLOR)
 	if minimap_player != null:
 		var yaw: float = minimap_player.yaw if "yaw" in minimap_player else 0.0
 		var arrow := _minimap_arrow(Vector2((minimap_player.global_position.x / 2.0 + 0.5) * sx, (minimap_player.global_position.z / 2.0 + 0.5) * sy), yaw)

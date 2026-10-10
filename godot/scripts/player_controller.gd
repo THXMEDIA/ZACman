@@ -120,6 +120,10 @@ func set_noclip(active: bool) -> void:
 const WALL_MASK := 2
 const OPPONENT_MASK := 4
 var opponent_solid := false
+## Set by ArenaWorld every frame: overlapping him (a dash ended inside him, a
+## respawn on an occupied start), a respawn's invulnerability or a long
+## standoff make him passable for a moment (QA W2, game design K4).
+var opponent_passable := false
 var _noclip := false
 
 
@@ -131,7 +135,7 @@ func set_opponent_solid(on: bool) -> void:
 func _refresh_mask() -> void:
 	if _noclip:
 		collision_mask = 0
-	elif opponent_solid and dash_time_left <= 0.0:
+	elif opponent_solid and dash_time_left <= 0.0 and not opponent_passable:
 		collision_mask = WALL_MASK | OPPONENT_MASK
 	else:
 		collision_mask = WALL_MASK

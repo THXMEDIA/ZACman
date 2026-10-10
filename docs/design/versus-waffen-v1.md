@@ -88,3 +88,21 @@ Messung per Bot-Simulation (wie `qa_dash_gain.gd`): Zeitverlust pro Treffer, Beg
 3. Darf man Kugeln des Gegners **fressen** (klauen)? Empfehlung: nein, nur sehen.
 4. Spieler **ohne Körperkollision** (Empfehlung)?
 5. Das Spiegelrennen als Modus **behalten** (Empfehlung) oder ersetzen?
+
+---
+
+## Update 10.10. (2): Entscheidungen des Inhabers und Stufe A gebaut
+
+**Entschieden (Inhaber):** Geister **geteilt**; Kugeln **abwechselnd**; Kugeln des Gegners **nicht fressbar**, nur sichtbar; Spieler **kollidieren**; Spiegelrennen **bleibt** als Modus. Blitzkanone für Stufe B **kein Einzelschuss, sondern eine „Staffette“**: mehrere Blitze im Abstand von 5 Sekunden, jeder mit begrenzter Lähmung bzw. Verzögerung beim Gegner. (Lesart, vor Stufe B zu bestätigen: ein Extra lädt N Blitze, je Treffer z. B. 0,8 s Lähmung, danach 5 s bis zum nächsten.)
+
+**Gebaut (Branch `feature/arena`), Stufe A ohne Waffen:**
+- Lobby-Schalter MODUS (nur Host, Standard Arena); der Client sieht den Modus des Hosts.
+- Startzellen gespiegelt (das Labyrinth ist spiegelsymmetrisch), Kugeln paarweise gespiegelt verteilt (links Schachbrett über 2×2-Blöcke, Spiegelkugel an den anderen), Power-Kugeln links Host, rechts Client. Beide Mengen sind Spiegelbilder.
+- Eigene Kugeln in Themefarbe, gegnerische kleiner und matter in **Flieder `#dda6ff`** (das alte Orange war praktisch der Lauerer-Geist); Minimap: gegnerische als Ringe, Gegner als Pfeil.
+- Gegner als Figur in Augenhöhe mit Namensschild, Kollisionskörper; der Dash geht durch; überlappend, während der Unverwundbarkeit nach einem Leben und nach 1,5 s Dauerkontakt ist er kurz durchlässig (gegen Einsperren).
+- Geister: Host simuliert, je Geist ein Stammspieler (gerade: Host, ungerade: Client), Wechsel nur bei ≥ 4 Zellen Vorsprung, dann 2 s Halt. Client bewegt Puppen nach Snapshots (20/s). Jeder entscheidet über die eigenen Leben; der Geist, der jemanden erwischt, geht 3 s ins Haus. Power-Fenster gemeinsam (Host öffnet es beim gemeldeten Fressen einer Power-Kugel).
+- Pause hält die geteilte Welt nicht an (wie die Uhr im Versus).
+- Arena-Zeiten kommen auf **kein** Brett (halbe Kugelmenge, nicht vergleichbar).
+- Protokoll 3 (pos, eat, gh, ghit, gate, power, mode), Plausibilitätsprüfungen, Tests: `test_arena.gd`, `arena_e2e.gd` (zwei echte Instanzen), Screenshots `tools/qa/qa_arena_shots.gd`.
+
+**Offen nach dem Handtest:** Besitz des Power-Fensters (nur der Fresser darf Geister fressen?), Kaninchen-Ort fair zwischen beiden Starts, Rückmeldung beim Anstoßen, Legende beim Countdown, Gleichstand = kein Punkt statt Host.

@@ -19,9 +19,13 @@ signal mode_changed(mode: String)
 signal result_menu_requested
 
 const DEFAULT_PORT := 47823
-## The opponent's color: an orange the game uses nowhere else, clear of the
-## player's cyan, the good green, the bad magenta and the ghosts (UX N7, QA N2).
-const OPP_COLOR := Color("ff9f1c")
+## The opponent's colour: lilac. The old orange #ff9f1c was practically the
+## Lauerer ghost (#ffa41f, OKLab 0.01; UX/GD review Arena 10.10.). Chosen like
+## GHOST_FRIGHTENED by a search for the largest OKLab distance to the five
+## ghosts, frightened cerulean, pellets, rabbit white, Matrix green, the
+## player's cyan, good green, bad magenta and the wall colours, bright enough
+## for the dark maze: closest is the bad magenta at 0.196 (tests/test_arena.gd).
+const OPP_COLOR := Color("dda6ff")
 const NEUTRAL := Color(1.0, 0.82, 0.4)
 const NAME_PX := 20
 const SMALL_PX := 16
@@ -94,7 +98,7 @@ func _build_lobby() -> void:
 	var box: VBoxContainer = hud._panel_box(lobby)
 	box.add_theme_constant_override("separation", 9)
 	box.add_child(hud._title_label("VERSUS · GEGENWIND"))
-	box.add_child(hud._subtitle_label("Zu zweit, gleiche 3 Level, Best of 3. Arena: wer zuerst alle eigenen Kugeln hat. Spiegelrennen: schnellere Zeit."))
+	box.add_child(hud._subtitle_label("Zu zweit, gleiche 3 Level, Best of 3."))
 	name_edit = _labeled_edit(box, "DEIN NAME", "", 200)
 	name_edit.placeholder_text = "Spieler"
 
@@ -300,10 +304,14 @@ func set_lobby_state(text: String, connected: bool, can_start: bool, keep_button
 
 ## The mode button (host only): ARENA = both in one maze, own pellets, shared
 ## ghosts; SPIEGELRENNEN = everyone in an own copy (Gegenwind).
-func set_mode(mode: String) -> void:
+## `host_chooses`: this player is the client — the button only shows the
+## host's choice (UX K1).
+func set_mode(mode: String, host_chooses: bool = false) -> void:
 	_mode = mode
 	if mode_btn != null:
-		mode_btn.text = "MODUS: ARENA · ein Labyrinth, eigene Kugeln" if mode == "arena" else "MODUS: SPIEGELRENNEN · jeder im eigenen Labyrinth"
+		var what := "ARENA · ein Labyrinth, eigene Kugeln" if mode == "arena" else "SPIEGELRENNEN · jeder im eigenen Labyrinth"
+		mode_btn.text = ("MODUS (wählt der Host): " if host_chooses else "MODUS: ") + what
+		mode_btn.disabled = host_chooses
 
 
 func set_mode_editable(on: bool) -> void:
@@ -403,8 +411,12 @@ func set_race_visible(on: bool) -> void:
 	race_bar.visible = on
 
 
+var race_mode_tag := "" # "ARENA" or "" (mirror race): heads the race bar
+
 func set_race(me_name: String, me_frac: float, me_lives: int, opp_name: String, opp_frac: float, opp_lives: int, round_no: int, score_me: int, score_opp: int, match_point: String = "") -> void:
 	var text := "BEST OF 3  ·  RUNDE %d  ·  %d:%d" % [round_no, score_me, score_opp]
+	if race_mode_tag != "":
+		text = race_mode_tag + "  ·  " + text
 	if match_point != "":
 		text += "  ·  MATCHBALL %s" % match_point.to_upper()
 	_set_text(race_round_label, text)
