@@ -55,6 +55,7 @@ func _ready() -> void:
 	await _run_movement_checks()
 	await _run_split_checks()
 	await _run_map_mode_checks()
+	await _run_etagen_checks()
 
 	_check("test isolation: Speedrun saves under the test folder", Speedrun.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Speedrun.save_path())
 	_check("test isolation: Leaderboard saves under the test folder", Leaderboard.save_path().begins_with(SaveIsolation.SavePathsScript.TEST_ROOT), Leaderboard.save_path())
@@ -2123,6 +2124,47 @@ func _run_review_fix_checks() -> void:
 
 
 ## Bewegungs-Paket (ZAP-5): Kehrtwende und Dash.
+func _run_etagen_checks() -> void:
+	# E24: Explorer walks slower than the timed levels
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("E24: a timed level walks at PLAYER_SPEED", is_equal_approx(main.player.move_speed, main.player.PLAYER_SPEED))
+	main.begin_explorer_game("tokyo")
+	await get_tree().process_frame
+	_check("E24: the Explorer walks at 3.1 m/s", is_equal_approx(main.player.move_speed, 3.1))
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("E24: back in a timed level the speed is restored", is_equal_approx(main.player.move_speed, main.player.PLAYER_SPEED))
+
+	# ZAP-7 spike: second floor, elevators, cut between floors
+	var pl = main.player
+	main.toggle_etagen_spike()
+	var et = main.etagen
+	_check("etagen: F4 builds a second floor with elevators", et != null and et.active() and et.elev_cells.size() == 3 and main.hud.floor_label.text == "E1")
+	_check("etagen: every elevator cell is open on both floors", et.elev_cells.all(func(c): return main.maze.grid[c.x][c.y] == 0 and et.maze_up.grid[c.x][c.y] == 0))
+	_check("etagen: the upper floor sits FLOOR_DY higher and is hidden at first", is_equal_approx(et.view_up.position.y, et.FLOOR_DY) and not et.view_up.visible and main.maze_view.visible)
+	var yaw0: float = pl.yaw
+	var pitch0: float = pl.pitch
+	var cell: Vector2i = et.elev_cells[0]
+	pl.global_position = Vector3(cell.y * 2.0, pl.eye_h, cell.x * 2.0)
+	et.update(main.now)
+	_check("etagen: the elevator cuts to floor 2 (player y, views, chip)", et.floor_index == 1 and is_equal_approx(pl.global_position.y, pl.eye_h + et.FLOOR_DY) and et.view_up.visible and not main.maze_view.visible and main.hud.floor_label.text == "E2")
+	_check("etagen: the cut never touches yaw or pitch (E8e)", is_equal_approx(pl.yaw, yaw0) and is_equal_approx(pl.pitch, pitch0))
+	et.update(main.now + 5.0)
+	_check("etagen: standing on the pad does not switch back (must step off first)", et.floor_index == 1)
+	pl.global_position = Vector3(pl.global_position.x + 4.0, pl.global_position.y, pl.global_position.z)
+	et.update(main.now + 2.0) # off the pad: armed again (the cell next to a pad is not a pad)
+	pl.global_position = Vector3(cell.y * 2.0, pl.global_position.y, cell.x * 2.0)
+	et.update(main.now + 3.0)
+	_check("etagen: after stepping off, the pad leads back to floor 1", et.floor_index == 0 and is_equal_approx(pl.global_position.y, pl.eye_h) and main.maze_view.visible and not et.view_up.visible)
+	main.toggle_etagen_spike()
+	_check("etagen: F4 again removes the floor and puts the player back on floor 1", main.etagen == null and is_equal_approx(pl.global_position.y, pl.eye_h) and main.maze_view.visible and not main.hud.floor_label.visible)
+	main.toggle_etagen_spike()
+	main.begin_game("klassik-1")
+	await get_tree().process_frame
+	_check("etagen: a new level removes the spike", main.etagen == null)
+
+
 func _run_map_mode_checks() -> void:
 	main.begin_game("klassik-1")
 	await get_tree().process_frame

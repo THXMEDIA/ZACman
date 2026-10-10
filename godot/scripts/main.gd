@@ -154,6 +154,8 @@ var level_splits: Array = []
 ## Training (ZAP-6/ZAP-2): one chosen level, repeated; full map, nothing is
 ## recorded (no board, no best time, no high score).
 var training_mode := false
+## ZAP-7 spike (F4, debug builds): a second floor above the level, see etagen_spike.gd.
+var etagen = null
 var _best_splits: Array = []
 ## true once the Twitch chat had a hand in the current level (a !power/!fruit
 ## took effect, or the chat shifted the rabbit's good/bad ratio); the level's
@@ -501,6 +503,7 @@ func _build_hud() -> void:
 ## Starts one level of the pool (a Levels.POOL entry). Which one is decided by
 ## the caller: begin_game() draws the first, next_level() the following.
 func start_level(level: Dictionary) -> void:
+	_etagen_teardown()
 	hud.set_minimap_exits([])
 	hud.set_rain_option_visible(false) # no rain in the speedrun (QA K4)
 
@@ -520,6 +523,7 @@ func start_level(level: Dictionary) -> void:
 	# The rabbit's position follows the level seed (deterministic per level).
 	maze_view.build(maze, start_cell, "normal", [], [], level.seed, level.get("look", ""))
 	hud.set_explorer_hud(false)
+	player.move_speed = player.PLAYER_SPEED
 	# Map by run type: Training = Voll, timed runs (Speedrun, Versus) = Lokal.
 	hud.set_map_mode(SettingsScript.MAP_FULL if training_mode else SettingsScript.MAP_LOCAL)
 	hud.set_minimap_visible(true)
@@ -611,6 +615,26 @@ func begin_game(forced_level_id: String = "", training: bool = false) -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 
+## ZAP-7 spike: F4 builds / removes a second floor over the running level.
+func toggle_etagen_spike() -> void:
+	if etagen != null:
+		_etagen_teardown()
+		return
+	if not running or playing_explorer or current_level.is_empty() or (versus != null and versus.active):
+		return
+	etagen = load("res://scripts/etagen_spike.gd").new()
+	add_child(etagen)
+	etagen.start(self)
+
+
+func _etagen_teardown() -> void:
+	if etagen == null:
+		return
+	etagen.teardown()
+	etagen.queue_free()
+	etagen = null
+
+
 ## Training on one level (start screen TRAINING): full map, repeated after
 ## every clear, nothing recorded.
 func begin_training(level_id: String) -> void:
@@ -636,6 +660,8 @@ func start_explorer_level(city_id: String) -> void:
 		city = ExplorerCitiesScript.get_city(city_id)
 	explorer_city_id = city_id
 	training_mode = false
+	_etagen_teardown()
+	player.move_speed = player.EXPLORER_SPEED # E24: Explorer walks at 3.1 m/s
 	_end_condition(false)
 	var mm = load(city.maze_script).new()
 	maze = mm.generate()
@@ -1426,6 +1452,7 @@ func go_to_main_menu() -> void:
 	hud.show_levelclear(false)
 	Sfx.stop_all()
 	playing_explorer = false
+	_etagen_teardown()
 
 	# QA W1: the start screen shows no frozen city behind the panel (and does
 	# not keep rendering it): city life, ghosts and the maze go away; the
@@ -1606,6 +1633,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			hud.cancel_menu_confirm()
 		else:
 			toggle_pause()
+	if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F4:
+		toggle_etagen_spike()
 	if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
 		debug_mode = not debug_mode
 		hud.set_debug_overlay(debug_mode)
@@ -1644,7 +1673,8 @@ func _process(delta: float) -> void:
 	for enemy in enemies:
 		enemy.speed_scale = ghost_scale
 		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
-		_check_enemy_collision(enemy, frightened_active)
+		if etagen == null or etagen.floor_index == 0:
+			_check_enemy_collision(enemy, frightened_active)
 		if not running:
 			return # the last life is gone: game over exactly once, nothing else this frame
 
@@ -1670,7 +1700,12 @@ func _process(delta: float) -> void:
 	# happens to be passing over the player's exact cell this frame can
 	# never transiently block a pellet the player has already reached —
 	# obstacles just slide the player back out afterward, same as always.
-	_check_pickups()
+	if etagen != null:
+		etagen.update(now)
+	if etagen != null and etagen.floor_index == 1:
+		etagen.consume_up(now)
+	else:
+		_check_pickups()
 
 	if playing_explorer:
 		_check_explorer_obstacles()
@@ -1682,7 +1717,10 @@ func _process(delta: float) -> void:
 	if now >= frightened_until and Sfx.siren_state() == "frightened":
 		Sfx.set_siren(true, false)
 	hud.set_minimap_visible(active_condition == null or active_condition.minimap_visible())
-	hud.update_minimap(maze, player, enemies, frightened_active, maze_view)
+	if etagen != null and etagen.floor_index == 1:
+		hud.update_minimap(etagen.maze_up, player, [], false, etagen.view_up)
+	else:
+		hud.update_minimap(maze, player, enemies, frightened_active, maze_view)
 	hud.set_dash(player.dash_charges, player.DASH_MAX_CHARGES, player.dash_cooldown_left <= 0.0)
 
 

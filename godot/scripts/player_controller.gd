@@ -10,6 +10,8 @@ const EYE_H := 1.25
 const PLAYER_RADIUS := 0.34
 ## +15 %, then +5 % (Abnahme 06.10.: 4.4 -> 5.06 -> 5.31); Levels.PLAYER_SPEED must stay equal.
 const PLAYER_SPEED := 5.31
+## Explorer cities (E24, 10.10.2026): a calm walking pace, untimed levels.
+const EXPLORER_SPEED := 3.1
 const MOUSE_SENSITIVITY := 0.0022
 
 ## ---- Bewegungs-Paket (ZAP-5, Abnahme 06.10.): Dash + Kehrtwende ----
@@ -28,6 +30,8 @@ const TURN_COOLDOWN := 0.4 # s -> far below 3 Hz
 var camera: Camera3D
 ## Current eye height of the camera (m), set per city by set_eye_height().
 var eye_h := EYE_H
+## Walking speed (m/s): PLAYER_SPEED in timed levels, EXPLORER_SPEED in the Explorer cities (set by Main).
+var move_speed := PLAYER_SPEED
 var yaw := 0.0
 var pitch := 0.0
 var input_enabled := true
@@ -195,7 +199,7 @@ func _physics_process(delta: float) -> void:
 	var right_z := cos(yaw + PI / 2.0)
 	var move_dir := Vector3(dir_x * v.y + right_x * v.x, 0.0, dir_z * v.y + right_z * v.x)
 	_last_move_input = v
-	velocity = move_dir * PLAYER_SPEED
+	velocity = move_dir * move_speed
 	move_and_slide()
 
 

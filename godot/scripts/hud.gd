@@ -172,6 +172,7 @@ var start_intro_skip_label: Label
 ## UX-W7: after the intro, until the first step.
 var clock_hint: Control
 var clock_hint_label: Label
+var floor_label: Label # ZAP-7 spike: "E1"/"E2" under the minimap
 var split_box: Control
 var split_label: Label
 var _split_left := 0.0
@@ -1482,6 +1483,24 @@ func _draw_compass() -> void:
 		compass.draw_string(font, Vector2(x - tw * 0.5, COMPASS_H - 8.0), m[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 	compass.draw_line(Vector2(COMPASS_W * 0.5, 0), Vector2(COMPASS_W * 0.5, 5), PELLET_COLOR, 2.0)
 	compass.draw_rect(Rect2(0, 0, COMPASS_W, COMPASS_H), Color(ACCENT, 0.35), false, 1.0)
+
+
+## Floor chip of the Etagen spike (ZAP-7); "" hides it.
+func set_floor_label(text: String) -> void:
+	if floor_label == null:
+		floor_label = Label.new()
+		floor_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		floor_label.offset_left = -166
+		floor_label.offset_right = -16
+		floor_label.offset_top = 154
+		floor_label.offset_bottom = 180
+		floor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		floor_label.add_theme_font_size_override("font_size", 18)
+		floor_label.add_theme_color_override("font_color", PELLET_COLOR)
+		floor_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(floor_label)
+	floor_label.text = text
+	floor_label.visible = text != ""
 
 
 ## Split box: small panel at the top centre, shown for SPLIT_SHOW_S after a
