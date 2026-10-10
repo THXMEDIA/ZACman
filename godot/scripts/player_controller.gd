@@ -110,7 +110,31 @@ func _ready() -> void:
 ## through walls (collision_mask 0 = collide with nothing). Restored to the
 ## normal walls layer (2) when it ends; Main derives it (_refresh_noclip).
 func set_noclip(active: bool) -> void:
-	collision_mask = 0 if active else 2
+	_noclip = active
+	_refresh_mask()
+
+
+## Arena: the other player is a solid body on layer 3 (value 4). You can not
+## walk through him, except while dashing (so a corridor blocked by the
+## opponent can always be cleared with a dash).
+const WALL_MASK := 2
+const OPPONENT_MASK := 4
+var opponent_solid := false
+var _noclip := false
+
+
+func set_opponent_solid(on: bool) -> void:
+	opponent_solid = on
+	_refresh_mask()
+
+
+func _refresh_mask() -> void:
+	if _noclip:
+		collision_mask = 0
+	elif opponent_solid and dash_time_left <= 0.0:
+		collision_mask = WALL_MASK | OPPONENT_MASK
+	else:
+		collision_mask = WALL_MASK
 
 
 ## Sets the eye height: the body (and with it the camera) sits at y = h. Only
@@ -167,6 +191,8 @@ func _physics_process(delta: float) -> void:
 	dash_cooldown_left = maxf(dash_cooldown_left - delta, 0.0)
 	turn_cooldown_left = maxf(turn_cooldown_left - delta, 0.0)
 	dash_afterglow_left = maxf(dash_afterglow_left - delta, 0.0)
+	if opponent_solid:
+		_refresh_mask()
 	if not input_enabled or movement_locked:
 		velocity = Vector3.ZERO
 		dash_time_left = 0.0
@@ -251,13 +277,18 @@ func try_dash() -> bool:
 	if dash_charges <= 0 or dash_cooldown_left > 0.0:
 		return false
 	var d := dash_direction()
-	if collision_mask != 0 and test_move(global_transform, d * DASH_MIN_FREE):
-		return false
+	if not _noclip:
+		collision_mask = WALL_MASK # the dash passes the opponent: only walls count
+		var blocked := test_move(global_transform, d * DASH_MIN_FREE)
+		_refresh_mask()
+		if blocked:
+			return false
 	_dash_dir = d
 	dash_charges -= 1
 	dash_time_left = DASH_TIME
 	dash_cooldown_left = DASH_COOLDOWN + DASH_TIME
 	dash_count += 1
+	_refresh_mask() # the opponent can be passed from now on
 	return true
 
 

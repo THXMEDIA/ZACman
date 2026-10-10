@@ -502,6 +502,11 @@ func _build_hud() -> void:
 
 ## Starts one level of the pool (a Levels.POOL entry). Which one is decided by
 ## the caller: begin_game() draws the first, next_level() the following.
+## An Arena round (Versus: both players in one maze) is running or starting.
+func arena_on() -> bool:
+	return versus != null and versus.active and versus.arena_mode
+
+
 func start_level(level: Dictionary) -> void:
 	_etagen_teardown()
 	hud.set_minimap_exits([])
@@ -522,6 +527,12 @@ func start_level(level: Dictionary) -> void:
 
 	# The rabbit's position follows the level seed (deterministic per level).
 	maze_view.build(maze, start_cell, "normal", [], [], level.seed, level.get("look", ""))
+	if versus != null:
+		# Arena: pellets split in two sets, my own start cell, the opponent shown
+		var in_arena := arena_on()
+		if in_arena:
+			start_cell = versus.arena.prepare_level()
+		versus.arena.set_active(in_arena)
 	hud.set_explorer_hud(false)
 	player.move_speed = player.PLAYER_SPEED
 	# Map by run type: Training = Voll, timed runs (Speedrun, Versus) = Lokal.
@@ -565,6 +576,7 @@ func start_level(level: Dictionary) -> void:
 		enemy.frightened_emission = maze_view.city_theme.ghost_frightened_emission
 		enemy.emission_energy = maze_view.city_theme.ghost_emission_energy
 		enemy.rng = ai_rng # N6
+		enemy.puppet = arena_on() and not versus.session.is_host # Arena client: the host runs the ghosts
 		enemy.setup(pal.color, pal.glow, minf(level.ghost_speed + i * 0.05 + extra * 0.15, GHOST_SPEED_CAP)) # GD-N1: capped so ghosts never outrun the player past the tuned levels
 		var cell: Vector2i = house_cells[i % house_cells.size()]
 		enemy.place_in_house(cell)
@@ -1368,6 +1380,8 @@ func lose_life() -> void:
 	player.reset_dash()
 	_refresh_noclip()
 	invuln_until = now + 1.6
+	if arena_on():
+		return # shared ghosts: only the ghost that caught me goes home (arena_world.gd)
 	var house_cells := []
 	for r in range(maze.house.r0 + 1, maze.house.r1):
 		for c in range(maze.house.c0 + 1, maze.house.c1):
@@ -1670,13 +1684,20 @@ func _process(delta: float) -> void:
 		hud.update_debug_overlay(Engine.get_frames_per_second(), player.global_position, player_cell)
 
 	var ghost_scale: float = active_condition.ghost_speed_scale() if active_condition != null else 1.0
-	for enemy in enemies:
-		enemy.speed_scale = ghost_scale
-		enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
-		if etagen == null or etagen.floor_index == 0:
-			_check_enemy_collision(enemy, frightened_active)
+	if arena_on():
+		# shared ghosts: the host simulates, the client moves puppets; both
+		# check hits on their own player (arena_world.gd)
+		versus.arena.update_ghosts(delta, frightened_active)
 		if not running:
-			return # the last life is gone: game over exactly once, nothing else this frame
+			return
+	else:
+		for enemy in enemies:
+			enemy.speed_scale = ghost_scale
+			enemy.update(delta, maze, player_cell, frightened_active, now, world_width)
+			if etagen == null or etagen.floor_index == 0:
+				_check_enemy_collision(enemy, frightened_active)
+			if not running:
+				return # the last life is gone: game over exactly once, nothing else this frame
 
 	if playing_explorer:
 		for t in taxis:
@@ -1788,6 +1809,8 @@ func _check_pickups() -> void:
 			Sfx.munch()
 		return
 
+	if arena_on():
+		versus.arena.on_pickups(result)
 	if result.pellet:
 		_add_score(10)
 	if result.power:

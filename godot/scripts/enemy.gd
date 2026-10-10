@@ -34,6 +34,11 @@ var frightened_emission := Color(0.33, 0.47, 1.0)
 var emission_energy := 0.7
 
 var _bob_seed := 0.0
+## Arena (shared ghosts): on the client a ghost is a puppet. The host's
+## snapshots (apply_snapshot) set where it is going; puppet_update only moves
+## it along that edge and never decides anything itself.
+var puppet := false
+var _look_mode := ""
 ## N6: the generator for the random turns while frightened (Main injects its
 ## ai_rng so a seeded run is reproducible); null = the global generator.
 var rng: RandomNumberGenerator = null
@@ -115,13 +120,7 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, 
 		body_material.albedo_color = palette_color
 		body_material.emission = palette_color
 
-	var use_speed := base_speed * speed_scale
-	if mode == "frightened":
-		use_speed = base_speed * 0.55 * speed_scale
-	elif mode == "eaten":
-		use_speed = base_speed * 2.2 * speed_scale
-
-	t += (delta * use_speed) / CELL
+	t += (delta * current_speed()) / CELL
 	if t >= 1.0:
 		t = 1.0
 		r = target_r
@@ -155,6 +154,82 @@ func update(delta: float, maze, player_cell: Vector2i, frightened_active: bool, 
 	position = Vector3(x, 0.5 + bob, z)
 	var dx := to_x - from_x
 	var dz := to_z - from_z
+	if absf(dx) + absf(dz) > 0.001:
+		rotation.y = atan2(dx, dz)
+
+
+## Walking speed (m/s) in the current mode.
+func current_speed() -> float:
+	if mode == "frightened":
+		return base_speed * 0.55 * speed_scale
+	if mode == "eaten":
+		return base_speed * 2.2 * speed_scale
+	return base_speed * speed_scale
+
+
+const MODE_CODES := ["house", "chase", "frightened", "eaten"]
+
+
+## [from_r, from_c, target_r, target_c, t, mode code] — what the host sends.
+func snapshot() -> Array:
+	return [from_r, from_c, target_r, target_c, snappedf(t, 0.01), maxi(MODE_CODES.find(mode), 0)]
+
+
+## Client: takes over the host's state of this ghost.
+func apply_snapshot(snap: Array) -> void:
+	from_r = int(snap[0])
+	from_c = int(snap[1])
+	target_r = int(snap[2])
+	target_c = int(snap[3])
+	t = clampf(float(snap[4]), 0.0, 1.0)
+	mode = MODE_CODES[clampi(int(snap[5]), 0, MODE_CODES.size() - 1)]
+	r = from_r
+	c = from_c
+	apply_look()
+
+
+func apply_look() -> void:
+	if _look_mode == mode:
+		return
+	_look_mode = mode
+	match mode:
+		"eaten":
+			body_material.albedo_color = Color(0.62, 0.7, 0.85)
+			body_material.emission = Color(0.62, 0.7, 0.85)
+		"frightened":
+			body_material.albedo_color = frightened_color
+			body_material.emission = frightened_emission
+		_:
+			body_material.albedo_color = palette_color
+			body_material.emission = palette_color
+
+
+## Client: moves along the snapshot's edge (no decisions). The visible position
+## follows the computed one smoothly so a snapshot never makes it jump.
+func puppet_update(delta: float, now: float, world_width: float) -> void:
+	apply_look()
+	if mode == "house":
+		var bob := sin(now * 3.0 + _bob_seed) * 0.08
+		position = Vector3(from_c * CELL, 0.5 + bob, from_r * CELL)
+		return
+	t = minf(t + (delta * current_speed()) / CELL, 1.0)
+	var from_x := from_c * CELL
+	var to_x := target_c * CELL
+	if absf(to_x - from_x) > world_width * 0.5:
+		to_x += -world_width if to_x > from_x else world_width
+	var x := lerpf(from_x, to_x, t)
+	var z := lerpf(from_r * CELL, target_r * CELL, t)
+	if x < -CELL:
+		x += world_width
+	if x > world_width:
+		x -= world_width
+	var goal := Vector3(x, 0.5 + sin(now * 4.0 + _bob_seed) * 0.06, z)
+	if Vector2(position.x - goal.x, position.z - goal.z).length() > 3.0:
+		position = goal
+	else:
+		position = position.lerp(goal, 1.0 - exp(-delta * 25.0))
+	var dx := to_x - from_x
+	var dz := target_r * CELL - from_r * CELL
 	if absf(dx) + absf(dz) > 0.001:
 		rotation.y = atan2(dx, dz)
 

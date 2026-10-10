@@ -17,6 +17,7 @@ const ChatDuelScript := preload("res://scripts/chat_duel.gd")
 const ConditionsScript := preload("res://scripts/conditions.gd")
 const WhiteRabbitScript := preload("res://scripts/white_rabbit.gd")
 const LevelsScript := preload("res://scripts/levels.gd")
+const ArenaWorldScript := preload("res://scripts/arena_world.gd")
 ## Between rounds: time to read the result and for the chats to vote (design W3).
 const INTERMISSION_S := 12.0
 ## After both pressed REVANCHE, the host starts round 1 after this.
@@ -29,6 +30,10 @@ var main: Node
 var hud
 var ui
 var session: Node
+## Arena (one shared maze): the world node with the opponent and the ghosts,
+## and whether the running match is an Arena match.
+var arena: Node3D
+var arena_mode := false
 var duel = ChatDuelScript.new()
 ## true from the first round start until the match is left.
 var active := false
@@ -52,6 +57,9 @@ func setup(main_node: Node) -> void:
 	ui = hud.versus_ui
 	session = SessionScript.new()
 	add_child(session)
+	arena = ArenaWorldScript.new()
+	main.add_child(arena)
+	arena.setup(main, session)
 	session.state_changed.connect(_on_state_changed)
 	session.match_ready.connect(_on_match_ready)
 	session.round_started.connect(_on_round_started)
@@ -67,6 +75,7 @@ func setup(main_node: Node) -> void:
 	ui.host_requested.connect(_on_host_requested)
 	ui.join_requested.connect(_on_join_requested)
 	ui.start_requested.connect(func(): session.start_next_round())
+	ui.mode_changed.connect(_on_mode_changed)
 	ui.leave_requested.connect(leave)
 	ui.result_menu_requested.connect(leave)
 	ui.rematch_requested.connect(_on_rematch_pressed)
@@ -79,7 +88,13 @@ func player_name() -> String:
 
 ## ---- lobby -------------------------------------------------------------------
 
+func _on_mode_changed(mode: String) -> void:
+	if session.is_host and not session.match_running():
+		session.mode = mode
+
+
 func open_lobby() -> void:
+	ui.set_mode(session.mode)
 	ui.show_lobby(Twitch.channel if Twitch.enabled else "", Twitch.enabled, Twitch.channel)
 	ui.set_lobby_state("Hoste ein Match oder tritt per IP-Adresse bei.", false, false)
 	_update_duel_text()
@@ -109,6 +124,7 @@ func _on_state_changed(state: int, text: String) -> void:
 	var can_start: bool = state == SessionScript.State.READY and session.is_host and session.round_index < 0
 	if ui.lobby.visible:
 		ui.set_lobby_state(text, connected, can_start)
+		ui.set_mode_editable(session.is_host and session.round_index < 0)
 		_update_duel_text()
 
 
@@ -160,6 +176,8 @@ func _update_duel_text() -> void:
 func leave() -> void:
 	var was_active := active
 	active = false
+	arena_mode = false
+	arena.set_active(false)
 	_token += 1
 	_next_round_at = -1.0
 	_paused = false
@@ -207,6 +225,7 @@ func _on_round_started(round: int, go_in: float) -> void:
 	# Same ghost randomness on both sides (design N2): the frightened ghosts'
 	# turns follow the match, not this machine (seeded before the level).
 	main.ai_rng.seed = hash("zapmaniac-ai|%d|%d" % [session.match_seed, round])
+	arena_mode = session.mode == SessionScript.MODE_ARENA
 	main.begin_game(session.current_level_id())
 	hud.set_level(round + 1) # the LEVEL chip shows the round (QA N4)
 	ui.set_race_visible(true)
@@ -280,7 +299,12 @@ func tick() -> void:
 	var total: int = main.maze_view.total_pickups()
 	_my_frac = 1.0 - float(main.maze_view.remaining_pickups()) / float(maxi(total, 1))
 	var elapsed: float = main.real_now - main.level_start_real
-	session.send_progress(_my_frac, main.player.cell(), main.lives)
+	var gscale: float = main.active_condition.ghost_speed_scale() if main.active_condition != null else 1.0
+	session.send_progress(_my_frac, main.player.cell(), main.lives, false, gscale)
+	if arena_mode:
+		arena.send_my_position()
+		arena.send_ghost_state()
+		hud.minimap_opponent_cell = arena.opponent_cell()
 	if session.tick_round(elapsed):
 		# my clock passed the opponent's time: this round is over for me
 		main.stop_run_for_versus()
@@ -308,7 +332,7 @@ func _on_opponent_progress(frac: float, cell: Vector2i, lives: int) -> void:
 		ui.show_event("%s −1 LEBEN" % session.opp_name.to_upper(), ui.OPP_COLOR, 1.5)
 	_opp_frac = frac
 	_opp_lives = lives
-	if cell.x >= 0:
+	if cell.x >= 0 and not arena_mode:
 		hud.minimap_opponent_cell = cell
 	_refresh_race()
 
@@ -326,6 +350,8 @@ func _on_opponent_out() -> void:
 
 ## The opponent's rabbit (UX W2, design K2): the moment the chats voted for.
 func _on_opponent_rabbit(cond: String, good: bool, _p: float) -> void:
+	if arena_mode:
+		main.maze_view.arena_remove_rabbit() # one rabbit for both: he took it
 	var c = ConditionsScript.get_condition(cond)
 	var cname: String = c.display_name.to_upper() if c != null else cond.to_upper()
 	var text := "%s: %s · %s" % [session.opp_name.to_upper(), cname, "gut" if good else "schlecht"]

@@ -1,9 +1,9 @@
 extends SceneTree
-## End-to-end test of a Versus match (E17) with TWO real game instances over
-## ENet on localhost. Start the host and the client as two processes:
-##   VS_ROLE=host   VS_PORT=47950 godot --headless --path . --script res://tests/versus_e2e.gd &
-##   VS_ROLE=client VS_PORT=47950 godot --headless --path . --script res://tests/versus_e2e.gd
-## (tools/qa/versus_e2e.sh runs both and checks both exit codes.)
+## End-to-end test of an ARENA match (ZAP-9: both players in ONE maze) with TWO
+## real game instances over ENet on localhost. Start host and client:
+##   VS_ROLE=host   VS_PORT=47950 godot --headless --path . --script res://tests/arena_e2e.gd &
+##   VS_ROLE=client VS_PORT=47950 godot --headless --path . --script res://tests/arena_e2e.gd
+## (tools/qa/arena_e2e.sh runs both and checks both exit codes.)
 ##
 ## Each instance runs the real Main scene. An autopilot clears its own maze by
 ## stepping onto the remaining pellets (`speed` pellets per frame), so the
@@ -27,6 +27,7 @@ var log_prefix := ""
 var my_rabbit := ""
 var opp_rabbit := ""
 var decided: Array = []
+var opp_start_pellets := 0
 var over: Array = []
 
 
@@ -44,7 +45,7 @@ func _initialize() -> void:
 	log_prefix = "[%s]" % role
 	# Own save folder per instance: the two processes never share a file, and
 	# the player's real saves are never touched.
-	SavePathsScript.use_root("user://test_saves_versus_%s" % role)
+	SavePathsScript.use_root("user://test_saves_arena_%s" % role)
 	root.get_node("Leaderboard").reload()
 	root.get_node("Speedrun").reload()
 	main = load("res://scenes/Main.tscn").instantiate()
@@ -78,7 +79,7 @@ func _run() -> void:
 
 	vs.open_lobby()
 	_check("lobby opens", vs.ui.lobby.visible)
-	vs.session.mode = "race" # this test is the mirror race (the default mode is the Arena)
+	_check("the lobby offers the Arena by default", vs.session.mode == "arena" and vs.ui.mode_btn.text.find("ARENA") >= 0, vs.ui.mode_btn.text)
 	if role == "host":
 		vs._on_host_requested("Alice", port)
 	else:
@@ -101,6 +102,14 @@ func _run() -> void:
 		if not ok:
 			break
 		_check("round %d: pvp mode" % (r + 1), main.run_mode() == "pvp")
+		_check("round %d: both know it is an Arena round" % (r + 1), vs.arena_mode and main.arena_on() and vs.session.mode == "arena")
+		var mv0 = main.maze_view
+		_check("round %d: my pellet set is split off (side %d)" % [r + 1, mv0.arena_side], mv0.arena_side == (0 if role == "host" else 1) and mv0.total_pickups() > 0 and mv0.total_pickups() < mv0.pellet_cells.size())
+		_check("round %d: the two players start on different cells" % (r + 1), vs.arena.my_start != vs.arena.opp_start and main.start_cell == vs.arena.my_start)
+		_check("round %d: the opponent figure stands on his start" % (r + 1), vs.arena.figure.visible and vs.arena.opponent_cell() == vs.arena.opp_start)
+		_check("round %d: the player collides with the opponent" % (r + 1), main.player.opponent_solid)
+		_check("round %d: client ghosts are puppets, the host's are not" % (r + 1), main.enemies.all(func(e): return e.puppet == (role == "client")))
+		opp_start_pellets = _opp_alive(mv0)
 		_check("round %d: the match's level" % (r + 1), main.level_id == vs.session.match_levels[r], "%s vs %s" % [main.level_id, vs.session.match_levels])
 		_check("round %d: held until GO" % (r + 1), main.start_hold and main.player.movement_locked)
 		ok = await _wait(func(): return not main.start_hold, 60000)
@@ -120,8 +129,12 @@ func _run() -> void:
 		var n_before := r + 1
 		ok = await _wait(func(): return decided.size() >= n_before, 60000)
 		_check("round %d decided" % (r + 1), ok)
+		if r < 2:
+			_check("round %d: his eaten pellets vanished in my maze (%d of %d left)" % [r + 1, _opp_alive(main.maze_view), opp_start_pellets], _opp_alive(main.maze_view) < opp_start_pellets)
+			_check("round %d: the opponent's position arrived (he moved off his start)" % (r + 1), vs.arena.opponent_cell() != vs.arena.opp_start or r == 2)
+			if role == "client":
+				_check("round %d: the host's ghost snapshots arrived (%d)" % [r + 1, vs.arena.snapshots_applied], vs.arena.snapshots_applied > 3)
 		if r == 0:
-			_check("the opponent's progress arrived", vs._opp_frac > 0.0, str(vs._opp_frac))
 			await _wait(func(): return opp_rabbit != "", 300)
 			_check("both players drew the same rabbit (shared round generator)", my_rabbit != "" and my_rabbit == opp_rabbit, "%s / %s" % [my_rabbit, opp_rabbit])
 		if over.size() > 0:
@@ -153,9 +166,11 @@ func _autopilot(speed: int, r: int) -> void:
 	var mv = main.maze_view
 	var cells: Array = []
 	for i in mv.pellet_cells.size():
-		cells.append(["p", i])
+		if mv.pellet_owner[i] == mv.arena_side:
+			cells.append(["p", i])
 	for i in mv.power_cells.size():
-		cells.append(["w", i])
+		if mv.power_owner[i] == mv.arena_side:
+			cells.append(["w", i])
 	var k := 0
 	while k < cells.size() and main.running and decided.size() <= r:
 		for s in speed:
@@ -172,16 +187,27 @@ func _autopilot(speed: int, r: int) -> void:
 				break
 			if not main.running:
 				break
-		await process_frame
+		# ~50 steps a second like a fast player, so the 15 Hz positions and 10 Hz
+		# ghost snapshots have time to travel (a frame loop would finish in ms)
+		await create_timer(0.02).timeout
+
+
+## How many of the OPPONENT's pellets are still shown in my maze.
+func _opp_alive(mv) -> int:
+	var n := 0
+	for i in mv.pellet_cells.size():
+		if mv.pellet_owner[i] != mv.arena_side and mv.pellet_owner[i] >= 0 and mv.pellet_alive[i]:
+			n += 1
+	return n
 
 
 func _finish() -> void:
 	_rm_tree(SavePathsScript.root)
 	SavePathsScript.reset_root()
 	if failures == 0:
-		print("%s versus_e2e: all %d checks passed" % [log_prefix, checks])
+		print("%s arena_e2e: all %d checks passed" % [log_prefix, checks])
 	else:
-		print("%s versus_e2e: %d of %d checks FAILED" % [log_prefix, failures, checks])
+		print("%s arena_e2e: %d of %d checks FAILED" % [log_prefix, failures, checks])
 	quit(1 if failures > 0 else 0)
 
 

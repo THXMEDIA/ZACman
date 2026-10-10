@@ -18,6 +18,18 @@ extends Node
 ##   result  {round, winner, cause}              host: the round's result
 ##   bye     {why}                               both, leaving
 ##
+## Protocol 3 adds the mode "arena" (both players in ONE maze, `round` carries
+## `mode`). Only in that mode:
+##   pos     {round, x, z, yaw}                  both, ~15/s, unreliable channel
+##   eat     {round, r, c}                       both, I ate a pickup of my set
+##   gh      {round, g:[[fr,fc,tr,tc,t,mode]…], f, gs}  host: the ghosts, ~10/s
+##   ghit    {round, i}                          client: ghost i caught me (send it home)
+##   gate    {round, i}                          client: I ate the frightened ghost i
+##   power   {round, gs}                         client: I ate a power pellet
+## and `prog` carries `gs` (my ghost speed factor from a rabbit condition). The
+## HOST simulates the ghosts (the nearest player is the target); every client
+## decides its own lives (trust-based, like everything here).
+##
 ## The HOST decides every round (code review K1): both report what happened
 ## to them, the host applies the rules and sends `result`, both apply the same
 ## result. Rules (docs/design/multiplayer.md 2):
@@ -46,6 +58,14 @@ signal match_ready
 ## The host started round `round`; it goes in `go_in` seconds.
 signal round_started(round: int, go_in: float)
 signal opponent_progress(frac: float, cell: Vector2i, lives: int)
+## Arena: the opponent's position and facing (world x/z, yaw).
+signal opponent_pos(x: float, z: float, yaw: float)
+## Arena: the opponent ate the pickup in this cell.
+signal opponent_ate(cell: Vector2i)
+## Arena, client: the host's ghosts. `list` = snapshots, `frightened` seconds left.
+signal ghosts_received(list: Array, frightened: float, gscale: float)
+## Arena, host: the client's ghost events: "hit" (send ghost i home), "ate", "power".
+signal ghost_event(kind: String, index: int)
 signal opponent_rabbit(cond: String, good: bool, p: float)
 ## The opponent cleared their level in `cs` hundredths.
 signal opponent_finished(cs: int)
@@ -60,7 +80,7 @@ signal rematch_requested
 ## The opponent is gone. `during_match`: a match was running (not finished).
 signal opponent_left(during_match: bool)
 
-const PROTOCOL := 2
+const PROTOCOL := 3
 const DEFAULT_PORT := 47823
 const ROUNDS_TO_WIN := 2 # best of three
 const MATCH_LEVELS := 3
@@ -68,6 +88,16 @@ const GO_DELAY_S := 3.0
 const PROGRESS_INTERVAL_S := 0.2
 const CH_RELIABLE := 0
 const CH_PROGRESS := 1
+## Arena positions and ghost snapshots (unreliable, ordered).
+const CH_STATE := 2
+const CHANNELS := 3
+const MODE_RACE := "race"
+const MODE_ARENA := "arena"
+const POS_INTERVAL_S := 1.0 / 15.0
+const GHOST_INTERVAL_S := 0.1
+const MIN_POS_GAP_S := 0.03
+const MAX_GHOSTS := 16
+const WORLD_LIMIT := 600.0
 ## Joining gives up after this long (QA W3).
 const JOIN_TIMEOUT_S := 10.0
 ## Incoming limits (code review W3).
@@ -95,6 +125,9 @@ var opp_name := ""
 var opp_channel := ""
 ## ISO week of the host (the match's board label).
 var host_week := Vector2i.ZERO
+## "race" (mirror race, each in an own copy) or "arena" (one shared maze). The
+## host chooses it before a match; the client learns it with every `round`.
+var mode := MODE_ARENA
 var my_week := Vector2i.ZERO
 var match_seed := 0
 ## The three level ids of the match, identical on both sides.
@@ -138,6 +171,12 @@ var _rematch_me := false
 var _rematch_opp := false
 var _last_progress_sent := -1000.0
 var _last_progress_got := -1000.0
+## Arena: the opponent's ghost speed factor (from his rabbit condition).
+var opp_gscale := 1.0
+var _last_pos_sent := -1000.0
+var _last_pos_got := -1000.0
+var _last_ghosts_sent := -1000.0
+var _last_ghosts_got := -1000.0
 var _connect_started := 0.0
 ## Host: when a pending "dead vs running" decision falls (-1 = none).
 var _death_decide_at := -1.0
@@ -157,7 +196,7 @@ func _process(delta: float) -> void:
 func host(port: int = DEFAULT_PORT) -> int:
 	close()
 	_peer = ENetMultiplayerPeer.new()
-	var err := _peer.create_server(port, 1, 2)
+	var err := _peer.create_server(port, 1, CHANNELS)
 	if err != OK:
 		_peer = null
 		_set_state(State.IDLE, "Port %d ist belegt oder gesperrt." % port)
@@ -175,7 +214,7 @@ func join(address: String, port: int = DEFAULT_PORT) -> int:
 		_set_state(State.IDLE, "Bitte eine gültige IP-Adresse eingeben.")
 		return ERR_INVALID_PARAMETER
 	_peer = ENetMultiplayerPeer.new()
-	var err := _peer.create_client(address, port, 2)
+	var err := _peer.create_client(address, port, CHANNELS)
 	if err != OK:
 		_peer = null
 		_set_state(State.IDLE, "Verbindung zum Host nicht möglich.")
@@ -371,6 +410,8 @@ func _on_message(m: Dictionary) -> void:
 		"round":
 			if is_host or state != State.READY or round_open or match_finished or r != round_index + 1 or r >= MATCH_LEVELS:
 				return
+			var rm := str(m.get("mode", MODE_RACE))
+			mode = MODE_ARENA if rm == MODE_ARENA else MODE_RACE
 			_open_round(r)
 			round_started.emit(round_index, _num(m.get("go_in"), 0.5, 10.0, GO_DELAY_S))
 		"prog":
@@ -379,9 +420,55 @@ func _on_message(m: Dictionary) -> void:
 			if _clock - _last_progress_got < MIN_PROGRESS_GAP_S:
 				return
 			_last_progress_got = _clock
+			opp_gscale = _num(m.get("gs"), 0.2, 3.0, 1.0)
 			opponent_progress.emit(_num(m.get("frac"), 0.0, 1.0, 0.0),
 				Vector2i(int(_num(m.get("r"), -1, 200, -1)), int(_num(m.get("c"), -1, 200, -1))),
 				int(_num(m.get("lives"), 0, 9, 0)))
+		"pos":
+			if mode != MODE_ARENA or r != round_index or not round_open:
+				return
+			if _clock - _last_pos_got < MIN_POS_GAP_S:
+				return
+			_last_pos_got = _clock
+			var px := _num(m.get("x"), -10.0, WORLD_LIMIT, NAN)
+			var pz := _num(m.get("z"), -10.0, WORLD_LIMIT, NAN)
+			if is_nan(px) or is_nan(pz):
+				return
+			opponent_pos.emit(px, pz, _num(m.get("yaw"), -7.0, 7.0, 0.0))
+		"eat":
+			if mode != MODE_ARENA or r != round_index or not round_open:
+				return
+			var er := int(_num(m.get("r"), 0, 400, -1))
+			var ec := int(_num(m.get("c"), 0, 400, -1))
+			if er >= 0 and ec >= 0:
+				opponent_ate.emit(Vector2i(er, ec))
+		"gh":
+			if mode != MODE_ARENA or is_host or r != round_index or not round_open:
+				return
+			if _clock - _last_ghosts_got < MIN_POS_GAP_S:
+				return
+			var g = m.get("g")
+			if not (g is Array) or g.size() > MAX_GHOSTS:
+				return
+			var list: Array = []
+			for e in g:
+				var snap := _clean_ghost(e)
+				if snap.is_empty():
+					return
+				list.append(snap)
+			_last_ghosts_got = _clock
+			ghosts_received.emit(list, _num(m.get("f"), 0.0, 30.0, 0.0), _num(m.get("gs"), 0.2, 3.0, 1.0))
+		"ghit", "gate":
+			if mode != MODE_ARENA or not is_host or r != round_index or not round_open:
+				return
+			var gi := int(_num(m.get("i"), 0, MAX_GHOSTS - 1, -1))
+			if gi >= 0:
+				ghost_event.emit("hit" if t == "ghit" else "ate", gi)
+		"power":
+			if mode != MODE_ARENA or not is_host or r != round_index or not round_open:
+				return
+			opp_gscale = _num(m.get("gs"), 0.2, 3.0, opp_gscale)
+			ghost_event.emit("power", 0)
 		"rabbit":
 			if r != round_index or not round_open:
 				return
@@ -502,7 +589,7 @@ func start_next_round(go_in: float = GO_DELAY_S) -> void:
 	if not is_host or state != State.READY or match_finished or round_open or round_index + 1 >= MATCH_LEVELS:
 		return
 	_open_round(round_index + 1)
-	_send({"t": "round", "round": round_index, "go_in": go_in})
+	_send({"t": "round", "round": round_index, "go_in": go_in, "mode": mode})
 	round_started.emit(round_index, go_in)
 
 
@@ -538,13 +625,52 @@ func next_level_id() -> String:
 
 
 ## My run sends its progress; throttled to PROGRESS_INTERVAL_S.
-func send_progress(frac: float, cell: Vector2i, lives: int, force: bool = false) -> void:
+func send_progress(frac: float, cell: Vector2i, lives: int, force: bool = false, gscale: float = 1.0) -> void:
 	if not round_open or _other_id == 0:
 		return
 	if not force and _clock - _last_progress_sent < PROGRESS_INTERVAL_S:
 		return
 	_last_progress_sent = _clock
-	_send({"t": "prog", "round": round_index, "frac": snappedf(frac, 0.001), "r": cell.x, "c": cell.y, "lives": lives}, CH_PROGRESS)
+	_send({"t": "prog", "round": round_index, "frac": snappedf(frac, 0.001), "r": cell.x, "c": cell.y, "lives": lives, "gs": snappedf(gscale, 0.01)}, CH_PROGRESS)
+
+
+## ---- Arena senders (see the header) -------------------------------------------
+
+func send_pos(x: float, z: float, yaw: float, force: bool = false) -> void:
+	if mode != MODE_ARENA or not round_open or _other_id == 0:
+		return
+	if not force and _clock - _last_pos_sent < POS_INTERVAL_S:
+		return
+	_last_pos_sent = _clock
+	_send({"t": "pos", "round": round_index, "x": snappedf(x, 0.01), "z": snappedf(z, 0.01), "yaw": snappedf(yaw, 0.01)}, CH_STATE, true)
+
+
+func send_eat(cell: Vector2i) -> void:
+	if mode == MODE_ARENA and round_open:
+		_send({"t": "eat", "round": round_index, "r": cell.x, "c": cell.y})
+
+
+## Host only: the ghosts' state for the client.
+func send_ghosts(list: Array, frightened: float, gscale: float, force: bool = false) -> void:
+	if mode != MODE_ARENA or not is_host or not round_open or _other_id == 0:
+		return
+	if not force and _clock - _last_ghosts_sent < GHOST_INTERVAL_S:
+		return
+	_last_ghosts_sent = _clock
+	_send({"t": "gh", "round": round_index, "g": list, "f": snappedf(frightened, 0.1), "gs": snappedf(gscale, 0.01)}, CH_STATE, true)
+
+
+## Client only: "hit" (ghost i caught me), "ate" (I ate ghost i) or "power".
+func send_ghost_event(kind: String, index: int, gscale: float = 1.0) -> void:
+	if mode != MODE_ARENA or is_host or not round_open:
+		return
+	match kind:
+		"hit":
+			_send({"t": "ghit", "round": round_index, "i": index})
+		"ate":
+			_send({"t": "gate", "round": round_index, "i": index})
+		"power":
+			_send({"t": "power", "round": round_index, "gs": snappedf(gscale, 0.01)})
 
 
 func send_rabbit(cond: String, good: bool, p: float, own: Vector2i, opp: Vector2i) -> void:
@@ -656,15 +782,17 @@ func _apply_result(outcome: String, cause: String) -> void:
 
 ## ---- helpers ---------------------------------------------------------------
 
-func _send(msg: Dictionary, channel: int = CH_RELIABLE) -> void:
+func _send(msg: Dictionary, channel: int = CH_RELIABLE, unreliable: bool = false) -> void:
 	if _peer == null or _other_id == 0:
 		return
 	_peer.set_target_peer(_other_id)
 	_peer.transfer_channel = channel
-	# Reliable on both channels: progress is only 5 small packets a second,
-	# and unreliable ENet packets from the client were lost in testing (QA
-	# 04.10.). The own channel keeps progress from queueing behind events.
-	_peer.transfer_mode = MultiplayerPeer.TRANSFER_MODE_RELIABLE
+	# Reliable on the first two channels: progress is only 5 small packets a
+	# second, and unreliable ENet packets from the client were lost in testing
+	# (QA 04.10.). Arena positions and ghosts are dated after a few 100 ms, so
+	# they go unreliable (ordered) on their own channel: a lost one costs
+	# nothing, and a late one never queues behind events.
+	_peer.transfer_mode = MultiplayerPeer.TRANSFER_MODE_UNRELIABLE_ORDERED if unreliable else MultiplayerPeer.TRANSFER_MODE_RELIABLE
 	_peer.put_packet(JSON.stringify(msg).to_utf8_buffer())
 
 
@@ -682,6 +810,25 @@ static func _num(v, lo: float, hi: float, dflt: float) -> float:
 	if is_nan(f) or is_inf(f) or f < lo or f > hi:
 		return dflt
 	return f
+
+
+## One ghost snapshot from the net: [fr, fc, tr, tc, t, mode 0–3] or [] if broken.
+static func _clean_ghost(e) -> Array:
+	if not (e is Array) or e.size() != 6:
+		return []
+	var out: Array = []
+	for k in 4:
+		var v := _num(e[k], 0, 400, -1)
+		if v < 0:
+			return []
+		out.append(int(v))
+	var tt := _num(e[4], 0.0, 1.0, -1.0)
+	var md := _num(e[5], 0, 3, -1)
+	if tt < 0.0 or md < 0:
+		return []
+	out.append(tt)
+	out.append(int(md))
+	return out
 
 
 ## Player names: control characters out, at most 20 characters.

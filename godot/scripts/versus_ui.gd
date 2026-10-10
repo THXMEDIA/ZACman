@@ -14,6 +14,8 @@ signal join_requested(player_name: String, address: String, port: int)
 signal start_requested
 signal leave_requested
 signal rematch_requested
+## The host picked the mode: "arena" or "race".
+signal mode_changed(mode: String)
 signal result_menu_requested
 
 const DEFAULT_PORT := 47823
@@ -36,6 +38,8 @@ var my_ip_copy: Button
 var host_btn: Button
 var join_btn: Button
 var start_btn: Button
+var mode_btn: Button
+var _mode := "arena"
 var status_label: Label
 var duel_label: Label
 var lobby_twitch: CheckBox
@@ -90,7 +94,7 @@ func _build_lobby() -> void:
 	var box: VBoxContainer = hud._panel_box(lobby)
 	box.add_theme_constant_override("separation", 9)
 	box.add_child(hud._title_label("VERSUS · GEGENWIND"))
-	box.add_child(hud._subtitle_label("Zu zweit, gleiche 3 Level, schnellere Zeit gewinnt. Best of 3."))
+	box.add_child(hud._subtitle_label("Zu zweit, gleiche 3 Level, Best of 3. Arena: wer zuerst alle eigenen Kugeln hat. Spiegelrennen: schnellere Zeit."))
 	name_edit = _labeled_edit(box, "DEIN NAME", "", 200)
 	name_edit.placeholder_text = "Spieler"
 
@@ -181,6 +185,12 @@ func _build_lobby() -> void:
 	status_label.add_theme_color_override("font_color", hud.RABBIT_WHITE)
 	box.add_child(status_label)
 
+	mode_btn = hud._make_button("")
+	mode_btn.pressed.connect(func():
+		set_mode("race" if _mode == "arena" else "arena")
+		mode_changed.emit(_mode))
+	box.add_child(mode_btn)
+	set_mode(_mode)
 	start_btn = hud._make_button("MATCH STARTEN")
 	start_btn.disabled = true
 	start_btn.pressed.connect(func(): start_requested.emit())
@@ -286,6 +296,19 @@ func set_lobby_state(text: String, connected: bool, can_start: bool, keep_button
 	join_btn.disabled = connected
 	start_btn.disabled = not can_start
 	start_btn.text = "MATCH STARTEN" if can_start or not connected else "WARTE AUF HOST …"
+
+
+## The mode button (host only): ARENA = both in one maze, own pellets, shared
+## ghosts; SPIEGELRENNEN = everyone in an own copy (Gegenwind).
+func set_mode(mode: String) -> void:
+	_mode = mode
+	if mode_btn != null:
+		mode_btn.text = "MODUS: ARENA · ein Labyrinth, eigene Kugeln" if mode == "arena" else "MODUS: SPIEGELRENNEN · jeder im eigenen Labyrinth"
+
+
+func set_mode_editable(on: bool) -> void:
+	if mode_btn != null:
+		mode_btn.disabled = not on
 
 
 func set_duel_text(text: String) -> void:

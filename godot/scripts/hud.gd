@@ -2076,12 +2076,18 @@ func _draw_minimap() -> void:
 			var pc: Vector2i = minimap_maze_view.pellet_cells[i]
 			if pellet_rim.a > 0.0: # Arles: a dark ring keeps the pellets readable
 				minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 1.6, pellet_rim)
-			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, pellet_col)
+			var this_col := pellet_col
+			if minimap_maze_view.arena_side >= 0 and minimap_maze_view.pellet_owner[i] != minimap_maze_view.arena_side:
+				this_col = Color("ff9f1c") # the opponent's set (Arena): his orange
+			minimap.draw_circle(Vector2((pc.y + 0.5) * sx, (pc.x + 0.5) * sy), 0.9, this_col)
 		for i in minimap_maze_view.power_cells.size():
 			if not minimap_maze_view.power_alive[i]:
 				continue
 			var pw: Vector2i = minimap_maze_view.power_cells[i]
-			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, power_col)
+			var pw_col := power_col
+			if minimap_maze_view.arena_side >= 0 and minimap_maze_view.power_owner[i] != minimap_maze_view.arena_side:
+				pw_col = Color("ff9f1c")
+			minimap.draw_circle(Vector2((pw.y + 0.5) * sx, (pw.x + 0.5) * sy), 1.6, pw_col)
 		# The white rabbit is visible on the minimap from the level start on
 		# (spec 2.2): a small rabbit-ear symbol (UX-W2) — two upright ears on
 		# a round head, rabbit white with a dark outline.
