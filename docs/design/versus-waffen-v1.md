@@ -106,3 +106,17 @@ Messung per Bot-Simulation (wie `qa_dash_gain.gd`): Zeitverlust pro Treffer, Beg
 - Protokoll 3 (pos, eat, gh, ghit, gate, power, mode), Plausibilitätsprüfungen, Tests: `test_arena.gd`, `arena_e2e.gd` (zwei echte Instanzen), Screenshots `tools/qa/qa_arena_shots.gd`.
 
 **Offen nach dem Handtest:** Besitz des Power-Fensters (nur der Fresser darf Geister fressen?), Kaninchen-Ort fair zwischen beiden Starts, Rückmeldung beim Anstoßen, Legende beim Countdown, Gleichstand = kein Punkt statt Host.
+
+### Blitz-Staffette, präzisiert (Inhaber, 10.10.)
+**Ein Auslöser, danach verteilen sich die Blitze über ca. 3 Sekunden.** (Ersetzt die Lesart „5 s Abstand“.)
+
+Startwerte für Stufe B (Schätzung, im Handtest justieren):
+| Wert | Start |
+|---|---|
+| Blitze je Staffette | 4 (bei 0 / 1 / 2 / 3 s) |
+| Zielen | jeder Blitz geht dorthin, wohin der Schütze in diesem Moment schaut (der Gegner kann ausweichen, um Ecken gehen, dashen) |
+| Telegraph | Aufladen 0,5 s sichtbar und hörbar vor dem ersten Blitz, jeder Blitz mit kurzer Leuchtlinie |
+| Wirkung je Treffer | 0,4 s Lähmung (nur Bewegung, Kamera frei, E8e) |
+| Obergrenze | höchstens 1,2 s Lähmung je Staffette, danach 3 s Immunität gegen Waffen |
+| Geister | 1,5 s Schutz vor Geistern nach dem letzten Treffer |
+| Nachschub | 1 Staffette pro Extra, Extra in einer Sackgasse |
